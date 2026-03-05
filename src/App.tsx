@@ -22,7 +22,7 @@ export const App = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
   const escapeRef = useRef<((v: boolean) => void) | null>(null);
-  const isTouchDevice = 'ontouchstart' in window;
+  const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
   useEffect(() => {
     const canvas = canvasRef.current;
