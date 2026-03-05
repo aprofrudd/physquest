@@ -50,9 +50,11 @@ export const createInput = () => {
     up: false, down: false, left: false, right: false,
   };
   let touchAction = false;
+  let touchEscape = false;
 
   const setTouchDir = (dir: typeof touchDir) => { touchDir = dir; };
   const setTouchAction = (v: boolean) => { touchAction = v; };
+  const setTouchEscape = (v: boolean) => { touchEscape = v; };
 
   const read = (): InputState => {
     const up = !!(held['ArrowUp'] || held['w']) || touchDir.up;
@@ -62,7 +64,7 @@ export const createInput = () => {
     const action = !!(held[' '] || held['Enter'] || held['z']) || touchAction;
     const actionPressed = action && !actionWasDown;
     actionWasDown = action;
-    const escape = !!held['Escape'];
+    const escape = !!held['Escape'] || touchEscape;
     const escapePressed = escape && !escapeWasDown;
     escapeWasDown = escape;
     return { up, down, left, right, action, actionPressed, escape, escapePressed };
@@ -73,7 +75,7 @@ export const createInput = () => {
     window.removeEventListener('keyup', onKeyUp);
   };
 
-  return { read, destroy, setTouchDir, setTouchAction };
+  return { read, destroy, setTouchDir, setTouchAction, setTouchEscape };
 };
 
 export type Input = ReturnType<typeof createInput>;

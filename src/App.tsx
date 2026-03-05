@@ -21,6 +21,8 @@ export const App = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
+  const escapeRef = useRef<((v: boolean) => void) | null>(null);
+  const isTouchDevice = 'ontouchstart' in window;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -35,6 +37,7 @@ export const App = () => {
     // Game state
     const gameState = createInitialState();
     const inputManager = createInput();
+    escapeRef.current = inputManager.setTouchEscape;
     const sceneManager = createSceneManager();
     const dialogue = createDialogueSystem();
     const movement = createMovement();
@@ -165,10 +168,10 @@ export const App = () => {
 
       const maxW = window.innerWidth;
       const maxH = window.innerHeight;
-      const scale = Math.max(1, Math.min(
-        Math.floor(maxW / GAME_W),
-        Math.floor(maxH / GAME_H)
-      ));
+      const scaleX = maxW / GAME_W;
+      const scaleY = (maxH - 48) / GAME_H; // reserve bottom bar space
+      const fitScale = Math.min(scaleX, scaleY);
+      const scale = fitScale >= 2 ? Math.floor(fitScale) : fitScale;
 
       canvas.style.width = `${GAME_W * scale}px`;
       canvas.style.height = `${GAME_H * scale}px`;
@@ -272,21 +275,47 @@ export const App = () => {
           background: 'repeating-linear-gradient(0deg, rgba(0,0,0,0.2) 0px, rgba(0,0,0,0.2) 1px, transparent 1px, transparent 3px)',
         }}
       />
-      {/* Mobile touch hint */}
+      {/* Controls bar */}
       <div
         style={{
           position: 'absolute',
           bottom: 8,
           left: '50%',
           transform: 'translateX(-50%)',
-          color: '#333',
+          color: '#555',
           fontFamily: 'monospace',
           fontSize: '10px',
           pointerEvents: 'none',
           userSelect: 'none',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
         }}
       >
-        SWIPE TO MOVE | TAP RIGHT TO ACT
+        <span>{isTouchDevice ? 'SWIPE:MOVE | TAP:SELECT' : 'ARROWS:MOVE | SPACE:SELECT | ESC:MENU'}</span>
+        {isTouchDevice && (
+          <button
+            onTouchStart={(e) => {
+              e.stopPropagation();
+              escapeRef.current?.(true);
+              setTimeout(() => escapeRef.current?.(false), 100);
+            }}
+            style={{
+              pointerEvents: 'auto',
+              background: '#222',
+              color: '#aaa',
+              border: '1px solid #444',
+              fontFamily: 'monospace',
+              fontSize: '10px',
+              padding: '4px 10px',
+              cursor: 'pointer',
+              userSelect: 'none',
+              touchAction: 'manipulation',
+            }}
+          >
+            MENU
+          </button>
+        )}
       </div>
     </div>
   );
