@@ -7,7 +7,7 @@ import type { Movement } from '../systems/Movement';
 import type { PauseMenu } from '../systems/PauseMenu';
 import { renderTileMap, TILE_SIZE } from '../render/TileMap';
 import { drawSprite } from '../render/SpriteSheet';
-import { drawText } from '../render/PixelFont';
+import { drawText, measureText } from '../render/PixelFont';
 import { GAME_W, GAME_H } from '../render/DialogueBox';
 import { ALL_MAPS, type MapData } from '../data/maps';
 import { DIALOGUES } from '../data/dialogue';
@@ -147,6 +147,24 @@ export const createOverworldScene = (
 
       // Render tile map (no scrolling — single screen)
       renderTileMap(ctx, currentMap.tiles, currentMap.palette, 0, 0, GAME_W, GAME_H);
+
+      // Hub room labels on sign tiles
+      if (currentMapId === 'hub') {
+        const labelColor = pal.colors[0];
+        const labels: Array<{ label: string; col: number; spanCols: number; row: number; yOff: number }> = [
+          { label: 'TESTING',  col: 4, spanCols: 3, row: 1, yOff: 3 },
+          { label: 'DATA',     col: 9, spanCols: 3, row: 1, yOff: 3 },
+          { label: 'TRAINING', col: 4, spanCols: 3, row: 9, yOff: 3 },
+          { label: 'ANALYSIS', col: 9, spanCols: 3, row: 9, yOff: 3 },
+          { label: 'ARENA',    col: 7, spanCols: 2, row: 11, yOff: 5 },
+        ];
+        for (const { label, col, spanCols, row, yOff } of labels) {
+          const textW = measureText(label);
+          const x = Math.floor(col * TILE_SIZE + (spanCols * TILE_SIZE - textW) / 2);
+          const y = row * TILE_SIZE + yOff;
+          drawText(ctx, label, x, y, labelColor);
+        }
+      }
 
       // Render NPCs
       for (const npc of currentMap.npcs) {

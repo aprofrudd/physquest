@@ -8,8 +8,9 @@ export interface DialogueLine {
 export const DIALOGUES: Record<string, DialogueLine[]> = {
   // Hub NPC
   hub_athlete: [
-    { text: 'Coach! The team is counting on you. Each room has a challenge that will prepare us for the big event.' },
-    { text: 'Complete all four rooms to build our stats, then face the rival in the arena.' },
+    { text: 'Hey Coach! I am your athlete. Welcome to the Sports Performance Centre!' },
+    { text: 'Each room has a challenge that will prepare us for the big event.' },
+    { text: 'Complete all four rooms to build our stats, then face the rival in the arena!' },
   ],
   hub_equip_left: [
     { text: 'Performance monitoring station. Check athlete data here between challenges.' },
