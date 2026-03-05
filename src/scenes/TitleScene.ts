@@ -40,7 +40,7 @@ export const createTitleScene = (
       }
 
       // Title
-      const title = 'PHYSIOQUEST';
+      const title = 'PHYSQUEST';
       const titleW = measureText(title, 3);
       drawText(ctx, title, (GAME_W - titleW) / 2, 50, pal.colors[4], 3);
 
