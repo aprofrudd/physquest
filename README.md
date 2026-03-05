@@ -25,7 +25,10 @@ Complete all rooms to face the level's rival boss in a stat-based showdown.
 
 - **TypeScript** + **Vite** (no game framework — pure canvas)
 - Pixel font rendering, tile maps, sprite sheets, dialogue system
-- Scene-based architecture: Title, Overworld, Room Challenge, Boss Battle, Level Clear
+- Scene-based architecture: Intro, Title, Level Select, Overworld, Room Challenge, Boss Battle, Level Clear
+- Save system with localStorage persistence across sessions
+- Mobile support with touch d-pad, action button, and pause button
+- Fractional canvas scaling for crisp pixel art at any resolution
 
 ## Getting Started
 
@@ -46,8 +49,9 @@ Deployed on [Vercel](https://physquest.vercel.app). Auto-deploys on push to `mas
 src/
 ├── engine/       GameLoop, Input, SceneManager
 ├── render/       SpriteSheet, PixelFont, DialogueBox, TileMap, Palettes
-├── scenes/       TitleScene, OverworldScene, RoomChallengeScene, BossBattleScene, LevelClearScene
-├── systems/      Movement, Collision, Dialogue, BossMinigame
+├── scenes/       IntroScene, TitleScene, LevelSelectScene, OverworldScene,
+│                 RoomChallengeScene, BossBattleScene, LevelClearScene
+├── systems/      Movement, Collision, Dialogue, BossMinigame, PauseMenu, SaveSystem
 ├── data/         sprites, maps, sports, levels, dialogue
 └── state/        GameState
 ```

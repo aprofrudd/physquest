@@ -12,7 +12,8 @@ Each room awards a **player stat** (0–100%) based on performance. These stats 
 
 - **Map**: 16x14 tile grid, `lab` palette
 - **Layout**: 4 room doors (top-left, top-right, bottom-left, bottom-right), boss door at bottom centre
-- **NPCs**: Athlete at centre — gives overview dialogue
+- **Signs**: Each door has a labeled sign tile — TESTING, DATA, TRAINING, ANALYSIS; boss door has ARENA label
+- **NPCs**: Athlete at centre — introduces themselves ("Hey Coach! I am your athlete…") then gives overview dialogue. NPC is solid (player cannot walk through)
 - **Equipment**: Performance monitoring station (left), Recovery station (right)
 - **Gating**: Boss door blocked until all 4 `roomProgress` flags are `true`
 

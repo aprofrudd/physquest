@@ -6,8 +6,8 @@ Retro-style sports science RPG — pure canvas game, no game framework.
 
 - **Engine**: `GameLoop` (requestAnimationFrame), `Input` (keyboard), `SceneManager` (scene transitions)
 - **Rendering**: All pixel-art rendered to a single `<canvas>` — `SpriteSheet`, `PixelFont`, `DialogueBox`, `TileMap`, `Palettes`
-- **Scenes**: `TitleScene` → `OverworldScene` → `RoomChallengeScene` → `BossBattleScene` → `LevelClearScene`
-- **Systems**: `Movement`, `Collision`, `Dialogue`, `BossMinigame` — run each frame within scenes
+- **Scenes**: `IntroScene` → `TitleScene` → `LevelSelectScene` → `OverworldScene` → `RoomChallengeScene` → `BossBattleScene` → `LevelClearScene`
+- **Systems**: `Movement`, `Collision`, `Dialogue`, `BossMinigame`, `PauseMenu`, `SaveSystem` — run each frame within scenes
 - **Data**: All game content in `src/data/` — sports science questions, maps, sprites, dialogue are data-driven
 - **State**: Single `GameState` object passed through scenes; `calcStat()` derives stats from challenge performance
 
@@ -17,6 +17,9 @@ Retro-style sports science RPG — pure canvas game, no game framework.
 - No React rendering — React is a vestigial dependency from the Vite template (entry is `main.tsx` but renders to canvas)
 - All rendering is imperative canvas calls — no virtual DOM
 - Game runs at native requestAnimationFrame rate with delta-time
+- Save system uses localStorage; progress persists across sessions
+- Mobile touch controls: d-pad, action button, pause button — auto-detected via touch events
+- Hub overworld has labeled sign tiles (TESTING, DATA, TRAINING, ANALYSIS, ARENA) and solid NPCs
 
 ## Build & Deploy
 
