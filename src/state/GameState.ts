@@ -18,6 +18,7 @@ export interface ChallengeResult {
 }
 
 export interface GameState {
+  playerName: string;
   currentLevel: number; // 0-3
   maxLevelUnlocked: number;
   playerStats: PlayerStats;
@@ -31,6 +32,7 @@ export interface GameState {
 }
 
 export const createInitialState = (): GameState => ({
+  playerName: '',
   currentLevel: 0,
   maxLevelUnlocked: 0,
   playerStats: { speed: 0, strength: 0, endurance: 0, power: 0 },

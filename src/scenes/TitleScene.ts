@@ -1,9 +1,11 @@
 import type { Scene } from '../engine/GameLoop';
 import type { Input } from '../engine/Input';
 import type { SceneManager } from '../engine/SceneManager';
+import type { GameState } from '../state/GameState';
 import { drawText, measureText } from '../render/PixelFont';
 import { PALETTES } from '../render/Palettes';
 import { GAME_W, GAME_H } from '../render/DialogueBox';
+import { hasSave, loadSave, deleteSave, applySave } from '../systems/SaveSystem';
 
 // Simple logo sprite: 48x16 clipboard/whistle icon (drawn at 1x scale)
 const LOGO_SPRITE: number[][] = [
@@ -42,20 +44,62 @@ const drawLogo = (ctx: CanvasRenderingContext2D, x: number, y: number, colors: s
 
 export const createTitleScene = (
   input: Input,
-  sceneManager: SceneManager
+  sceneManager: SceneManager,
+  gameState: GameState,
 ): Scene => {
   let timer = 0;
+  let saveExists = false;
+  let menuIndex = 0; // 0 = Continue, 1 = New Game (when save exists)
+  let upWasDown = false;
+  let downWasDown = false;
 
   return {
     onEnter() {
       timer = 0;
+      saveExists = hasSave();
+      menuIndex = 0;
+      upWasDown = false;
+      downWasDown = false;
     },
 
     update(dt: number) {
       timer += dt;
       const inp = input.read();
-      if (inp.actionPressed && timer > 0.5) {
-        sceneManager.switchTo('overworld');
+
+      if (timer < 0.5) return;
+
+      if (saveExists) {
+        // Menu navigation
+        const upPressed = inp.up && !upWasDown;
+        const downPressed = inp.down && !downWasDown;
+        upWasDown = inp.up;
+        downWasDown = inp.down;
+
+        if (upPressed) menuIndex = (menuIndex - 1 + 2) % 2;
+        if (downPressed) menuIndex = (menuIndex + 1) % 2;
+
+        if (inp.actionPressed) {
+          if (menuIndex === 0) {
+            // Continue
+            const save = loadSave();
+            if (save) {
+              applySave(gameState, save);
+              sceneManager.switchTo('levelSelect');
+            } else {
+              // Save was deleted externally
+              saveExists = false;
+            }
+          } else {
+            // New Game
+            deleteSave();
+            sceneManager.switchTo('intro');
+          }
+        }
+      } else {
+        // No save — just press space
+        if (inp.actionPressed) {
+          sceneManager.switchTo('intro');
+        }
       }
     },
 
@@ -109,12 +153,27 @@ export const createTitleScene = (
       drawText(ctx, inst1, (GAME_W - measureText(inst1)) / 2, 110, pal.colors[1]);
       drawText(ctx, inst2, (GAME_W - measureText(inst2)) / 2, 122, pal.colors[1]);
 
-      // Press start — Pokemon-style blink (500ms on, 250ms off)
-      const blinkCycle = (Date.now() % 750);
-      if (blinkCycle < 500) {
-        const start = 'PRESS SPACE TO START';
-        const startW = measureText(start, 2);
-        drawText(ctx, start, (GAME_W - startW) / 2, 155, pal.colors[0], 2);
+      // Menu or press start
+      if (saveExists) {
+        const menuY = 150;
+        const options = ['CONTINUE', 'NEW GAME'];
+        for (let i = 0; i < options.length; i++) {
+          const opt = options[i]!;
+          const isSelected = i === menuIndex;
+          const prefix = isSelected ? '>' : ' ';
+          const text = prefix + opt;
+          const textW = measureText(text, 2);
+          const color = isSelected ? pal.colors[0] : pal.colors[2];
+          drawText(ctx, text, (GAME_W - textW) / 2, menuY + i * 20, color, 2);
+        }
+      } else {
+        // Press start — Pokemon-style blink (500ms on, 250ms off)
+        const blinkCycle = (Date.now() % 750);
+        if (blinkCycle < 500) {
+          const start = 'PRESS SPACE TO START';
+          const startW = measureText(start, 2);
+          drawText(ctx, start, (GAME_W - startW) / 2, 155, pal.colors[0], 2);
+        }
       }
 
       // Version

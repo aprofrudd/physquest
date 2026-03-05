@@ -5,9 +5,11 @@ export interface InputState {
   right: boolean;
   action: boolean; // Space / Enter / A button
   actionPressed: boolean; // true only on frame pressed
+  escape: boolean;
+  escapePressed: boolean; // true only on frame pressed
 }
 
-const KEY_MAP: Record<string, keyof Omit<InputState, 'actionPressed'>> = {
+const KEY_MAP: Record<string, keyof Omit<InputState, 'actionPressed' | 'escapePressed'>> = {
   ArrowUp: 'up',
   ArrowDown: 'down',
   ArrowLeft: 'left',
@@ -19,11 +21,13 @@ const KEY_MAP: Record<string, keyof Omit<InputState, 'actionPressed'>> = {
   ' ': 'action',
   Enter: 'action',
   z: 'action',
+  Escape: 'escape',
 };
 
 export const createInput = () => {
   const held: Record<string, boolean> = {};
   let actionWasDown = false;
+  let escapeWasDown = false;
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (KEY_MAP[e.key] !== undefined) {
@@ -58,7 +62,10 @@ export const createInput = () => {
     const action = !!(held[' '] || held['Enter'] || held['z']) || touchAction;
     const actionPressed = action && !actionWasDown;
     actionWasDown = action;
-    return { up, down, left, right, action, actionPressed };
+    const escape = !!held['Escape'];
+    const escapePressed = escape && !escapeWasDown;
+    escapeWasDown = escape;
+    return { up, down, left, right, action, actionPressed, escape, escapePressed };
   };
 
   const destroy = () => {

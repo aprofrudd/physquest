@@ -4,6 +4,7 @@ import type { SceneManager } from '../engine/SceneManager';
 import type { GameState } from '../state/GameState';
 import type { DialogueSystem } from '../systems/Dialogue';
 import type { Movement } from '../systems/Movement';
+import type { PauseMenu } from '../systems/PauseMenu';
 import { renderTileMap, TILE_SIZE } from '../render/TileMap';
 import { drawSprite } from '../render/SpriteSheet';
 import { drawText } from '../render/PixelFont';
@@ -22,7 +23,8 @@ export const createOverworldScene = (
   dialogue: DialogueSystem,
   movement: Movement,
   onEnterRoom: (roomId: string) => void,
-  onEnterBoss: () => void
+  onEnterBoss: () => void,
+  pauseMenu: PauseMenu,
 ): Scene => {
   let currentMapId = 'hub';
   let currentMap: MapData = ALL_MAPS['hub']!;
@@ -48,6 +50,7 @@ export const createOverworldScene = (
 
   return {
     onEnter() {
+      dialogue.state.active = false;
       switchMap('hub');
       roomLabel = currentMap.name;
       roomLabelTimer = 2;
@@ -55,6 +58,10 @@ export const createOverworldScene = (
 
     update(dt: number) {
       const inp = input.read();
+
+      // Pause menu
+      if (inp.escapePressed && !pauseMenu.isActive()) pauseMenu.toggle();
+      if (pauseMenu.isActive()) { pauseMenu.update(dt, inp); return; }
 
       // Track if dialogue was active before this frame's update
       const dialogueWasActive = dialogue.isActive();
@@ -180,6 +187,9 @@ export const createOverworldScene = (
 
       // Render dialogue
       dialogue.render(ctx);
+
+      // Pause overlay
+      pauseMenu.render(ctx);
     },
   };
 };

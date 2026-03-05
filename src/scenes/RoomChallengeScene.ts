@@ -3,6 +3,7 @@ import type { Input } from '../engine/Input';
 import type { SceneManager } from '../engine/SceneManager';
 import type { GameState } from '../state/GameState';
 import type { DialogueSystem } from '../systems/Dialogue';
+import type { PauseMenu } from '../systems/PauseMenu';
 import { GAME_W, GAME_H } from '../render/DialogueBox';
 import { drawText, measureText } from '../render/PixelFont';
 import { drawPokemonBox } from '../render/SpriteSheet';
@@ -20,7 +21,8 @@ export const createRoomChallengeScene = (
   sceneManager: SceneManager,
   gameState: GameState,
   dialogue: DialogueSystem,
-  onComplete: () => void
+  onComplete: () => void,
+  pauseMenu: PauseMenu,
 ): Scene => {
   let phase: ChallengePhase = 'intro';
   let roomType: RoomType = 'room1';
@@ -270,6 +272,11 @@ export const createRoomChallengeScene = (
 
     update(dt: number) {
       const inp = input.read();
+
+      // Pause menu
+      if (inp.escapePressed && !pauseMenu.isActive()) pauseMenu.toggle();
+      if (pauseMenu.isActive()) { pauseMenu.update(dt, inp); return; }
+
       dialogue.update(dt, inp);
     },
 
@@ -301,6 +308,9 @@ export const createRoomChallengeScene = (
 
       // Render dialogue
       dialogue.render(ctx);
+
+      // Pause overlay
+      pauseMenu.render(ctx);
     },
 
     setRoom(room: string) {

@@ -1,6 +1,6 @@
 import type { Scene } from './GameLoop';
 
-export type SceneId = 'title' | 'overworld' | 'roomChallenge' | 'bossBattle' | 'levelClear';
+export type SceneId = 'title' | 'intro' | 'levelSelect' | 'overworld' | 'roomChallenge' | 'bossBattle' | 'levelClear';
 
 export const createSceneManager = () => {
   const scenes = new Map<SceneId, Scene>();

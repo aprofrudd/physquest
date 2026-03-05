@@ -3,6 +3,7 @@ import type { Input } from '../engine/Input';
 import type { SceneManager } from '../engine/SceneManager';
 import type { GameState } from '../state/GameState';
 import type { DialogueSystem } from '../systems/Dialogue';
+import type { PauseMenu } from '../systems/PauseMenu';
 import { GAME_W, GAME_H } from '../render/DialogueBox';
 import { drawText, measureText } from '../render/PixelFont';
 import { drawPokemonBox, drawSprite } from '../render/SpriteSheet';
@@ -55,7 +56,8 @@ export const createBossBattleScene = (
   gameState: GameState,
   dialogue: DialogueSystem,
   onWin: () => void,
-  onLose: () => void
+  onLose: () => void,
+  pauseMenu: PauseMenu,
 ): Scene => {
   let phase: BossPhase = 'intro';
   let minigame = createMinigameState('sprint', 0.5, 0.5);
@@ -99,6 +101,11 @@ export const createBossBattleScene = (
 
     update(dt: number) {
       const inp = input.read();
+
+      // Pause menu
+      if (inp.escapePressed && !pauseMenu.isActive()) pauseMenu.toggle();
+      if (pauseMenu.isActive()) { pauseMenu.update(dt, inp); return; }
+
       dialogue.update(dt, inp);
 
       if (phase === 'statDisplay') {
@@ -252,6 +259,9 @@ export const createBossBattleScene = (
 
       // Dialogue on top
       dialogue.render(ctx);
+
+      // Pause overlay
+      pauseMenu.render(ctx);
     },
   };
 };

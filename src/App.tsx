@@ -5,7 +5,10 @@ import { createSceneManager } from './engine/SceneManager';
 import { createInitialState } from './state/GameState';
 import { createDialogueSystem } from './systems/Dialogue';
 import { createMovement } from './systems/Movement';
+import { createPauseMenu } from './systems/PauseMenu';
 import { createTitleScene } from './scenes/TitleScene';
+import { createIntroScene } from './scenes/IntroScene';
+import { createLevelSelectScene } from './scenes/LevelSelectScene';
 import { createOverworldScene } from './scenes/OverworldScene';
 import { createRoomChallengeScene } from './scenes/RoomChallengeScene';
 import { createBossBattleScene } from './scenes/BossBattleScene';
@@ -35,20 +38,9 @@ export const App = () => {
     const sceneManager = createSceneManager();
     const dialogue = createDialogueSystem();
     const movement = createMovement();
+    const pauseMenu = createPauseMenu(sceneManager, gameState);
 
     let bossWon = false;
-
-    // Room challenge scene with custom method
-    const roomChallengeScene = createRoomChallengeScene(
-      inputManager,
-      sceneManager,
-      gameState,
-      dialogue,
-      () => {
-        // Return to overworld after challenge
-        sceneManager.switchTo('overworld');
-      }
-    );
 
     const resetLevelProgress = () => {
       gameState.roomProgress = {
@@ -61,8 +53,34 @@ export const App = () => {
       gameState.playerStats = { speed: 0, strength: 0, endurance: 0, power: 0 };
     };
 
+    // Room challenge scene with custom method
+    const roomChallengeScene = createRoomChallengeScene(
+      inputManager,
+      sceneManager,
+      gameState,
+      dialogue,
+      () => {
+        // Return to overworld after challenge
+        sceneManager.switchTo('overworld');
+      },
+      pauseMenu,
+    );
+
     // Register scenes
-    sceneManager.register('title', createTitleScene(inputManager, sceneManager));
+    sceneManager.register('title', createTitleScene(inputManager, sceneManager, gameState));
+
+    sceneManager.register('intro', createIntroScene(inputManager, sceneManager, gameState, dialogue));
+
+    sceneManager.register('levelSelect', createLevelSelectScene(
+      inputManager,
+      sceneManager,
+      gameState,
+      (levelIndex: number) => {
+        gameState.currentLevel = levelIndex;
+        resetLevelProgress();
+        sceneManager.switchTo('overworld');
+      },
+    ));
 
     sceneManager.register('overworld', createOverworldScene(
       inputManager,
@@ -78,7 +96,8 @@ export const App = () => {
       () => {
         // Enter boss battle
         sceneManager.switchTo('bossBattle');
-      }
+      },
+      pauseMenu,
     ));
 
     sceneManager.register('roomChallenge', roomChallengeScene);
@@ -93,7 +112,7 @@ export const App = () => {
         bossWon = true;
         gameState.bossDefeated[gameState.currentLevel] = true;
 
-        if (gameState.currentLevel >= 3) {
+        if (gameState.bossDefeated.every(b => b)) {
           gameState.gameComplete = true;
         }
 
@@ -103,14 +122,15 @@ export const App = () => {
         // Boss lost
         bossWon = false;
         sceneManager.switchTo('levelClear');
-      }
+      },
+      pauseMenu,
     ));
 
     sceneManager.register('levelClear', createLevelClearScene(
       inputManager,
       sceneManager,
       gameState,
-      () => bossWon,
+      () => bossWon || gameState.gameComplete,
       () => {
         if (bossWon) {
           if (gameState.gameComplete) {
@@ -119,16 +139,14 @@ export const App = () => {
             resetLevelProgress();
             sceneManager.switchTo('title');
           } else {
-            // Next level
-            gameState.currentLevel = Math.min(3, gameState.currentLevel + 1);
-            gameState.maxLevelUnlocked = Math.max(gameState.maxLevelUnlocked, gameState.currentLevel);
+            // Back to level select
             resetLevelProgress();
-            sceneManager.switchTo('overworld');
+            sceneManager.switchTo('levelSelect');
           }
         } else {
-          // Retry — reset room progress but keep level
+          // Lost — back to level select
           resetLevelProgress();
-          sceneManager.switchTo('overworld');
+          sceneManager.switchTo('levelSelect');
         }
       }
     ));
