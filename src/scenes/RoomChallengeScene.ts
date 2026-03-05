@@ -5,7 +5,10 @@ import type { GameState } from '../state/GameState';
 import type { DialogueSystem } from '../systems/Dialogue';
 import { GAME_W, GAME_H } from '../render/DialogueBox';
 import { drawText, measureText } from '../render/PixelFont';
+import { drawPokemonBox } from '../render/SpriteSheet';
 import { PALETTES } from '../render/Palettes';
+import { renderTileMap } from '../render/TileMap';
+import { ALL_MAPS } from '../data/maps';
 import { LEVEL_DATA, type SportData } from '../data/sports';
 import { calcStat } from '../state/GameState';
 
@@ -55,12 +58,10 @@ export const createRoomChallengeScene = (
 
   const runTestSelection = () => {
     phase = 'challenge';
-    // Show athlete profile first
     dialogue.show(
       `${sport.athleteProfile} Goal: ${sport.goal}`,
       undefined,
       () => {
-        // Show test choices
         const testNames = sport.tests.map(t => t.name);
         dialogue.show(
           'Which test should we use to assess this athlete?',
@@ -101,12 +102,10 @@ export const createRoomChallengeScene = (
 
   const runVariableId = () => {
     phase = 'challenge';
-    // Show data output
     dialogue.show(
       `Test data: ${sport.dataOutput}`,
       undefined,
       () => {
-        // Multi-select simulated as sequential choices
         const varNames = sport.variables.map(v => v.name);
         let correctCount = 0;
         let totalCorrect = sport.variables.filter(v => v.correct).length;
@@ -243,11 +242,9 @@ export const createRoomChallengeScene = (
     phase = 'complete';
     gameState.roomProgress[roomKey] = true;
 
-    // Calculate and store stat
     const statValue = calcStat(dataQuality, variableAccuracy);
     gameState.challengeResults.push({ dataQuality, variableAccuracy });
 
-    // Apply stat to appropriate attribute
     const statMap: Record<RoomType, keyof typeof gameState.playerStats> = {
       room1: 'speed',
       room2: 'strength',
@@ -277,34 +274,35 @@ export const createRoomChallengeScene = (
     },
 
     render(ctx: CanvasRenderingContext2D) {
-      // Background
       const palId = roomType === 'room1' ? 'lab' : roomType === 'room2' ? 'gym' : roomType === 'room3' ? 'track' : 'lab';
       const pal = PALETTES[palId];
-      ctx.fillStyle = pal.colors[0];
-      ctx.fillRect(0, 0, GAME_W, GAME_H);
 
-      // Room pattern
-      ctx.fillStyle = pal.colors[1];
-      for (let y = 0; y < GAME_H; y += 16) {
-        for (let x = 0; x < GAME_W; x += 16) {
-          if ((x + y) % 32 === 0) {
-            ctx.fillRect(x, y, 16, 16);
-          }
-        }
+      // Render actual tile map as dimmed background
+      const mapData = ALL_MAPS[roomType];
+      if (mapData) {
+        renderTileMap(ctx, mapData.tiles, palId, 0, 0, GAME_W, GAME_H);
+        // Dim overlay
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+        ctx.fillRect(0, 0, GAME_W, GAME_H);
+      } else {
+        ctx.fillStyle = pal.colors[4];
+        ctx.fillRect(0, 0, GAME_W, GAME_H);
       }
 
-      // Header — scale down if too wide
-      const headerScale = measureText(headerText, 2) > GAME_W - 16 ? 1 : 2;
-      drawText(ctx, headerText, 8, 8, pal.colors[5] ?? '#ffffff', headerScale);
+      // Header in bordered panel
+      const headerScale = measureText(headerText, 2) > GAME_W - 32 ? 1 : 2;
+      const headerW = measureText(headerText, headerScale);
+      const panelW = headerW + 16;
+      drawPokemonBox(ctx, (GAME_W - panelW) / 2, 4, panelW, headerScale === 2 ? 22 : 16, pal.colors[1]);
+      drawText(ctx, headerText, (GAME_W - headerW) / 2, headerScale === 2 ? 8 : 7, '#080808', headerScale);
 
       // Sport info
-      drawText(ctx, sport.sport, 8, 30, pal.colors[4] ?? '#aaaaaa');
+      drawText(ctx, sport.sport, 8, 30, pal.colors[5]);
 
       // Render dialogue
       dialogue.render(ctx);
     },
 
-    // Public method to set room type
     setRoom(room: string) {
       startRoom(room as RoomType);
     },

@@ -5,7 +5,7 @@ import type { GameState } from '../state/GameState';
 import type { DialogueSystem } from '../systems/Dialogue';
 import { GAME_W, GAME_H } from '../render/DialogueBox';
 import { drawText, measureText } from '../render/PixelFont';
-import { drawBox, drawSprite } from '../render/SpriteSheet';
+import { drawPokemonBox, drawSprite } from '../render/SpriteSheet';
 import { PALETTES } from '../render/Palettes';
 import { LEVEL_DATA } from '../data/sports';
 import { ATHLETE_SPRITE, SPRITE_COLORS } from '../data/sprites';
@@ -17,6 +17,37 @@ import {
 } from '../systems/BossMinigame';
 
 type BossPhase = 'intro' | 'statDisplay' | 'minigame' | 'result';
+
+// Draw an angled platform (parallelogram)
+const drawPlatform = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  color: string,
+  outlineColor: string
+) => {
+  const skew = 8;
+  // Outline
+  ctx.fillStyle = outlineColor;
+  ctx.beginPath();
+  ctx.moveTo(x + skew, y);
+  ctx.lineTo(x + w + skew, y);
+  ctx.lineTo(x + w, y + h);
+  ctx.lineTo(x, y + h);
+  ctx.closePath();
+  ctx.fill();
+  // Fill
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x + skew + 1, y + 1);
+  ctx.lineTo(x + w + skew - 1, y + 1);
+  ctx.lineTo(x + w - 1, y + h - 1);
+  ctx.lineTo(x + 1, y + h - 1);
+  ctx.closePath();
+  ctx.fill();
+};
 
 export const createBossBattleScene = (
   input: Input,
@@ -43,7 +74,6 @@ export const createBossBattleScene = (
   };
 
   const getRivalStats = (): number[] => {
-    // Rival has fixed stats that scale with level
     const base = 0.4 + gameState.currentLevel * 0.1;
     return [base, base + 0.05, base, base + 0.05];
   };
@@ -57,7 +87,6 @@ export const createBossBattleScene = (
       const sport = LEVEL_DATA[gameState.currentLevel];
       if (!sport) return;
 
-      // Rival taunt
       dialogue.show(
         `${sport.rivalName}: "${sport.rivalTaunt}"`,
         undefined,
@@ -75,7 +104,6 @@ export const createBossBattleScene = (
       if (phase === 'statDisplay') {
         statDisplayTimer += dt;
         if (statDisplayTimer > 3) {
-          // Start minigame
           phase = 'minigame';
           const sport = LEVEL_DATA[gameState.currentLevel];
           if (sport) {
@@ -129,39 +157,55 @@ export const createBossBattleScene = (
     render(ctx: CanvasRenderingContext2D) {
       const pal = PALETTES.boss;
 
-      // Background
-      ctx.fillStyle = pal.colors[0];
+      // Background — light (GBC style)
+      ctx.fillStyle = pal.colors[4];
       ctx.fillRect(0, 0, GAME_W, GAME_H);
 
-      // Arena floor pattern
-      ctx.fillStyle = pal.colors[1];
-      for (let y = GAME_H / 2; y < GAME_H; y += 4) {
-        ctx.fillRect(0, y, GAME_W, 2);
+      // Arena floor pattern — subtle lines on bottom half
+      ctx.fillStyle = pal.colors[3];
+      for (let y = GAME_H / 2; y < GAME_H; y += 6) {
+        ctx.fillRect(0, y, GAME_W, 1);
       }
 
       const sport = LEVEL_DATA[gameState.currentLevel];
       if (!sport) return;
 
-      // Event title
+      // Event title in bordered panel
       const eventTitle = sport.bossEvent;
       const titleW = measureText(eventTitle, 2);
-      drawText(ctx, eventTitle, (GAME_W - titleW) / 2, 8, pal.colors[5] ?? '#ffffff', 2);
+      const titlePanelW = titleW + 16;
+      drawPokemonBox(ctx, (GAME_W - titlePanelW) / 2, 2, titlePanelW, 20);
+      drawText(ctx, eventTitle, (GAME_W - titleW) / 2, 8, pal.colors[0], 2);
 
-      // Draw athletes
-      const leftX = 20;
-      const rightX = GAME_W - 52;
+      // Platforms for each combatant
+      const leftX = 16;
+      const rightX = GAME_W - 56;
       const athleteY = 30;
+      const platY = athleteY + 24;
+
+      // Player platform
+      drawPlatform(ctx, leftX - 4, platY, 40, 8, pal.colors[3], pal.colors[1]);
+      // Rival platform
+      drawPlatform(ctx, rightX - 4, platY, 40, 8, pal.colors[3], pal.colors[1]);
 
       // Player athlete (left)
       drawSprite(ctx, ATHLETE_SPRITE, leftX, athleteY, SPRITE_COLORS['boss_player']!);
-      drawText(ctx, 'YOUR ATHLETE', leftX - 4, athleteY - 10, pal.colors[4] ?? '#aaaaaa');
+
+      // Player name panel
+      drawPokemonBox(ctx, leftX - 6, athleteY - 16, 50, 14);
+      drawText(ctx, 'YOUR ATHLETE', leftX - 2, athleteY - 13, '#080808');
 
       // Rival athlete (right) — mirrored
       const mirroredSprite = ATHLETE_SPRITE.map(row => [...row].reverse());
       drawSprite(ctx, mirroredSprite, rightX, athleteY, SPRITE_COLORS['boss_rival']!);
-      drawText(ctx, sport.rivalName.toUpperCase(), rightX - 4, athleteY - 10, pal.colors[4] ?? '#aaaaaa');
 
-      // Stat bars
+      // Rival name panel
+      const rivalLabel = sport.rivalName.toUpperCase();
+      const rivalLabelW = measureText(rivalLabel);
+      drawPokemonBox(ctx, rightX - 6, athleteY - 16, rivalLabelW + 12, 14);
+      drawText(ctx, rivalLabel, rightX - 2, athleteY - 13, '#080808');
+
+      // Stat bars in Pokemon-style bordered panels
       const playerStats = getPlayerStats();
       const rivalStats = getRivalStats();
       const barStartY = GAME_H / 2 - 30;
@@ -172,24 +216,24 @@ export const createBossBattleScene = (
         const y = barStartY + i * 16;
         const statName = STAT_NAMES[i]!;
 
-        // Player stat bar (left)
-        drawText(ctx, statName, 4, y, pal.colors[3] ?? '#aaaaaa');
-        drawBox(ctx, 4, y + 8, barW, barH, pal.colors[0], pal.colors[3] ?? '#666666', 1);
-        const pFill = Math.floor(barW * (playerStats[i] ?? 0));
-        ctx.fillStyle = '#5b5bd9';
-        ctx.fillRect(5, y + 9, pFill, barH - 2);
+        // Player stat panel (left)
+        drawText(ctx, statName, 4, y, pal.colors[1]);
+        drawPokemonBox(ctx, 4, y + 8, barW, barH + 4, pal.colors[1]);
+        const pFill = Math.floor((barW - 8) * (playerStats[i] ?? 0));
+        ctx.fillStyle = '#3858a8';
+        ctx.fillRect(8, y + 10, pFill, barH - 2);
 
-        // Rival stat bar (right)
+        // Rival stat panel (right)
         const rx = GAME_W - barW - 4;
-        drawText(ctx, statName, rx, y, pal.colors[3] ?? '#aaaaaa');
-        drawBox(ctx, rx, y + 8, barW, barH, pal.colors[0], pal.colors[3] ?? '#666666', 1);
-        const rFill = Math.floor(barW * (rivalStats[i] ?? 0));
-        ctx.fillStyle = '#d95b5b';
-        ctx.fillRect(rx + 1, y + 9, rFill, barH - 2);
+        drawText(ctx, statName, rx, y, pal.colors[1]);
+        drawPokemonBox(ctx, rx, y + 8, barW, barH + 4, pal.colors[1]);
+        const rFill = Math.floor((barW - 8) * (rivalStats[i] ?? 0));
+        ctx.fillStyle = '#a83030';
+        ctx.fillRect(rx + 4, y + 10, rFill, barH - 2);
       }
 
       // VS text
-      drawText(ctx, 'VS', GAME_W / 2 - 8, barStartY + 20, pal.colors[5] ?? '#ffffff', 2);
+      drawText(ctx, 'VS', GAME_W / 2 - 8, barStartY + 20, pal.colors[5], 2);
 
       // Minigame
       if (phase === 'minigame' || phase === 'result') {
@@ -200,7 +244,9 @@ export const createBossBattleScene = (
       if (phase === 'statDisplay') {
         const remaining = Math.max(0, 3 - statDisplayTimer);
         if (Math.floor(remaining * 3) % 2 === 0) {
-          drawText(ctx, 'GET READY...', GAME_W / 2 - 40, GAME_H / 2 + 30, pal.colors[5] ?? '#ffffff', 2);
+          const readyText = 'GET READY...';
+          const readyW = measureText(readyText, 2);
+          drawText(ctx, readyText, (GAME_W - readyW) / 2, GAME_H / 2 + 30, pal.colors[0], 2);
         }
       }
 

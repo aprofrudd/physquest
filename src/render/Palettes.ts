@@ -1,39 +1,46 @@
-// GBC-style palettes: 4-6 colors each (index 0 = transparent/bg)
+// GBC-style palettes: 6 colors each
+// [0] = outline (near-black)
+// [1] = dark shade
+// [2] = mid shade
+// [3] = light shade
+// [4] = background (lightest)
+// [5] = accent (gold, red, etc)
+
 export interface Palette {
   name: string;
   colors: string[];
 }
 
 export const PALETTES = {
-  // Physiology Lab — cool blues
+  // Physiology Lab — cool blues on cream
   lab: {
     name: 'Physiology Lab',
-    colors: ['#0f1b2d', '#1b3a5c', '#2d6a9f', '#5ba3d9', '#a8d8f0', '#e8f4fd'],
+    colors: ['#080808', '#1b3a5c', '#4878a8', '#88b8d8', '#f0e8d8', '#d0a830'],
   },
-  // Gym Floor — warm reds
+  // Gym Floor — warm reds on white
   gym: {
     name: 'Gym Floor',
-    colors: ['#1a0a0a', '#5c1b1b', '#9f2d2d', '#d95b5b', '#f0a8a8', '#fde8e8'],
+    colors: ['#080808', '#5c1b1b', '#a83838', '#d88888', '#f8f0e8', '#d8c020'],
   },
-  // Outdoor Track — greens
+  // Outdoor Track — greens on light
   track: {
     name: 'Outdoor Track',
-    colors: ['#0a1a0a', '#1b5c1b', '#2d9f2d', '#5bd95b', '#a8f0a8', '#e8fde8'],
+    colors: ['#080808', '#1b5c28', '#38a848', '#88d898', '#f0f8e8', '#d87020'],
   },
-  // Boss Arena — dark/high contrast
+  // Boss Arena — purples on lavender
   boss: {
     name: 'Boss Arena',
-    colors: ['#0a0a0a', '#2a1a3a', '#5c2d8a', '#9f5bd9', '#d9a8f0', '#f0e8fd'],
+    colors: ['#080808', '#2a1a4a', '#6838a8', '#a878d8', '#e8e0f0', '#c83030'],
   },
   // UI / dialogue
   ui: {
     name: 'UI',
-    colors: ['#0f0f0f', '#1a1a2e', '#333366', '#6666aa', '#aaaadd', '#eeeeff'],
+    colors: ['#080808', '#303030', '#606060', '#a0a0a0', '#f8f8f0', '#3868b8'],
   },
   // Title screen
   title: {
     name: 'Title',
-    colors: ['#0a0a14', '#1a1a3a', '#2d2d6a', '#5b5bd9', '#a8a8f0', '#e8e8fd'],
+    colors: ['#080808', '#182848', '#3858a8', '#88a8d8', '#f0e8d8', '#d0a830'],
   },
 } as const;
 

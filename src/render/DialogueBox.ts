@@ -1,4 +1,3 @@
-import { drawBox } from './SpriteSheet';
 import { drawText, CHAR_W, CHAR_H } from './PixelFont';
 
 export const GAME_W = 256;
@@ -7,10 +6,45 @@ const BOX_H = 56;
 const BOX_Y = GAME_H - BOX_H - 4;
 const BOX_X = 4;
 const BOX_W = GAME_W - 8;
-const TEXT_X = BOX_X + 8;
-const TEXT_Y = BOX_Y + 8;
-const MAX_CHARS_PER_LINE = Math.floor((BOX_W - 16) / CHAR_W);
+const TEXT_X = BOX_X + 10;
+const TEXT_Y = BOX_Y + 10;
+const MAX_CHARS_PER_LINE = Math.floor((BOX_W - 20) / CHAR_W);
 const MAX_LINES = 3;
+
+// Pokemon-style double-line bordered box
+const drawPokemonBox = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number
+) => {
+  // Outer border (black)
+  ctx.fillStyle = '#080808';
+  ctx.fillRect(x, y, w, h);
+  // Inner border (dark)
+  ctx.fillStyle = '#303030';
+  ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
+  // White interior
+  ctx.fillStyle = '#f8f8f0';
+  ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
+};
+
+// Bouncing arrow sprite (small downward triangle)
+const drawBouncingArrow = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number
+) => {
+  const bounce = Math.floor(Math.sin(Date.now() / 150) * 2);
+  const ay = y + bounce;
+  ctx.fillStyle = '#303030';
+  // 7px wide triangle pointing down
+  ctx.fillRect(x, ay, 7, 1);
+  ctx.fillRect(x + 1, ay + 1, 5, 1);
+  ctx.fillRect(x + 2, ay + 2, 3, 1);
+  ctx.fillRect(x + 3, ay + 3, 1, 1);
+};
 
 export interface DialogueState {
   active: boolean;
@@ -86,7 +120,6 @@ export const updateDialogue = (
   const pageStart = state.currentLine;
   const pageEnd = Math.min(pageStart + MAX_LINES, state.lines.length);
   const pageLines = state.lines.slice(pageStart, pageEnd);
-  const lastLineOnPage = pageLines[pageLines.length - 1] ?? '';
 
   // Count total chars on this page
   const totalCharsOnPage = pageLines.reduce((sum, l) => sum + l.length, 0);
@@ -139,17 +172,24 @@ export const renderDialogue = (
 ) => {
   if (!state.active) return;
 
-  // Calculate box height — taller if choices are shown
-  const choiceExtra = state.choices && state.waitingForInput
-    ? state.choices.length * CHAR_H + 8
-    : 0;
-  const boxH = BOX_H + choiceExtra;
-  const boxY = GAME_H - boxH - 4;
+  // Choice window — separate Pokemon-style box above dialogue (right-aligned)
+  if (state.choices && state.waitingForInput) {
+    const choiceW = 120;
+    const choiceH = state.choices.length * CHAR_H + 12;
+    const choiceX = GAME_W - choiceW - 8;
+    const choiceY = BOX_Y - choiceH - 4;
+    drawPokemonBox(ctx, choiceX, choiceY, choiceW, choiceH);
+    for (let i = 0; i < state.choices.length; i++) {
+      const prefix = i === state.selectedChoice ? '>' : ' ';
+      const color = i === state.selectedChoice ? '#080808' : '#606060';
+      drawText(ctx, prefix + state.choices[i]!, choiceX + 8, choiceY + 6 + i * CHAR_H, color);
+    }
+  }
 
-  // Draw box
-  drawBox(ctx, BOX_X, boxY, BOX_W, boxH, '#0a0a14', '#aaaadd', 2);
+  // Main dialogue box
+  drawPokemonBox(ctx, BOX_X, BOX_Y, BOX_W, BOX_H);
 
-  // Draw text with typewriter effect
+  // Draw text with typewriter effect — dark text on light background
   const pageStart = state.currentLine;
   const pageEnd = Math.min(pageStart + MAX_LINES, state.lines.length);
   const pageLines = state.lines.slice(pageStart, pageEnd);
@@ -157,28 +197,15 @@ export const renderDialogue = (
   let charsDrawn = 0;
   for (let i = 0; i < pageLines.length; i++) {
     const line = pageLines[i]!;
-    const lineY = boxY + 8 + i * CHAR_H;
+    const lineY = TEXT_Y + i * CHAR_H;
     const visibleChars = Math.max(0, Math.min(line.length, state.charIndex - charsDrawn));
     const visibleText = line.slice(0, visibleChars);
-    drawText(ctx, visibleText, TEXT_X, lineY, '#eeeeff');
+    drawText(ctx, visibleText, TEXT_X, lineY, '#080808');
     charsDrawn += line.length;
   }
 
-  // Draw choices if text is done and choices exist
-  if (state.choices && state.waitingForInput) {
-    const choicesY = boxY + 8 + pageLines.length * CHAR_H + 4;
-    for (let i = 0; i < state.choices.length; i++) {
-      const prefix = i === state.selectedChoice ? '> ' : '  ';
-      const color = i === state.selectedChoice ? '#5b5bd9' : '#aaaadd';
-      drawText(ctx, prefix + state.choices[i]!, TEXT_X, choicesY + i * CHAR_H, color);
-    }
-  }
-
-  // Draw advance indicator
+  // Bouncing advance arrow (Pokemon style)
   if (state.waitingForInput && !state.choices) {
-    const blinkOn = Math.floor(Date.now() / 400) % 2 === 0;
-    if (blinkOn) {
-      drawText(ctx, 'V', BOX_X + BOX_W - 14, boxY + boxH - 12, '#aaaadd');
-    }
+    drawBouncingArrow(ctx, BOX_X + BOX_W - 16, BOX_Y + BOX_H - 14);
   }
 };

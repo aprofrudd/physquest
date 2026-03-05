@@ -133,9 +133,9 @@ export const createOverworldScene = (
     },
 
     render(ctx: CanvasRenderingContext2D) {
-      // Clear
+      // Clear with background color
       const pal = PALETTES[currentMap.palette];
-      ctx.fillStyle = pal.colors[0];
+      ctx.fillStyle = pal.colors[4];
       ctx.fillRect(0, 0, GAME_W, GAME_H);
 
       // Render tile map (no scrolling — single screen)
@@ -148,7 +148,7 @@ export const createOverworldScene = (
           NPC_SPRITE,
           npc.x * TILE_SIZE,
           npc.y * TILE_SIZE,
-          SPRITE_COLORS['default']!
+          SPRITE_COLORS['npc_athlete']!
         );
       }
 

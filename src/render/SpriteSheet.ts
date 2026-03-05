@@ -61,3 +61,20 @@ export const drawBox = (
     h - borderWidth * 2
   );
 };
+
+// Pokemon-style double-bordered box — outer black, inner dark, white fill
+export const drawPokemonBox = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  borderColor: string = '#303030'
+) => {
+  ctx.fillStyle = '#080808';
+  ctx.fillRect(Math.floor(x), Math.floor(y), w, h);
+  ctx.fillStyle = borderColor;
+  ctx.fillRect(Math.floor(x + 2), Math.floor(y + 2), w - 4, h - 4);
+  ctx.fillStyle = '#f8f8f0';
+  ctx.fillRect(Math.floor(x + 4), Math.floor(y + 4), w - 8, h - 8);
+};

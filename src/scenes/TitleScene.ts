@@ -5,6 +5,41 @@ import { drawText, measureText } from '../render/PixelFont';
 import { PALETTES } from '../render/Palettes';
 import { GAME_W, GAME_H } from '../render/DialogueBox';
 
+// Simple logo sprite: 48x16 clipboard/whistle icon (drawn at 1x scale)
+const LOGO_SPRITE: number[][] = [
+  [0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  [0,0,0,0,1,4,4,4,4,4,4,4,4,4,4,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  [0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0],
+  [0,0,0,1,4,4,4,4,4,4,4,4,4,4,4,4,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,5,5,5,1,0,0,0,0,0,0,0,0,0,0],
+  [0,0,0,1,4,1,1,1,4,1,1,4,1,1,4,4,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,5,5,5,5,5,1,0,0,0,0,0,0,0,0,0],
+  [0,0,0,1,4,4,4,4,4,4,4,4,4,4,4,4,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,5,1,1,1,5,1,0,0,0,0,0,0,0,0,0],
+  [0,0,0,1,4,1,1,4,1,1,1,4,1,4,4,4,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,1,1,0,0,0,0,0,0,0,0,0,0],
+  [0,0,0,1,4,4,4,4,4,4,4,4,4,4,4,4,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0],
+  [0,0,0,1,4,1,4,1,1,4,1,1,4,1,4,4,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0],
+  [0,0,0,1,4,4,4,4,4,4,4,4,4,4,4,4,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0],
+  [0,0,0,1,4,1,1,1,4,1,4,1,1,1,4,4,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0],
+  [0,0,0,1,4,4,4,4,4,4,4,4,4,4,4,4,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0],
+  [0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+];
+
+// Draw logo sprite using palette colors
+const drawLogo = (ctx: CanvasRenderingContext2D, x: number, y: number, colors: string[]) => {
+  for (let row = 0; row < LOGO_SPRITE.length; row++) {
+    const spriteRow = LOGO_SPRITE[row]!;
+    for (let col = 0; col < spriteRow.length; col++) {
+      const idx = spriteRow[col];
+      if (idx === 0) continue;
+      const color = colors[idx!];
+      if (!color) continue;
+      ctx.fillStyle = color;
+      ctx.fillRect(Math.floor(x + col), Math.floor(y + row), 1, 1);
+    }
+  }
+};
+
 export const createTitleScene = (
   input: Input,
   sceneManager: SceneManager
@@ -27,47 +62,63 @@ export const createTitleScene = (
     render(ctx: CanvasRenderingContext2D) {
       const pal = PALETTES.title;
 
-      // Background
-      ctx.fillStyle = pal.colors[0];
+      // Background — light (GBC style)
+      ctx.fillStyle = pal.colors[4];
       ctx.fillRect(0, 0, GAME_W, GAME_H);
 
-      // Decorative pixels
+      // Double-line border frame around screen
+      ctx.fillStyle = pal.colors[0];
+      ctx.fillRect(0, 0, GAME_W, 3);
+      ctx.fillRect(0, GAME_H - 3, GAME_W, 3);
+      ctx.fillRect(0, 0, 3, GAME_H);
+      ctx.fillRect(GAME_W - 3, 0, 3, GAME_H);
       ctx.fillStyle = pal.colors[1];
-      for (let i = 0; i < 40; i++) {
-        const x = (i * 37 + Math.floor(timer * 10)) % GAME_W;
-        const y = (i * 53) % GAME_H;
-        ctx.fillRect(x, y, 2, 2);
-      }
+      ctx.fillRect(3, 3, GAME_W - 6, 2);
+      ctx.fillRect(3, GAME_H - 5, GAME_W - 6, 2);
+      ctx.fillRect(3, 3, 2, GAME_H - 6);
+      ctx.fillRect(GAME_W - 5, 3, 2, GAME_H - 6);
 
-      // Title
+      // Title "PHYSQUEST" at 3x with 1px drop shadow
       const title = 'PHYSQUEST';
       const titleW = measureText(title, 3);
-      drawText(ctx, title, (GAME_W - titleW) / 2, 50, pal.colors[4], 3);
+      const titleX = (GAME_W - titleW) / 2;
+      // Drop shadow
+      drawText(ctx, title, titleX + 1, 31, pal.colors[1], 3);
+      // Main title
+      drawText(ctx, title, titleX, 30, pal.colors[5], 3);
 
       // Subtitle
       const sub = 'SPORTS SCIENCE ADVENTURE';
       const subW = measureText(sub, 1);
-      drawText(ctx, sub, (GAME_W - subW) / 2, 80, pal.colors[3]);
+      drawText(ctx, sub, (GAME_W - subW) / 2, 56, pal.colors[1]);
 
-      // Decorative line
+      // Horizontal divider
       ctx.fillStyle = pal.colors[2];
-      ctx.fillRect(40, 100, GAME_W - 80, 2);
+      ctx.fillRect(30, 68, GAME_W - 60, 2);
+
+      // Logo sprite
+      drawLogo(ctx, (GAME_W - 48) / 2, 76, pal.colors as unknown as string[]);
+
+      // Horizontal divider
+      ctx.fillStyle = pal.colors[2];
+      ctx.fillRect(30, 98, GAME_W - 60, 2);
 
       // Instructions
       const inst1 = 'ARROWS TO MOVE';
       const inst2 = 'SPACE TO INTERACT';
-      drawText(ctx, inst1, (GAME_W - measureText(inst1)) / 2, 120, pal.colors[3]);
-      drawText(ctx, inst2, (GAME_W - measureText(inst2)) / 2, 132, pal.colors[3]);
+      drawText(ctx, inst1, (GAME_W - measureText(inst1)) / 2, 110, pal.colors[1]);
+      drawText(ctx, inst2, (GAME_W - measureText(inst2)) / 2, 122, pal.colors[1]);
 
-      // Press start (blinking)
-      if (Math.floor(timer * 2) % 2 === 0) {
+      // Press start — Pokemon-style blink (500ms on, 250ms off)
+      const blinkCycle = (Date.now() % 750);
+      if (blinkCycle < 500) {
         const start = 'PRESS SPACE TO START';
         const startW = measureText(start, 2);
-        drawText(ctx, start, (GAME_W - startW) / 2, 170, pal.colors[5], 2);
+        drawText(ctx, start, (GAME_W - startW) / 2, 155, pal.colors[0], 2);
       }
 
       // Version
-      drawText(ctx, 'V1.0', 4, GAME_H - 12, pal.colors[2]);
+      drawText(ctx, 'V1.0', 8, GAME_H - 14, pal.colors[2]);
     },
   };
 };
