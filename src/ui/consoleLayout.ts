@@ -1,11 +1,12 @@
 // Pure layout maths for the console shell (no DOM access).
 //
-// The CSS in console.css lays the handheld out with a grid whose sizes are multiples of two
-// lengths this module chooses: `u` (plastic details, type) and `c` (the D-pad arm / button size,
-// never below the 44px touch minimum). The numbers below mirror the grid rows in console.css;
-// keep the two in step.
+// The screen comes first: the handheld keeps only a thin bezel, a compact brand row (shown when there
+// is height to spare) and the controls, and every remaining pixel goes to the picture. The CSS in
+// console.css lays the handheld out with a grid sized from the lengths chosen here: `u` (plastic
+// details, type), `c` (the D-pad arm / button size, never below the 44px touch minimum), `bz` (bezel
+// thickness), `pad` (plastic margin) and `gap` (between rows). Keep the two files in step.
 
-export type ConsoleMode = 'portrait' | 'landscape' | 'compact';
+export type ConsoleMode = 'portrait' | 'compact';
 
 export interface ConsoleLayout {
   mode: ConsoleMode;
@@ -19,22 +20,18 @@ export interface ConsoleLayout {
   /** Screen slot (the room the display canvas is centred in). */
   sw: number;
   sh: number;
-  /** Width of the D-pad / A-B columns in the landscape modes. */
+  /** Width of the D-pad / A-B columns beside the screen (landscape). */
   side: number;
-  /** Plastic between the console edge and the bezel (left and right). */
+  /** Plastic between the console edge and everything inside it. */
   pad: number;
-  /** Bezel column beside the screen: holds the power LED. */
-  led: number;
-  /** Bezel edge on the other side of the screen. */
-  edge: number;
-  /** The LED column is wide enough for the "POWER" label at its minimum size; otherwise just the dot. */
-  ledLabel: boolean;
-  /** The bezel caption ("DOT MATRIX ...") fits at its minimum size; otherwise it is dropped. */
-  caps: boolean;
-  /** Compact landscape only: the brand row has room (on very short windows it makes way for the pad). */
+  /** Bezel thickness around the screen. */
+  bz: number;
+  /** Space between the rows of the portrait handheld. */
+  gap: number;
+  /** Height of the portrait brand row. */
+  brandH: number;
+  /** The brand row has room; on short windows it makes way for the screen and controls. */
   brand: boolean;
-  /** Smallest phones: whole-pixel snapping must cost very little before it is worth a smaller screen. */
-  tight: boolean;
   /** Uniform shrink (<= 1) applied only when the viewport is too small for the smallest layout. */
   fit: number;
 }
@@ -54,23 +51,26 @@ export interface DisplayScale {
 }
 
 export const MIN_TOUCH = 44;
-/** Desktop cap: the screen never grows past 3 CSS px per game pixel (768x672 for a 256x224 game). */
-export const MAX_CSS_SCALE = 3;
-/** Snap to whole device pixels per game pixel when that costs no more than 15% of the size. */
-const SNAP_RATIO = 0.85;
-/** ...but on the smallest phones every CSS pixel of glass counts: only snap for a 5% cost or less. */
-const TIGHT_SNAP_RATIO = 0.95;
+/** Largest screen: 4 CSS px per game pixel (1024x896 for a 256x224 game). */
+export const MAX_CSS_SCALE = 4;
+/**
+ * Snap to whole device pixels per game pixel only when that is cheap. On high-density screens a
+ * fractional ("sharp bilinear") picture is barely distinguishable, so size wins; at 1x a fractional
+ * scale visibly softens the pixels, so a bigger cut is worth paying for crispness.
+ */
+const SNAP_RATIO_HIGH_DPR = 0.94;
+const SNAP_RATIO_LOW_DPR = 0.85;
 /** Layout rounds to 1/64 px; without this slack an exact whole scale could floor to the one below. */
 const SNAP_SLACK = 0.005;
 /** Smallest type on the plastic (CSS px): every visible console label stays at or above this. */
 export const MIN_LABEL = 8;
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
-const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 
 /** d (device px per game px) -> d', whole when the snap is cheap enough. */
-const snapScale = (d: number, ratio: number = SNAP_RATIO): number => {
+const snapScale = (d: number, dpr: number): number => {
   const whole = Math.floor(d + SNAP_SLACK);
+  const ratio = dpr >= 2 ? SNAP_RATIO_HIGH_DPR : SNAP_RATIO_LOW_DPR;
   return whole >= 1 && whole / d >= ratio ? whole : d;
 };
 
@@ -86,10 +86,9 @@ export const pickDisplayScale = (
   dpr: number,
   gameW: number,
   gameH: number,
-  tight = false,
 ): DisplayScale => {
-  const s = Math.min(availW / gameW, availH / gameH);
-  const dp = snapScale(Math.max(s * dpr, 0.01), tight ? TIGHT_SNAP_RATIO : SNAP_RATIO);
+  const s = Math.min(availW / gameW, availH / gameH, MAX_CSS_SCALE);
+  const dp = snapScale(Math.max(s * dpr, 0.01), dpr);
   const k = clamp(Math.ceil(dp - 1e-9), 1, 8);
   return {
     d: dp,
@@ -100,149 +99,72 @@ export const pickDisplayScale = (
   };
 };
 
-// Bezel chrome around the screen slot, in u: 10 LED column + 4.5 right edge; 6.5 head + 4.5 foot.
-const LED_U = 10;
-const EDGE_U = 4.5;
-const BEZEL_X_U = LED_U + EDGE_U;
-const BEZEL_Y_U = 11;
-
-/**
- * Does the bezel caption fit between the head's padding and its two rules (>= 14px each)?
- * Width of the caption: about 26 em at the type size console.css gives it.
- */
-const CAPS_EM = 26;
-const capsFit = (bezelW: number, u: number): boolean => {
-  const size = Math.max(MIN_LABEL, 1.95 * u);
-  return bezelW - 2 * 3.2 * u - 2 * 1.8 * u - CAPS_EM * size >= 28;
-};
-
-/** The "POWER" label is about 4 em wide (heavy sans, letter-spaced); it needs the LED column to itself. */
-const LED_LABEL_EM = 4.1;
-const ledLabelFit = (led: number, u: number): boolean =>
-  led >= LED_LABEL_EM * Math.max(MIN_LABEL, 1.75 * u) + 4;
-
-// --- Portrait: a vertical handheld, width-driven -------------------------------------------
-// Console width = 100u. The grid rows (console.css) are: top strip 5u | bezel (11u + screen) |
-// brand 9u | D-pad/AB 3.4c + 3.5u gap | bottom row max(46px, 9u), plus 3.5u of bottom padding.
-const PORTRAIT_FIXED_U = 5 + BEZEL_Y_U + 9 + 3.5 + 3.5;
-/** Narrowest portrait body whose controls (44px arms and buttons) still fit side by side. */
-const PORTRAIT_MIN_W = 308;
-/** Never stretch the body past a 1 : 1.9 brick: spare height on tall phones stays page, not plastic. */
-const PORTRAIT_MAX_ASPECT = 1.9;
-
-// Narrow phones. The standard chrome (5u of plastic each side, a 10u LED column, a 4.5u bezel edge)
-// leaves the screen 75.5% of the body: about 232px on a 320px-wide phone, under one CSS pixel per game
-// pixel. Up to SLIM_END_W the chrome thins out (the LED column shrinks to a dot) until the screen
-// reaches about 90% of the body. The ramp keeps the screen size smooth between phones.
-const SLIM_START_W = 316;
-const SLIM_END_W = 350;
-/** Chrome in u at the thin end of the ramp: plastic each side, LED column, bezel edge. */
-const SLIM_PAD_U = 2;
-const SLIM_LED_U = 3.4;
-const SLIM_EDGE_U = 2.2;
-/** Body widths up to this count as the smallest phones (viewports up to ~340px). */
-const TIGHT_MAX_W = 336;
+// --- Portrait: screen on top, controls below, width-driven -----------------------------------
+// Grid rows (console.css): bezel | brand | spacer (1fr) | D-pad and A-B | SOUND, SELECT, START.
+const PORTRAIT_MIN_W = 308; // narrowest body whose 44px controls still fit side by side
+const CONTROLS_C = 3.4; // D-pad box (3 arms + tap slop) and the A-B pill with its downward shift, in c
+const META_H = 46; // the SELECT / START row (pill, label, touch target)
+const PORTRAIT_MAX_ASPECT = 2.2; // never a taller brick than this; spare height stays page
 
 const solvePortrait = (availW: number, availH: number, gameW: number, gameH: number): Metrics => {
-  const maxW = clamp(0.58 * availH, 460, 600);
-  const cw = Math.max(Math.min(availW, maxW), PORTRAIT_MIN_W); // narrower viewports shrink via `fit`
+  const cw = Math.max(Math.min(availW, clamp(0.75 * availH, 460, 900)), PORTRAIT_MIN_W);
   const u = cw / 100;
-  const c = clamp(0.14 * cw, MIN_TOUCH, 62);
-  const t = clamp((cw - SLIM_START_W) / (SLIM_END_W - SLIM_START_W), 0, 1);
-  const pad = lerp(SLIM_PAD_U, 5, t) * u;
-  const led = lerp(SLIM_LED_U, LED_U, t) * u;
-  const edge = lerp(SLIM_EDGE_U, EDGE_U, t) * u;
-  const fixedH = PORTRAIT_FIXED_U * u + 3.4 * c + Math.max(46, 9 * u);
-  // A short viewport shrinks the screen rather than the controls
-  const swByHeight = ((availH - fixedH) * gameW) / gameH;
-  const sw = Math.max(Math.min(cw - 2 * pad - led - edge, swByHeight), 160); // below this `fit` takes over
-  const sh = (sw * gameH) / gameW;
-  // Fill the height on phones, but never stretch past the brick cap
-  const ch = Math.max(fixedH + sh, Math.min(availH, PORTRAIT_MAX_ASPECT * cw));
-  return {
-    mode: 'portrait',
-    u,
-    c,
-    cw,
-    ch,
-    sw,
-    sh,
-    side: 0,
-    pad,
-    led,
-    edge,
-    ledLabel: ledLabelFit(led, u),
-    caps: capsFit(led + sw + edge, u),
-    brand: true,
-    tight: cw <= TIGHT_MAX_W,
-  };
+  const pad = clamp(0.022 * cw, 5, 12);
+  const bz = clamp(0.02 * cw, 5, 12);
+  const gap = clamp(0.02 * cw, 6, 14);
+  const brandH = clamp(0.07 * cw, 22, 40);
+  const cMax = clamp(0.16 * cw, MIN_TOUCH, 66);
+
+  const height = (sh: number, c: number, brand: boolean) =>
+    2 * pad + sh + 2 * bz + (brand ? brandH : 0) + CONTROLS_C * c + META_H + 4 * gap;
+
+  let sw = cw - 2 * pad - 2 * bz;
+  let sh = (sw * gameH) / gameW;
+  // Short window: controls give way first (down to the touch minimum), then the brand row, and only
+  // then the screen
+  let c = cMax;
+  if (height(sh, c, true) > availH) c = clamp(cMax - (height(sh, cMax, true) - availH) / CONTROLS_C, MIN_TOUCH, cMax);
+  const brand = height(sh, c, true) <= availH;
+  if (height(sh, c, brand) > availH) {
+    sh = Math.max(availH - height(0, c, brand), 140); // below this `fit` takes over
+    sw = (sh * gameW) / gameH;
+  }
+  const ch = Math.max(height(sh, c, brand), Math.min(availH, PORTRAIT_MAX_ASPECT * cw));
+  return { mode: 'portrait', u, c, cw, ch, sw, sh, side: 0, pad, bz, gap, brandH, brand };
 };
 
-// --- Landscape: D-pad | bezel | A-B, solved from the screen height -------------------------
-// Compact (short windows) has three rows, shared by the side columns: brand | D-pad (A-B) | SELECT
-// (START). Their sizes are mirrored in console.css, so the pad can never reach a neighbour.
-const brandH = (u: number): number => 6.2 * u + 1.2 * u + Math.max(MIN_LABEL, 1.9 * u); // logo + gap + tag
-const COMPACT_PILL_PAD_U = 2.5; // above and below the START/SELECT pill inside its button
-const compactPillH = (u: number): number =>
+// --- Landscape: D-pad | screen | A-B, solved from the screen height ---------------------------
+// Three rows in each side column, beside a bezel that takes the full height: brand (left) and the
+// SOUND switch (right) | D-pad (left) and A-B (right) | SELECT (left) and START (right).
+const brandColumnH = (u: number): number => 6.2 * u + 1.2 * u + Math.max(MIN_LABEL, 1.9 * u); // logo + gap + tag
+const PILL_PAD_U = 2.5; // above and below the START/SELECT pill inside its button
+const pillRowH = (u: number): number =>
   Math.max(
     46,
-    (2 * COMPACT_PILL_PAD_U + 3.6) * u +
+    (2 * PILL_PAD_U + 3.6) * u +
       Math.max(MIN_LABEL, 2.1 * u) + // label
       Math.max(MIN_LABEL, 1.85 * u) + 2, // room for the keyboard hint under the label
   );
-/** Below this window height the compact brand row makes way for the pad and buttons. */
-const COMPACT_BRAND_MIN_H = 236;
+/** Below this window height the brand makes way for the pad and buttons. */
+const BRAND_MIN_H = 236;
 
-const landscapeMetrics = (
-  sh: number,
-  compact: boolean,
-  brand: boolean,
-  gameW: number,
-  gameH: number,
-): Metrics => {
+const landscapeMetrics = (sh: number, brand: boolean, gameW: number, gameH: number): Metrics => {
   const u = clamp(3 + (sh - 300) * 0.008, 3, 6.2);
-  const c = clamp(0.085 * sh, MIN_TOUCH, 62);
+  const c = clamp(0.1 * sh, MIN_TOUCH, 64);
+  const bz = clamp(0.022 * sh, 5, 14);
+  const pad = clamp(0.02 * sh, 5, 14);
   const sw = (sh * gameW) / gameH;
   const side = 3.45 * c + 2 * u;
-  const pad = compact ? 2.5 * u : 3 * u;
-  const cw = 2 * side + BEZEL_X_U * u + sw + 2 * pad;
-  // compact: bezel only (START/SELECT live in the side columns); tall: top strip, bezel, under-bezel row.
-  // On narrow phones the screen is small, so the side columns set the height: the top row, the D-pad
-  // box (arms plus tap slop) and the START/SELECT row, one above the other, plus the console padding.
-  const sideColumnH = Math.max(brand ? brandH(u) : 0, 3.6 * u) + 3.3 * c + compactPillH(u) + 4 * u;
-  const ch = compact
-    ? Math.max(BEZEL_Y_U * u + sh + 4 * u, sideColumnH)
-    : (5 + BEZEL_Y_U + 4.5) * u + sh + Math.max(46, 12 * u);
-  return {
-    mode: compact ? 'compact' : 'landscape',
-    u,
-    c,
-    cw,
-    ch,
-    sw,
-    sh,
-    side,
-    pad,
-    led: LED_U * u,
-    edge: EDGE_U * u,
-    ledLabel: ledLabelFit(LED_U * u, u),
-    caps: capsFit(BEZEL_X_U * u + sw, u),
-    brand,
-    tight: false,
-  };
+  const cw = 2 * side + sw + 2 * bz + 2 * pad;
+  const sideColumnH = Math.max(brand ? brandColumnH(u) : 0, 3.6 * u) + 3.3 * c + pillRowH(u) + 4 * u;
+  const ch = Math.max(sh + 2 * bz + 2 * pad, sideColumnH + 2 * pad);
+  return { mode: 'compact', u, c, cw, ch, sw, sh, side, pad, bz, gap: 0, brandH: 0, brand };
 };
 
-const solveLandscape = (
-  availW: number,
-  availH: number,
-  gameW: number,
-  gameH: number,
-  dpr: number,
-): Metrics => {
-  const compact = availH < 560;
-  const brand = !compact || availH >= COMPACT_BRAND_MIN_H;
+const solveLandscape = (availW: number, availH: number, gameW: number, gameH: number, dpr: number): Metrics => {
+  const brand = availH >= BRAND_MIN_H;
   const fits = (sh: number): boolean => {
-    const m = landscapeMetrics(sh, compact, brand, gameW, gameH);
+    const m = landscapeMetrics(sh, brand, gameW, gameH);
     return m.cw <= availW && m.ch <= availH;
   };
   let sh = gameH * MAX_CSS_SCALE;
@@ -258,9 +180,9 @@ const solveLandscape = (
   }
   // When whole device pixels per game pixel are cheap, size the screen to exactly that so the
   // bezel hugs the picture instead of growing a margin the picture cannot use
-  const d = snapScale((sh / gameH) * dpr);
+  const d = snapScale((sh / gameH) * dpr, dpr);
   if (Number.isInteger(d)) sh = (d * gameH) / dpr;
-  return landscapeMetrics(sh, compact, brand, gameW, gameH);
+  return landscapeMetrics(sh, brand, gameW, gameH);
 };
 
 export const solveLayout = (

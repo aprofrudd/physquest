@@ -38,7 +38,6 @@ export const mountConsole = (root: HTMLElement, input: Input, opts: ConsoleOptio
 
   let backingK = 0;
   let fit = 1; // emergency uniform shrink of the whole console (see solveLayout)
-  let tight = false; // smallest phones: see pickDisplayScale
 
   const present = () => {
     if (backingK === 0) return;
@@ -50,7 +49,7 @@ export const mountConsole = (root: HTMLElement, input: Input, opts: ConsoleOptio
     const rect = dom.screen.getBoundingClientRect(); // visual size: includes any fit shrink
     if (rect.width < 1 || rect.height < 1) return;
     const dpr = window.devicePixelRatio || 1;
-    const scale = pickDisplayScale(rect.width, rect.height, dpr, gw, gh, tight);
+    const scale = pickDisplayScale(rect.width, rect.height, dpr, gw, gh);
     if (scale.k !== backingK) {
       backingK = scale.k;
       display.width = gw * scale.k; // resizing resets the context state
@@ -92,14 +91,12 @@ export const mountConsole = (root: HTMLElement, input: Input, opts: ConsoleOptio
     style.setProperty('--sh', `${l.sh}px`);
     style.setProperty('--side', `${l.side}px`);
     style.setProperty('--pad', `${l.pad}px`);
-    style.setProperty('--led', `${l.led}px`);
-    style.setProperty('--bezel-r', `${l.edge}px`);
+    style.setProperty('--bz', `${l.bz}px`);
+    style.setProperty('--gap', `${l.gap}px`);
+    style.setProperty('--brand', `${l.brandH}px`);
     fit = l.fit;
-    tight = l.tight;
     style.transform = fit < 1 ? `scale(${fit})` : '';
     dom.body.dataset.mode = l.mode;
-    dom.body.dataset.ledLabel = l.ledLabel ? 'on' : 'off';
-    dom.body.dataset.caps = l.caps ? 'on' : 'off';
     dom.body.dataset.brand = l.brand ? 'on' : 'off';
   };
 

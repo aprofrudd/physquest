@@ -84,11 +84,6 @@ const TEMPLATE = `
       </button>
     </div>
     <div class="pq-bezel">
-      <div class="pq-bezel-head" aria-hidden="true">
-        <span class="pq-lines"><i></i><i></i></span>
-        <span class="pq-caps">DOT MATRIX · SPORTS SCIENCE EDITION</span>
-        <span class="pq-lines"><i></i><i></i></span>
-      </div>
       <div class="pq-led" aria-hidden="true"><i></i><span>POWER</span></div>
       <div class="pq-screen">
         <div class="pq-lcd"><canvas class="pq-display" role="img" aria-label="PhysQuest game screen"></canvas></div>

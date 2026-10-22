@@ -97,11 +97,11 @@ body {
   --sh: 261px;
   --side: 160px;
   --slop: calc(var(--c) * 0.15);
-  /* Plastic beside the bezel, the bezel column beside the screen (power LED), the bezel's far edge;
-     the script thins all three out on narrow phones */
-  --pad: calc(var(--u) * 5);
-  --led: calc(var(--u) * 10);
-  --bezel-r: calc(var(--u) * 4.5);
+  /* Plastic margin, bezel thickness, row gap and brand row height: set by the script (consoleLayout.ts) */
+  --pad: 8px;
+  --bz: 8px;
+  --gap: 8px;
+  --brand: 27px;
 
   position: relative;
   box-sizing: border-box;
@@ -148,29 +148,14 @@ body {
   outline-offset: 2px;
 }
 
-/* ---------- Top edge: sound switch ---------- */
+/* ---------- Sound switch ---------- */
 
 .pq-top {
   position: relative;
-  z-index: 1; /* the switch's enlarged touch target reaches over the bezel head below it */
+  z-index: 1; /* the switch's enlarged touch target may reach over a neighbour's box */
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  padding-right: calc(var(--u) * 1.5);
   min-height: 0;
-}
-
-/* Moulded groove under the top lip, edge to edge */
-.pq-top::after {
-  content: '';
-  position: absolute;
-  left: calc(var(--pad) * -1);
-  right: calc(var(--pad) * -1);
-  bottom: 0;
-  height: 2px;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0.06));
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
-  pointer-events: none;
 }
 
 .pq-switch {
@@ -241,10 +226,11 @@ body {
 .pq-bezel {
   position: relative;
   display: grid;
-  grid-template-columns: var(--led) var(--sw) var(--bezel-r);
-  grid-template-rows: calc(var(--u) * 6.5) var(--sh) calc(var(--u) * 4.5);
+  grid-template-columns: var(--bz) var(--sw) var(--bz);
+  grid-template-rows: var(--bz) var(--sh) var(--bz);
   box-sizing: content-box;
-  border-radius: calc(var(--u) * 2) calc(var(--u) * 2) calc(var(--u) * 11) calc(var(--u) * 2);
+  /* The signature big corner, kept small enough (<= 3.4 bezels) never to clip the glass */
+  border-radius: calc(var(--bz) * 1.2) calc(var(--bz) * 1.2) calc(var(--bz) * 3) calc(var(--bz) * 1.2);
   background: linear-gradient(180deg, #5b5e71 0%, var(--pq-bezel) 24%, #464959 100%);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.16),
@@ -253,81 +239,24 @@ body {
     0 2px 0 1px rgba(255, 255, 255, 0.4);
 }
 
-.pq-bezel-head {
-  grid-column: 1 / -1;
-  grid-row: 1;
-  display: flex;
-  align-items: center;
-  gap: calc(var(--u) * 1.8);
-  padding: 0 calc(var(--u) * 3.2) 0 calc(var(--u) * 3.2);
-  overflow: hidden;
-}
-
-.pq-lines {
-  display: flex;
-  flex: 1 1 0;
-  flex-direction: column;
-  gap: max(1.5px, calc(var(--u) * 0.45));
-  min-width: 0;
-}
-
-.pq-lines i {
-  display: block;
-  height: max(1.5px, calc(var(--u) * 0.45));
-  border-radius: 1px;
-}
-
-.pq-lines i:first-child {
-  background: var(--pq-maroon);
-}
-
-.pq-lines i:last-child {
-  background: var(--pq-navy);
-}
-
-.pq-caps {
-  flex: none;
-  color: var(--pq-caps);
-  font-size: max(8px, calc(var(--u) * 1.95));
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: 0.1em;
-  white-space: nowrap;
-}
-
-/* Too narrow for the caption at a legible size: leave one long rule instead of caption between two */
-.pq-console[data-caps='off'] .pq-caps,
-.pq-console[data-caps='off'] .pq-lines:first-child {
-  display: none;
-}
-
+/* Power LED: a small dot in the left bezel strip, as on the original handheld */
 .pq-led {
   grid-column: 1;
   grid-row: 2;
   align-self: start;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: calc(var(--u) * 1.5);
-  margin-top: calc(var(--sh) * 0.3);
-  color: var(--pq-caps);
-  font-size: max(8px, calc(var(--u) * 1.75));
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
+  justify-self: center;
+  margin-top: calc(var(--sh) * 0.14);
 }
 
-/* A narrow LED column (narrow phones, short windows) has room for the dot only, not its label */
-.pq-console[data-led-label='off'] .pq-led span {
+.pq-led span {
   display: none;
 }
 
 .pq-led i {
   position: relative;
   display: block;
-  width: calc(var(--u) * 2.2);
-  height: calc(var(--u) * 2.2);
+  width: max(4px, calc(var(--bz) * 0.55));
+  height: max(4px, calc(var(--bz) * 0.55));
   border-radius: 50%;
   background: radial-gradient(circle at 36% 30%, #ffc0b8 0 14%, #ff3b30 46%, #a9120c 100%);
   box-shadow:
@@ -339,7 +268,7 @@ body {
 .pq-led i::after {
   content: '';
   position: absolute;
-  inset: calc(var(--u) * -1.6);
+  inset: calc(var(--bz) * -0.35);
   border-radius: 50%;
   background: radial-gradient(circle, rgba(255, 59, 48, 0.55) 0%, rgba(255, 59, 48, 0) 70%);
   animation: pq-pulse 3.2s ease-in-out infinite;
@@ -707,27 +636,21 @@ body {
 }
 
 /* ================= Portrait ================= */
+/* Rows: screen | brand (when there is room) | spacer | D-pad and A-B | SOUND, SELECT and START.
+   The screen is as wide as the body allows; spare height goes to the spacer, keeping the controls
+   at the bottom where the thumbs are. */
 
 .pq-console[data-mode='portrait'] {
-  padding: 0 var(--pad) calc(var(--u) * 3.5);
-  border-radius: calc(var(--u) * 3) calc(var(--u) * 3) calc(var(--u) * 14) calc(var(--u) * 3);
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  grid-template-rows:
-    minmax(calc(var(--u) * 5), 0.3fr)
-    auto
-    minmax(calc(var(--u) * 9), 1.1fr)
-    minmax(calc(var(--c) * 3.4 + var(--u) * 3.5), 1fr)
-    minmax(max(46px, calc(var(--u) * 9)), 0.3fr);
-}
-
-[data-mode='portrait'] .pq-top {
-  grid-column: 1 / -1;
-  grid-row: 1;
+  padding: var(--pad);
+  border-radius: calc(var(--u) * 3) calc(var(--u) * 3) calc(var(--u) * 10) calc(var(--u) * 3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: auto auto minmax(0, 1fr) auto max(46px, calc(var(--u) * 9));
+  row-gap: var(--gap);
 }
 
 [data-mode='portrait'] .pq-bezel {
   grid-column: 1 / -1;
-  grid-row: 2;
+  grid-row: 1;
   justify-self: center;
 }
 
@@ -737,111 +660,84 @@ body {
 
 [data-mode='portrait'] .pq-brand {
   grid-column: 1 / -1;
-  grid-row: 3;
+  grid-row: 2;
   align-self: center;
   justify-self: start;
-  margin-left: calc(var(--u) * 2.5);
+  height: var(--brand);
+  align-items: center;
+  margin-left: calc(var(--pad) * 0.5);
+  gap: calc(var(--brand) * 0.4);
+}
+
+[data-mode='portrait'] .pq-logo {
+  font-size: calc(var(--brand) * 0.8);
+}
+
+[data-mode='portrait'] .pq-tag {
+  font-size: max(8px, calc(var(--brand) * 0.27));
+}
+
+.pq-console[data-mode='portrait'][data-brand='off'] .pq-brand {
+  display: none;
 }
 
 [data-mode='portrait'] .pq-dpad {
-  grid-column: 1 / 7;
+  grid-column: 1;
   grid-row: 4;
   align-self: end;
   justify-self: start;
-  margin: 0 0 calc(var(--u) * 3.5 - var(--slop)) calc(var(--u) * -1.5);
+  margin: 0 0 calc(var(--c) * 0.1 - var(--slop)) calc(var(--slop) * -0.5);
 }
 
 [data-mode='portrait'] .pq-ab {
-  grid-column: 7 / -1;
+  grid-column: 2;
   grid-row: 4;
   align-self: end;
   justify-self: end;
-  margin: 0 calc(var(--u) * -1) calc(var(--u) * 3.5 - var(--c) * 0.3) 0;
+  margin: 0 calc(var(--c) * -0.1) calc(var(--c) * 0.1) 0;
+}
+
+[data-mode='portrait'] .pq-top {
+  grid-column: 1;
+  grid-row: 5;
+  align-self: center;
+  justify-self: start;
+  margin-left: calc(var(--pad) * 0.5);
 }
 
 [data-mode='portrait'] .pq-meta {
   grid-column: 1 / -1;
   grid-row: 5;
-  align-self: end;
+  align-self: center;
   justify-self: center;
 }
 
 [data-mode='portrait'] .pq-speaker {
-  grid-column: 1 / -1;
+  grid-column: 2;
   grid-row: 5;
-  align-self: end;
+  align-self: center;
   justify-self: end;
-  margin: 0 calc(var(--u) * 3) calc(var(--u) * 1) 0;
+  padding-right: 0;
 }
 
 /* ================= Landscape ================= */
 
-.pq-console[data-mode='landscape'],
 .pq-console[data-mode='compact'] {
-  grid-template-columns: var(--side) calc(var(--u) * 14.5 + var(--sw)) var(--side);
+  grid-template-columns: var(--side) calc(var(--sw) + var(--bz) * 2) var(--side);
 }
 
-.pq-console[data-mode='landscape'] {
-  padding: 0 var(--pad) calc(var(--u) * 4.5);
-  border-radius: calc(var(--u) * 4) calc(var(--u) * 4) calc(var(--u) * 9) calc(var(--u) * 4);
-  grid-template-rows: calc(var(--u) * 5) auto minmax(0, 1fr);
-}
-
-[data-mode='landscape'] .pq-top {
-  grid-column: 1 / -1;
-  grid-row: 1;
-}
-
-[data-mode='landscape'] .pq-bezel {
-  grid-column: 2;
-  grid-row: 2;
-}
-
-[data-mode='landscape'] .pq-dpad {
-  grid-column: 1;
-  grid-row: 2;
-  align-self: center;
-  justify-self: center;
-}
-
-[data-mode='landscape'] .pq-ab {
-  grid-column: 3;
-  grid-row: 2;
-  align-self: center;
-  justify-self: center;
-}
-
-[data-mode='landscape'] .pq-under {
-  grid-column: 2;
-  grid-row: 3;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  padding: 0 calc(var(--u) * 2);
-}
-
-[data-mode='landscape'] .pq-brand,
 [data-mode='compact'] .pq-brand {
   flex-direction: column;
   align-items: flex-start;
   gap: calc(var(--u) * 1.2);
 }
 
-[data-mode='landscape'] .pq-brand {
-  justify-self: start;
-}
-
-[data-mode='landscape'] .pq-speaker {
-  justify-self: end;
-}
-
-/* ================= Compact: short landscape phones ================= */
-/* The screen takes the full height. START/SELECT move under the side clusters, and the side columns
-   are three rows shared with the bezel: brand (and the SOUND switch) | D-pad and A-B | SELECT and
-   START. The rows are sized by consoleLayout.ts so no control's box reaches another's. */
+/* The screen takes the full height. The side columns are three rows beside it: brand (left) and the
+   SOUND switch (right) | D-pad and A-B | SELECT and START. The rows are sized by consoleLayout.ts so
+   no control's box reaches another's. */
 
 .pq-console[data-mode='compact'] {
-  padding: calc(var(--u) * 2) var(--pad);
+  padding: var(--pad);
   border-radius: calc(var(--u) * 4);
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
