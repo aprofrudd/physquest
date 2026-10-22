@@ -501,14 +501,16 @@ const TILE_PATTERNS: Record<number, number[][]> = {
 
 // --- Tile cache: pre-render each (tileType, paletteId) to an offscreen canvas ---
 
-const tileCache = new Map<string, HTMLCanvasElement>();
-
-const getTileCacheKey = (tile: number, paletteId: PaletteId): string =>
-  `${tile}_${paletteId}`;
+// Indexed by palette, then tile number, so the per-frame path builds no string keys
+const tileCache = new Map<PaletteId, (HTMLCanvasElement | undefined)[]>();
 
 const renderTileToCache = (tile: number, paletteId: PaletteId): HTMLCanvasElement => {
-  const key = getTileCacheKey(tile, paletteId);
-  const cached = tileCache.get(key);
+  let byTile = tileCache.get(paletteId);
+  if (!byTile) {
+    byTile = [];
+    tileCache.set(paletteId, byTile);
+  }
+  const cached = byTile[tile];
   if (cached) return cached;
 
   const canvas = document.createElement('canvas');
@@ -537,12 +539,13 @@ const renderTileToCache = (tile: number, paletteId: PaletteId): HTMLCanvasElemen
     ctx.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
   }
 
-  tileCache.set(key, canvas);
+  byTile[tile] = canvas;
   return canvas;
 };
 
 // NPC tile renders as floor (sprite system draws the character)
 const NPC_FLOOR_ALIAS = T.FLOOR;
+const screenTile = (tile: number): number => (tile === T.NPC ? NPC_FLOOR_ALIAS : tile);
 
 export const isSolid = (tile: number): boolean => {
   return (
@@ -559,6 +562,8 @@ export const isSolid = (tile: number): boolean => {
     tile === T.MONITOR ||
     tile === T.TREADMILL ||
     tile === T.BENCH ||
+    tile === T.PLANT ||
+    tile === T.SIGN ||
     tile === T.NPC
   );
 };
@@ -571,6 +576,36 @@ export const isInteractable = (tile: number): boolean => {
   return tile === T.NPC || tile === T.EQUIP;
 };
 
+// Whole maps are baked once per palette. Map arrays are read-only at runtime, so keying by identity is safe.
+const bakedMaps = new WeakMap<number[][], Map<PaletteId, HTMLCanvasElement>>();
+
+const bakeMap = (map: number[][], paletteId: PaletteId): HTMLCanvasElement => {
+  let byPalette = bakedMaps.get(map);
+  if (!byPalette) {
+    byPalette = new Map<PaletteId, HTMLCanvasElement>();
+    bakedMaps.set(map, byPalette);
+  }
+  const cached = byPalette.get(paletteId);
+  if (cached) return cached;
+
+  const cols = map[0]?.length ?? 0;
+  const canvas = document.createElement('canvas');
+  canvas.width = cols * TILE_SIZE;
+  canvas.height = map.length * TILE_SIZE;
+  const ctx = canvas.getContext('2d')!;
+  for (let row = 0; row < map.length; row++) {
+    const mapRow = map[row];
+    if (!mapRow) continue;
+    for (let col = 0; col < cols; col++) {
+      const tile = mapRow[col];
+      if (tile === undefined || tile === T.EMPTY) continue;
+      ctx.drawImage(renderTileToCache(screenTile(tile), paletteId), col * TILE_SIZE, row * TILE_SIZE);
+    }
+  }
+  byPalette.set(paletteId, canvas);
+  return canvas;
+};
+
 export const renderTileMap = (
   ctx: CanvasRenderingContext2D,
   map: number[][],
@@ -580,29 +615,29 @@ export const renderTileMap = (
   viewW: number,
   viewH: number
 ) => {
+  // Map on screen from the origin with the view covering it: one blit of the baked map
+  const cols = map[0]?.length ?? 0;
+  if (cameraX === 0 && cameraY === 0 && cols > 0 && viewW >= cols * TILE_SIZE && viewH >= map.length * TILE_SIZE) {
+    ctx.drawImage(bakeMap(map, paletteId), 0, 0);
+    return;
+  }
+
   const startCol = Math.max(0, Math.floor(cameraX / TILE_SIZE));
   const startRow = Math.max(0, Math.floor(cameraY / TILE_SIZE));
-  const endCol = Math.min(
-    (map[0]?.length ?? 0),
-    Math.ceil((cameraX + viewW) / TILE_SIZE) + 1
-  );
+  const endCol = Math.min(cols, Math.ceil((cameraX + viewW) / TILE_SIZE) + 1);
   const endRow = Math.min(map.length, Math.ceil((cameraY + viewH) / TILE_SIZE) + 1);
 
   for (let row = startRow; row < endRow; row++) {
     const mapRow = map[row];
     if (!mapRow) continue;
     for (let col = startCol; col < endCol; col++) {
-      let tile = mapRow[col];
+      const tile = mapRow[col];
       if (tile === undefined || tile === T.EMPTY) continue;
-
-      // NPC tiles render as floor — the sprite system draws the character on top
-      if (tile === T.NPC) tile = NPC_FLOOR_ALIAS;
 
       const screenX = Math.floor(col * TILE_SIZE - cameraX);
       const screenY = Math.floor(row * TILE_SIZE - cameraY);
 
-      const cachedTile = renderTileToCache(tile, paletteId);
-      ctx.drawImage(cachedTile, screenX, screenY);
+      ctx.drawImage(renderTileToCache(screenTile(tile), paletteId), screenX, screenY);
     }
   }
 };

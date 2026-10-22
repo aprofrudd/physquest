@@ -1,12 +1,18 @@
 // Draw a sprite from a 2D pixel array using palette colors
 // Each cell is a palette index (0 = transparent)
-export const drawSprite = (
+
+// Rasterised once per (sprite, scale, colours). Keyed by the sprite array itself, so callers must pass
+// the same array each frame (a fresh copy per frame gets a fresh canvas).
+const spriteCache = new WeakMap<number[][], Map<string, HTMLCanvasElement>>();
+
+// Per-pixel fills, the original drawing method. Builds the sprite canvas and serves partial-alpha draws.
+const paintSprite = (
   ctx: CanvasRenderingContext2D,
   sprite: number[][],
   x: number,
   y: number,
   colors: string[],
-  scale: number = 1
+  scale: number
 ) => {
   for (let row = 0; row < sprite.length; row++) {
     const spriteRow = sprite[row];
@@ -17,14 +23,49 @@ export const drawSprite = (
       const color = colors[idx];
       if (!color) continue;
       ctx.fillStyle = color;
-      ctx.fillRect(
-        Math.floor(x + col * scale),
-        Math.floor(y + row * scale),
-        scale,
-        scale
-      );
+      ctx.fillRect(x + col * scale, y + row * scale, scale, scale);
     }
   }
+};
+
+const renderSprite = (sprite: number[][], colors: string[], scale: number): HTMLCanvasElement => {
+  let cols = 0;
+  for (const row of sprite) cols = Math.max(cols, row.length);
+  const canvas = document.createElement('canvas');
+  canvas.width = cols * scale;
+  canvas.height = sprite.length * scale;
+  paintSprite(canvas.getContext('2d')!, sprite, 0, 0, colors, scale);
+  return canvas;
+};
+
+export const drawSprite = (
+  ctx: CanvasRenderingContext2D,
+  sprite: number[][],
+  x: number,
+  y: number,
+  colors: string[],
+  scale: number = 1
+) => {
+  const sx = Math.floor(x);
+  const sy = Math.floor(y);
+  // Partial alpha: drawImage rounds the blend differently from fillRect, so draw per pixel instead
+  if (ctx.globalAlpha !== 1) {
+    paintSprite(ctx, sprite, sx, sy, colors, scale);
+    return;
+  }
+  let bySize = spriteCache.get(sprite);
+  if (!bySize) {
+    bySize = new Map<string, HTMLCanvasElement>();
+    spriteCache.set(sprite, bySize);
+  }
+  const key = `${scale}|${colors.join(',')}`;
+  let canvas = bySize.get(key);
+  if (!canvas) {
+    canvas = renderSprite(sprite, colors, scale);
+    bySize.set(key, canvas);
+  }
+  if (canvas.width === 0 || canvas.height === 0) return; // drawImage throws on an empty canvas
+  ctx.drawImage(canvas, sx, sy);
 };
 
 // Draw a filled rect with GBC style

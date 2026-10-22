@@ -2,7 +2,7 @@ import type { Scene } from './GameLoop';
 
 export type SceneId = 'title' | 'intro' | 'levelSelect' | 'overworld' | 'roomChallenge' | 'bossBattle' | 'levelClear';
 
-export const createSceneManager = () => {
+export const createSceneManager = (onSwitch?: (id: SceneId) => void) => {
   const scenes = new Map<SceneId, Scene>();
   let current: Scene | null = null;
   let currentId: SceneId | null = null;
@@ -18,6 +18,7 @@ export const createSceneManager = () => {
       if (!next) throw new Error(`Scene "${id}" not registered`);
       current = next;
       currentId = id;
+      onSwitch?.(id);
       if (current.onEnter) current.onEnter();
     },
 

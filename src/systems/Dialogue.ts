@@ -1,4 +1,5 @@
 import {
+  clearDialogue,
   createDialogueState,
   startDialogue,
   updateDialogue,
@@ -14,12 +15,12 @@ export interface DialogueSystem {
   update(dt: number, input: InputState): void;
   render(ctx: CanvasRenderingContext2D): void;
   isActive(): boolean;
+  /** Close any open dialogue and drop pending callbacks (call when leaving a scene abruptly). */
+  reset(): void;
 }
 
-export const createDialogueSystem = (): DialogueSystem => {
+export const createDialogueSystem = (onChoicesShown?: () => void): DialogueSystem => {
   const state = createDialogueState();
-  let upWasDown = false;
-  let downWasDown = false;
 
   return {
     state,
@@ -45,11 +46,9 @@ export const createDialogueSystem = (): DialogueSystem => {
     },
 
     update(dt: number, input: InputState) {
-      const upPressed = input.up && !upWasDown;
-      const downPressed = input.down && !downWasDown;
-      upWasDown = input.up;
-      downWasDown = input.down;
-      updateDialogue(state, dt, input.actionPressed, upPressed, downPressed);
+      const listShown = state.active && !!state.choices && state.waitingForInput;
+      updateDialogue(state, dt, input);
+      if (!listShown && state.active && state.choices && state.waitingForInput) onChoicesShown?.();
     },
 
     render(ctx: CanvasRenderingContext2D) {
@@ -58,6 +57,10 @@ export const createDialogueSystem = (): DialogueSystem => {
 
     isActive() {
       return state.active;
+    },
+
+    reset() {
+      clearDialogue(state);
     },
   };
 };

@@ -11,12 +11,13 @@ export const DIALOGUES: Record<string, DialogueLine[]> = {
     { text: 'Hey Coach! I am your athlete. Welcome to the Sports Performance Centre!' },
     { text: 'Each room has a challenge that will prepare us for the big event.' },
     { text: 'Complete all four rooms to build our stats, then face the rival in the arena!' },
+    { text: 'Tip: hold B to run, and press SELECT to check your objectives.' },
   ],
   hub_equip_left: [
     { text: 'Performance monitoring station. Check athlete data here between challenges.' },
   ],
   hub_equip_right: [
-    { text: 'Recovery station. Your science quality determines our athletes ceiling.' },
+    { text: 'Recovery station. Your science quality determines our athlete\'s ceiling.' },
   ],
 
   // Room 1 placeholders (replaced by challenge system)

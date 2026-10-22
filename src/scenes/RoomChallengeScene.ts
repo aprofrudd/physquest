@@ -1,7 +1,7 @@
 import type { Scene } from '../engine/GameLoop';
 import type { Input } from '../engine/Input';
 import type { SceneManager } from '../engine/SceneManager';
-import type { GameState } from '../state/GameState';
+import type { GameState, RoomKey } from '../state/GameState';
 import type { DialogueSystem } from '../systems/Dialogue';
 import type { PauseMenu } from '../systems/PauseMenu';
 import { GAME_W, GAME_H } from '../render/DialogueBox';
@@ -11,10 +11,35 @@ import { PALETTES } from '../render/Palettes';
 import { renderTileMap } from '../render/TileMap';
 import { ALL_MAPS } from '../data/maps';
 import { LEVEL_DATA, type SportData } from '../data/sports';
-import { calcStat } from '../state/GameState';
+import { calcStat, roomKeyForMap, ROOM_MAP, ROOM_STAT } from '../state/GameState';
+import { sfx } from '../audio/Sfx';
 
 type ChallengePhase = 'intro' | 'challenge' | 'feedback' | 'complete';
 type RoomType = 'room1' | 'room2' | 'room3' | 'room4';
+
+const HEADERS: Record<RoomType, string> = {
+  room1: 'TEST SELECTION',
+  room2: 'VARIABLE IDENTIFICATION',
+  room3: 'TRAINING PRESCRIPTION',
+  room4: 'PERFORMANCE PREDICTION',
+};
+
+const HEADER_Y = 4;
+const HEADER_H = 19; // 7px text, 2px padding, 4px border each side
+
+/** Fisher-Yates: the order, as indices into the original list, in which to show `count` options. */
+const shuffledOrder = (count: number): number[] => {
+  const order = Array.from({ length: count }, (_, i) => i);
+  for (let i = count - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const swap = order[i]!;
+    order[i] = order[j]!;
+    order[j] = swap;
+  }
+  return order;
+};
+
+const percent = (value: number): number => Math.round(value * 100);
 
 export const createRoomChallengeScene = (
   input: Input,
@@ -23,36 +48,91 @@ export const createRoomChallengeScene = (
   dialogue: DialogueSystem,
   onComplete: () => void,
   pauseMenu: PauseMenu,
-): Scene => {
+): Scene & { setRoom(room: string): void } => {
   let phase: ChallengePhase = 'intro';
   let roomType: RoomType = 'room1';
+  let roomKey: RoomKey = 'testSelection';
+  let wasComplete = false; // finished before this visit: a replay can only raise the stat
   let sport: SportData = LEVEL_DATA[0]!;
   let dataQuality = 0;
   let variableAccuracy = 0;
   let headerText = '';
 
-  const startRoom = (room: RoomType) => {
-    roomType = room;
+  /** Ask a multiple-choice question with the options in a fresh random order. */
+  const ask = <T>(
+    prompt: string,
+    options: readonly T[],
+    label: (option: T) => string,
+    onPick: (option: T) => void,
+  ) => {
+    const order = shuffledOrder(options.length);
+    dialogue.show(prompt, order.map(i => label(options[i]!)), (choiceIdx) => {
+      const picked = options[order[choiceIdx ?? 0] ?? 0];
+      if (picked !== undefined) onPick(picked);
+    });
+  };
+
+  const giveFeedback = (correct: boolean, text: string, then: () => void) => {
+    sfx.play(correct ? 'correct' : 'wrong');
+    dialogue.show(text, undefined, then);
+  };
+
+  /**
+   * One pick per correct answer. A picked option leaves the list, so no answer can score twice.
+   */
+  const pickSeveral = <T extends { correct: boolean }>(
+    options: readonly T[],
+    noun: string,
+    label: (option: T) => string,
+    feedbackFor: (option: T) => string,
+    onDone: (correctCount: number, total: number) => void,
+  ) => {
+    const total = options.filter(o => o.correct).length;
+    const remaining = [...options];
+    let picks = 0;
+    let correctCount = 0;
+
+    const askNext = () => {
+      if (picks >= total || remaining.length === 0) {
+        onDone(correctCount, total);
+        return;
+      }
+      ask(`Pick a ${noun} (${picks + 1} of ${total}):`, remaining, label, (chosen) => {
+        remaining.splice(remaining.indexOf(chosen), 1);
+        picks++;
+        if (chosen.correct) correctCount++;
+        giveFeedback(chosen.correct, feedbackFor(chosen), askNext);
+      });
+    };
+    askNext();
+  };
+
+  const startRoom = (room: string) => {
+    const key = roomKeyForMap(room);
+    if (!key) {
+      sceneManager.switchTo('overworld');
+      return;
+    }
+    roomKey = key;
+    roomType = ROOM_MAP[key];
+    wasComplete = gameState.roomProgress[key];
     sport = LEVEL_DATA[gameState.currentLevel] ?? LEVEL_DATA[0]!;
     phase = 'intro';
     dataQuality = 0;
     variableAccuracy = 0;
+    headerText = HEADERS[roomType];
 
-    switch (room) {
+    switch (roomType) {
       case 'room1':
-        headerText = 'TEST SELECTION';
         runTestSelection();
         break;
       case 'room2':
-        headerText = 'VARIABLE IDENTIFICATION';
         runVariableId();
         break;
       case 'room3':
-        headerText = 'TRAINING PRESCRIPTION';
         runTrainingZones();
         break;
       case 'room4':
-        headerText = 'PERFORMANCE PREDICTION';
         runPrediction();
         break;
     }
@@ -64,40 +144,17 @@ export const createRoomChallengeScene = (
       `${sport.athleteProfile} Goal: ${sport.goal}`,
       undefined,
       () => {
-        const testNames = sport.tests.map(t => t.name);
-        dialogue.show(
-          'Which test should we use to assess this athlete?',
-          testNames,
-          (choiceIdx) => {
-            const chosen = sport.tests[choiceIdx ?? 0];
-            if (chosen) {
-              dataQuality = chosen.dataQuality;
-              variableAccuracy = chosen.correct ? 1 : 0.3;
+        ask('Which test should we use to assess this athlete?', sport.tests, t => t.name, (chosen) => {
+          dataQuality = chosen.dataQuality;
+          variableAccuracy = chosen.correct ? 1 : 0.3;
 
-              if (chosen.correct) {
-                dialogue.show(
-                  `Good choice! ${chosen.description}`,
-                  undefined,
-                  () => {
-                    dialogue.show(sport.testInsight, undefined, () => {
-                      completeRoom('testSelection');
-                    });
-                  }
-                );
-              } else {
-                dialogue.show(
-                  `Not ideal. ${chosen.description} This isnt the best match for the athletes needs.`,
-                  undefined,
-                  () => {
-                    dialogue.show(sport.testInsight, undefined, () => {
-                      completeRoom('testSelection');
-                    });
-                  }
-                );
-              }
-            }
-          }
-        );
+          const text = chosen.correct
+            ? `Good choice! ${chosen.description}`
+            : `Not ideal. ${chosen.description} This isn't the best match for the athlete's needs.`;
+          giveFeedback(chosen.correct, text, () => {
+            dialogue.show(sport.testInsight, undefined, completeRoom);
+          });
+        });
       }
     );
   };
@@ -108,47 +165,17 @@ export const createRoomChallengeScene = (
       `Test data: ${sport.dataOutput}`,
       undefined,
       () => {
-        const varNames = sport.variables.map(v => v.name);
-        let correctCount = 0;
-        let totalCorrect = sport.variables.filter(v => v.correct).length;
-        let selectionsLeft = totalCorrect;
-
-        const askNext = () => {
-          if (selectionsLeft <= 0) {
-            variableAccuracy = correctCount / totalCorrect;
+        pickSeveral(
+          sport.variables,
+          'key variable',
+          v => v.name,
+          v => (v.correct ? `Correct! ${v.explanation}` : `Not quite. ${v.explanation}`),
+          (correctCount, total) => {
+            variableAccuracy = correctCount / Math.max(1, total);
             dataQuality = variableAccuracy > 0.5 ? 0.8 : 0.5;
-            dialogue.show(
-              sport.variableInsight,
-              undefined,
-              () => completeRoom('variableId')
-            );
-            return;
+            dialogue.show(sport.variableInsight, undefined, completeRoom);
           }
-
-          dialogue.show(
-            `Select a key variable (${selectionsLeft} remaining):`,
-            varNames,
-            (choiceIdx) => {
-              const chosen = sport.variables[choiceIdx ?? 0];
-              if (chosen) {
-                if (chosen.correct) {
-                  correctCount++;
-                  dialogue.show(`Correct! ${chosen.explanation}`, undefined, () => {
-                    selectionsLeft--;
-                    askNext();
-                  });
-                } else {
-                  dialogue.show(`Not quite. ${chosen.explanation}`, undefined, () => {
-                    selectionsLeft--;
-                    askNext();
-                  });
-                }
-              }
-            }
-          );
-        };
-
-        askNext();
+        );
       }
     );
   };
@@ -159,47 +186,17 @@ export const createRoomChallengeScene = (
       'Based on the test data, which training zones should we prescribe?',
       undefined,
       () => {
-        const zoneNames = sport.zones.map(z => z.name);
-        let correctCount = 0;
-        const totalCorrect = sport.zones.filter(z => z.correct).length;
-        let selectionsLeft = totalCorrect;
-
-        const askNext = () => {
-          if (selectionsLeft <= 0) {
-            variableAccuracy = correctCount / totalCorrect;
+        pickSeveral(
+          sport.zones,
+          'training zone',
+          z => z.name,
+          z => (z.correct ? `Good call! ${z.description}` : `Not the priority. ${z.description}`),
+          (correctCount, total) => {
+            variableAccuracy = correctCount / Math.max(1, total);
             dataQuality = variableAccuracy > 0.5 ? 0.85 : 0.5;
-            dialogue.show(
-              sport.zoneInsight,
-              undefined,
-              () => completeRoom('trainingPrescription')
-            );
-            return;
+            dialogue.show(sport.zoneInsight, undefined, completeRoom);
           }
-
-          dialogue.show(
-            `Select a training zone (${selectionsLeft} remaining):`,
-            zoneNames,
-            (choiceIdx) => {
-              const chosen = sport.zones[choiceIdx ?? 0];
-              if (chosen) {
-                if (chosen.correct) {
-                  correctCount++;
-                  dialogue.show(`Good call! ${chosen.description}`, undefined, () => {
-                    selectionsLeft--;
-                    askNext();
-                  });
-                } else {
-                  dialogue.show(`Not the priority. ${chosen.description}`, undefined, () => {
-                    selectionsLeft--;
-                    askNext();
-                  });
-                }
-              }
-            }
-          );
-        };
-
-        askNext();
+        );
       }
     );
   };
@@ -210,59 +207,44 @@ export const createRoomChallengeScene = (
       sport.predictionScenario,
       undefined,
       () => {
-        const predNames = sport.predictions.map(p => p.text);
-        dialogue.show(
-          'What adaptation do you predict?',
-          predNames,
-          (choiceIdx) => {
-            const chosen = sport.predictions[choiceIdx ?? 0];
-            if (chosen) {
-              variableAccuracy = chosen.correct ? 1 : 0.2;
-              dataQuality = chosen.correct ? 0.9 : 0.5;
+        ask('What adaptation do you predict?', sport.predictions, p => p.text, (chosen) => {
+          variableAccuracy = chosen.correct ? 1 : 0.2;
+          dataQuality = chosen.correct ? 0.9 : 0.5;
 
-              if (chosen.correct) {
-                dialogue.show(
-                  `Excellent prediction! ${sport.predictionInsight}`,
-                  undefined,
-                  () => completeRoom('performancePrediction')
-                );
-              } else {
-                dialogue.show(
-                  `Not the most likely outcome. ${sport.predictionInsight}`,
-                  undefined,
-                  () => completeRoom('performancePrediction')
-                );
-              }
-            }
-          }
-        );
+          const lead = chosen.correct ? 'Excellent prediction!' : 'Not the most likely outcome.';
+          giveFeedback(chosen.correct, `${lead} ${sport.predictionInsight}`, completeRoom);
+        });
       }
     );
   };
 
-  const completeRoom = (roomKey: keyof typeof gameState.roomProgress) => {
+  const completeRoom = () => {
     phase = 'complete';
     gameState.roomProgress[roomKey] = true;
 
     const statValue = calcStat(dataQuality, variableAccuracy);
     gameState.challengeResults.push({ dataQuality, variableAccuracy });
 
-    const statMap: Record<RoomType, keyof typeof gameState.playerStats> = {
-      room1: 'speed',
-      room2: 'strength',
-      room3: 'endurance',
-      room4: 'power',
-    };
-    const statKey = statMap[roomType];
-    gameState.playerStats[statKey] = statValue;
+    const statKey = ROOM_STAT[roomKey];
+    const label = statKey.toUpperCase();
+    const previous = gameState.playerStats[statKey];
+    // A replay can only raise the stat, never lower it
+    const best = wasComplete ? Math.max(previous, statValue) : statValue;
+    gameState.playerStats[statKey] = best;
 
-    dialogue.show(
-      `Challenge complete! ${statKey.toUpperCase()} stat: ${Math.round(statValue * 100)}%`,
-      undefined,
-      () => {
-        onComplete();
-      }
-    );
+    let message: string;
+    if (!wasComplete) {
+      message = `Room complete! ${label} stat: ${percent(statValue)}%`; // one 38-char line, even ENDURANCE at 100%
+    } else if (percent(statValue) > percent(previous)) {
+      message = `New best! ${label} now ${percent(best)}%`;
+    } else {
+      message = `Your best stays at ${percent(best)}%`;
+    }
+
+    dialogue.show(message, undefined, () => {
+      gameState.returnDoor = roomType; // the hub puts the player back outside this door
+      onComplete();
+    });
   };
 
   return {
@@ -274,8 +256,7 @@ export const createRoomChallengeScene = (
       const inp = input.read();
 
       // Pause menu
-      if (inp.escapePressed && !pauseMenu.isActive()) pauseMenu.toggle();
-      if (pauseMenu.isActive()) { pauseMenu.update(dt, inp); return; }
+      if (pauseMenu.handle(dt, inp)) return;
 
       dialogue.update(dt, inp);
     },
@@ -296,15 +277,23 @@ export const createRoomChallengeScene = (
         ctx.fillRect(0, 0, GAME_W, GAME_H);
       }
 
-      // Header in bordered panel
-      const headerScale = measureText(headerText, 2) > GAME_W - 32 ? 1 : 2;
-      const headerW = measureText(headerText, headerScale);
+      // Header in bordered panel, the same height in every room: text sits 2px clear of the inner border
+      const headerW = measureText(headerText) - 1; // drop the trailing letter gap
       const panelW = headerW + 16;
-      drawPokemonBox(ctx, (GAME_W - panelW) / 2, 4, panelW, headerScale === 2 ? 22 : 16, pal.colors[1]);
-      drawText(ctx, headerText, (GAME_W - headerW) / 2, headerScale === 2 ? 8 : 7, '#080808', headerScale);
+      const panelX = Math.floor((GAME_W - panelW) / 2);
+      drawPokemonBox(ctx, panelX, HEADER_Y, panelW, HEADER_H, pal.colors[1]);
+      drawText(ctx, headerText, panelX + 8, HEADER_Y + 6, '#080808');
 
-      // Sport info
-      drawText(ctx, sport.sport, 8, 30, pal.colors[5]);
+      // Sport name on a dark plate so it reads over any room background
+      const sportW = measureText(sport.sport) - 1;
+      const plateW = sportW + 12;
+      const plateX = Math.floor((GAME_W - plateW) / 2);
+      const plateY = HEADER_Y + HEADER_H + 2;
+      ctx.fillStyle = '#080808';
+      ctx.fillRect(plateX, plateY, plateW, 11);
+      ctx.fillStyle = pal.colors[1];
+      ctx.fillRect(plateX + 1, plateY + 1, plateW - 2, 9);
+      drawText(ctx, sport.sport, plateX + 6, plateY + 2, '#f8f8f0');
 
       // Render dialogue
       dialogue.render(ctx);
@@ -314,7 +303,7 @@ export const createRoomChallengeScene = (
     },
 
     setRoom(room: string) {
-      startRoom(room as RoomType);
+      startRoom(room);
     },
-  } as Scene & { setRoom: (room: string) => void };
+  };
 };

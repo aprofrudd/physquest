@@ -1,20 +1,41 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#16171b" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="PhysQuest is a retro pixel-art sports science RPG: test athletes, read the data and beat the rival bosses."
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="PhysQuest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>PhysQuest</title>
     <style>
-      * { margin: 0; padding: 0; box-sizing: border-box; }
-      html, body, #root {
-        width: 100%; height: 100%;
-        overflow: hidden;
-        background: #0f0f0f;
+      html,
+      body {
+        margin: 0;
+        background: #16171b;
       }
     </style>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <div id="app"></div>
+    <noscript>
+      <p style="margin: 0; padding: 24px; color: #d3cfc5; font: 16px/1.5 system-ui, sans-serif">
+        PhysQuest needs JavaScript to run. Please enable it and reload the page.
+      </p>
+    </noscript>
+    <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

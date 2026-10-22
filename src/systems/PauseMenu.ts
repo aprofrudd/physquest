@@ -1,85 +1,120 @@
 import type { InputState } from '../engine/Input';
 import type { SceneManager } from '../engine/SceneManager';
-import { drawText, measureText } from '../render/PixelFont';
+import { CHAR_W, drawText, measureText } from '../render/PixelFont';
 import { drawPokemonBox } from '../render/SpriteSheet';
 import { GAME_W, GAME_H } from '../render/DialogueBox';
 import { saveGame } from './SaveSystem';
 import type { GameState } from '../state/GameState';
+import type { DialogueSystem } from './Dialogue';
+import { sfx } from '../audio/Sfx';
 
-const OPTIONS = ['RESUME', 'SAVE GAME', 'QUIT TO TITLE'] as const;
+type Option = 'resume' | 'save' | 'sound' | 'quit';
+const OPTIONS: readonly Option[] = ['resume', 'save', 'sound', 'quit'];
+
+const optionLabel = (opt: Option): string => {
+  switch (opt) {
+    case 'resume': return 'RESUME';
+    case 'save': return 'SAVE GAME';
+    case 'sound': return sfx.isMuted() ? 'SOUND: OFF' : 'SOUND: ON';
+    case 'quit': return 'QUIT TO TITLE';
+  }
+};
 
 export interface PauseMenu {
   isActive(): boolean;
-  toggle(): void;
-  update(dt: number, inp: InputState): void;
+  open(): void;
+  close(): void;
+  /**
+   * Call at the top of a scene's update(). Opens the menu on START, runs it while open.
+   * Returns true when the menu consumed this step — the scene should skip the rest of its update.
+   */
+  handle(dt: number, inp: InputState): boolean;
   render(ctx: CanvasRenderingContext2D): void;
 }
 
 export const createPauseMenu = (
   sceneManager: SceneManager,
   gameState: GameState,
+  dialogue: DialogueSystem,
+  onOpen?: () => void,
 ): PauseMenu => {
   let active = false;
   let selectedIndex = 0;
-  let upWasDown = false;
-  let downWasDown = false;
-  let actionWasDown = false;
-  let savedFlashTimer = 0;
+  let flashText = '';
+  let flashTimer = 0;
+
+  const open = () => {
+    active = true;
+    selectedIndex = 0;
+    flashTimer = 0;
+    onOpen?.();
+    sfx.play('pause');
+  };
+
+  const close = () => {
+    active = false;
+  };
+
+  const choose = (opt: Option) => {
+    switch (opt) {
+      case 'resume':
+        close();
+        sfx.play('back');
+        break;
+      case 'save': {
+        const ok = saveGame(gameState);
+        flashText = ok ? 'SAVED!' : 'CANNOT SAVE';
+        flashTimer = 1.5;
+        sfx.play(ok ? 'save' : 'wrong');
+        break;
+      }
+      case 'sound':
+        sfx.toggleMuted();
+        sfx.play('select'); // silent when just muted, audible when just unmuted
+        break;
+      case 'quit':
+        saveGame(gameState);
+        close();
+        dialogue.reset();
+        sceneManager.switchTo('title');
+        break;
+    }
+  };
 
   return {
-    isActive() {
-      return active;
-    },
+    isActive: () => active,
+    open,
+    close,
 
-    toggle() {
-      active = !active;
-      if (active) {
-        selectedIndex = 0;
-        upWasDown = false;
-        downWasDown = false;
-        actionWasDown = false;
-        savedFlashTimer = 0;
-      }
-    },
-
-    update(dt: number, inp: InputState) {
-      if (!active) return;
-
-      if (savedFlashTimer > 0) {
-        savedFlashTimer -= dt;
-      }
-
-      const upPressed = inp.up && !upWasDown;
-      const downPressed = inp.down && !downWasDown;
-      const actionPressed = inp.action && !actionWasDown;
-      upWasDown = inp.up;
-      downWasDown = inp.down;
-      actionWasDown = inp.action;
-
-      // ESC to close
-      if (inp.escapePressed) {
-        active = false;
-        return;
-      }
-
-      if (upPressed) selectedIndex = (selectedIndex - 1 + OPTIONS.length) % OPTIONS.length;
-      if (downPressed) selectedIndex = (selectedIndex + 1) % OPTIONS.length;
-
-      if (actionPressed) {
-        switch (selectedIndex) {
-          case 0: // Resume
-            active = false;
-            break;
-          case 1: // Save
-            saveGame(gameState);
-            savedFlashTimer = 1.5;
-            break;
-          case 2: // Quit to title
-            active = false;
-            sceneManager.switchTo('title');
-            break;
+    handle(dt: number, inp: InputState): boolean {
+      if (!active) {
+        if (inp.startPressed) {
+          open();
+          return true;
         }
+        return false;
       }
+
+      if (flashTimer > 0) flashTimer -= dt;
+
+      if (inp.startPressed || inp.bPressed) {
+        close();
+        sfx.play('back');
+        return true;
+      }
+      if (inp.upPressed) {
+        selectedIndex = (selectedIndex - 1 + OPTIONS.length) % OPTIONS.length;
+        sfx.play('blip');
+      }
+      if (inp.downPressed) {
+        selectedIndex = (selectedIndex + 1) % OPTIONS.length;
+        sfx.play('blip');
+      }
+      if (inp.aPressed) {
+        const opt = OPTIONS[selectedIndex];
+        if (opt) choose(opt);
+      }
+      return true;
     },
 
     render(ctx: CanvasRenderingContext2D) {
@@ -91,7 +126,7 @@ export const createPauseMenu = (
 
       // Pause box
       const boxW = 140;
-      const boxH = 80;
+      const boxH = 30 + OPTIONS.length * 14 + 8;
       const boxX = (GAME_W - boxW) / 2;
       const boxY = (GAME_H - boxH) / 2;
       drawPokemonBox(ctx, boxX, boxY, boxW, boxH);
@@ -101,20 +136,24 @@ export const createPauseMenu = (
       const headerW = measureText(header, 2);
       drawText(ctx, header, (GAME_W - headerW) / 2, boxY + 8, '#080808', 2);
 
-      // Options
+      // Options: a cursor column with a gap, the block centred in the box
+      const labels = OPTIONS.map(optionLabel);
+      const labelsW = Math.max(...labels.map(l => measureText(l)));
+      const cursorX = Math.floor(boxX + (boxW - (CHAR_W + 4 + labelsW)) / 2);
       const optStartY = boxY + 30;
-      for (let i = 0; i < OPTIONS.length; i++) {
+      for (let i = 0; i < labels.length; i++) {
         const isSelected = i === selectedIndex;
-        const prefix = isSelected ? '>' : ' ';
-        const color = isSelected ? '#080808' : '#606060';
-        drawText(ctx, prefix + OPTIONS[i], boxX + 12, optStartY + i * 14, color);
+        const y = optStartY + i * 14;
+        if (isSelected) drawText(ctx, '>', cursorX, y, '#080808');
+        drawText(ctx, labels[i]!, cursorX + CHAR_W + 4, y, isSelected ? '#080808' : '#606060');
       }
 
-      // Saved flash
-      if (savedFlashTimer > 0) {
-        const flashText = 'SAVED!';
+      // Save confirmation
+      if (flashTimer > 0) {
         const flashW = measureText(flashText, 2);
-        drawText(ctx, flashText, (GAME_W - flashW) / 2, boxY + boxH + 8, '#38a848', 2);
+        ctx.fillStyle = '#080808';
+        ctx.fillRect((GAME_W - flashW) / 2 - 4, boxY + boxH + 4, flashW + 8, 22);
+        drawText(ctx, flashText, (GAME_W - flashW) / 2, boxY + boxH + 8, flashText === 'SAVED!' ? '#38a848' : '#e04040', 2);
       }
     },
   };

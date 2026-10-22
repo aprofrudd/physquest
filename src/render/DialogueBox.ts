@@ -1,4 +1,7 @@
-import { drawText, CHAR_W, CHAR_H } from './PixelFont';
+import { drawText, CHAR_W } from './PixelFont';
+import type { InputState } from '../engine/Input';
+import { sfx } from '../audio/Sfx';
+import { announce } from '../ui/announce';
 
 export const GAME_W = 256;
 export const GAME_H = 224;
@@ -7,9 +10,34 @@ const BOX_Y = GAME_H - BOX_H - 4;
 const BOX_X = 4;
 const BOX_W = GAME_W - 8;
 const TEXT_X = BOX_X + 10;
-const TEXT_Y = BOX_Y + 10;
+// Four lines per page at a 10px pitch (7px glyphs, 3px between lines). The block is 37px tall inside the box's
+// 48px of paper: starting 3px down leaves the bottom corner free for the advance arrow below the 4th line
+const LINE_PITCH = 10;
+const TEXT_Y = BOX_Y + 7;
+const ARROW_X = BOX_X + BOX_W - 16;
+const ARROW_Y = BOX_Y + BOX_H - 11; // the arrow bobs over rows 209..214: 1px clear of the 4th line and of the border
 const MAX_CHARS_PER_LINE = Math.floor((BOX_W - 20) / CHAR_W);
-const MAX_LINES = 3;
+const PAGE_LINES = 4;
+const FAST_TYPING = 3; // typing speed multiplier while A or B is held
+
+// Choice panel: full width, directly above the main box
+const CHOICE_X = BOX_X;
+const CHOICE_W = BOX_W;
+const CHOICE_MIN_Y = 40; // never rise into the scene header
+const CHOICE_GAP = 2; // panel to main box
+const OPTION_GAP = 4; // between options (bar to bar): well over the 2px inside one, so a wrapped option reads as one item
+const OPTION_PITCH = 9; // line pitch inside an option: 7px glyphs, 2px between lines
+const CURSOR_X = CHOICE_X + 10; // fixed column for the '>' cursor
+const CURSOR_GAP = 4; // from the cursor glyph's advance to the option text, as in every menu
+const OPTION_X = CURSOR_X + CHAR_W + CURSOR_GAP;
+const OPTION_CHARS = Math.floor((CHOICE_X + CHOICE_W - 10 - OPTION_X) / CHAR_W);
+const OPTION_MAX_LINES = 2;
+// A is ignored this long after a list appears, so mashing A can't confirm an answer unseen
+const CHOICE_LOCK = 0.35;
+
+const INK = '#080808';
+const INK_SOFT = '#303030';
+const PAPER = '#f8f8f0';
 
 // Pokemon-style double-line bordered box
 const drawPokemonBox = (
@@ -20,13 +48,13 @@ const drawPokemonBox = (
   h: number
 ) => {
   // Outer border (black)
-  ctx.fillStyle = '#080808';
+  ctx.fillStyle = INK;
   ctx.fillRect(x, y, w, h);
   // Inner border (dark)
-  ctx.fillStyle = '#303030';
+  ctx.fillStyle = INK_SOFT;
   ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
   // White interior
-  ctx.fillStyle = '#f8f8f0';
+  ctx.fillStyle = PAPER;
   ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
 };
 
@@ -36,9 +64,9 @@ const drawBouncingArrow = (
   x: number,
   y: number
 ) => {
-  const bounce = Math.floor(Math.sin(Date.now() / 150) * 2);
+  const bounce = Math.round(Math.sin(Date.now() / 150)) + 1; // 0..2
   const ay = y + bounce;
-  ctx.fillStyle = '#303030';
+  ctx.fillStyle = INK_SOFT;
   // 7px wide triangle pointing down
   ctx.fillRect(x, ay, 7, 1);
   ctx.fillRect(x + 1, ay + 1, 5, 1);
@@ -48,47 +76,114 @@ const drawBouncingArrow = (
 
 export interface DialogueState {
   active: boolean;
-  lines: string[];
-  currentLine: number;
-  charIndex: number;
-  timer: number;
+  pages: string[][]; // wrapped lines, PAGE_LINES per page
+  page: number;
+  charIndex: number; // characters visible on the current page
+  progress: number; // typewriter position including the fractional part (charIndex = floor)
   speed: number; // chars per second
   choices: string[] | null;
+  choiceLines: string[][]; // each option wrapped for the choice panel
   selectedChoice: number;
+  choiceLock: number; // seconds left in which A cannot confirm
   onComplete: ((choiceIndex?: number) => void) | null;
-  waitingForInput: boolean;
+  waitingForInput: boolean; // current page fully typed
 }
 
 export const createDialogueState = (): DialogueState => ({
   active: false,
-  lines: [],
-  currentLine: 0,
+  pages: [],
+  page: 0,
   charIndex: 0,
-  timer: 0,
+  progress: 0,
   speed: 40,
   choices: null,
+  choiceLines: [],
   selectedChoice: 0,
+  choiceLock: 0,
   onComplete: null,
   waitingForInput: false,
 });
 
-// Word-wrap text into lines that fit the dialogue box
-export const wrapText = (text: string): string[] => {
-  const words = text.split(' ');
+/** Close the dialogue and drop its pending callback. */
+export const clearDialogue = (state: DialogueState) => {
+  state.active = false;
+  state.onComplete = null;
+  state.choices = null;
+  state.choiceLines = [];
+  state.pages = [];
+  state.page = 0;
+  state.charIndex = 0;
+  state.progress = 0;
+  state.choiceLock = 0;
+  state.waitingForInput = false;
+};
+
+// Word-wrap text into lines of at most maxChars characters (a word longer than a line is split)
+export const wrapText = (text: string, maxChars: number = MAX_CHARS_PER_LINE): string[] => {
   const lines: string[] = [];
   let current = '';
 
-  for (const word of words) {
-    if (current.length + word.length + 1 > MAX_CHARS_PER_LINE) {
-      if (current) lines.push(current);
-      current = word;
+  for (const word of text.split(' ')) {
+    let rest = word;
+    while (rest.length > maxChars) {
+      if (current) {
+        lines.push(current);
+        current = '';
+      }
+      lines.push(rest.slice(0, maxChars));
+      rest = rest.slice(maxChars);
+    }
+    if (!rest) continue;
+
+    if (!current) {
+      current = rest;
+    } else if (current.length + 1 + rest.length <= maxChars) {
+      current += ' ' + rest;
     } else {
-      current = current ? current + ' ' + word : word;
+      lines.push(current);
+      current = rest;
     }
   }
   if (current) lines.push(current);
   return lines;
 };
+
+// Split lines into pages, never leaving a single orphan line on the last page
+const paginate = (lines: string[]): string[][] => {
+  const pages: string[][] = [];
+  for (let i = 0; i < lines.length; i += PAGE_LINES) pages.push(lines.slice(i, i + PAGE_LINES));
+  const last = pages[pages.length - 1];
+  const before = pages[pages.length - 2];
+  if (last && before && last.length === 1 && before.length > 2) {
+    const moved = before.pop();
+    if (moved !== undefined) last.unshift(moved);
+  }
+  return pages.length > 0 ? pages : [[]];
+};
+
+// Options get at most two lines in the choice panel; anything longer is cut with dots
+const wrapOption = (text: string): string[] => {
+  const lines = wrapText(text, OPTION_CHARS);
+  if (lines.length === OPTION_MAX_LINES) {
+    // Narrowest width that still fits on two lines, so the second never dangles one short word
+    const longestWord = Math.max(...text.split(' ').map(word => word.length));
+    for (let width = Math.max(Math.ceil(text.length / 2), longestWord); width < OPTION_CHARS; width++) {
+      const balanced = wrapText(text, width);
+      if (balanced.length === OPTION_MAX_LINES) return balanced;
+    }
+  }
+  if (lines.length <= OPTION_MAX_LINES) return lines;
+  const kept = lines.slice(0, OPTION_MAX_LINES);
+  kept[OPTION_MAX_LINES - 1] = (kept[OPTION_MAX_LINES - 1] ?? '').slice(0, OPTION_CHARS - 3) + '...';
+  return kept;
+};
+
+const pageLines = (state: DialogueState): string[] => state.pages[state.page] ?? [];
+const pageChars = (state: DialogueState): number => pageLines(state).reduce((sum, line) => sum + line.length, 0);
+const onLastPage = (state: DialogueState): boolean => state.page >= state.pages.length - 1;
+// The list only appears once the question's last page is fully typed
+const choicesVisible = (state: DialogueState): boolean =>
+  state.choices !== null && state.waitingForInput && onLastPage(state);
 
 export const startDialogue = (
   state: DialogueState,
@@ -97,72 +192,131 @@ export const startDialogue = (
   onComplete?: (choiceIndex?: number) => void
 ) => {
   state.active = true;
-  state.lines = wrapText(text);
-  state.currentLine = 0;
+  state.pages = paginate(wrapText(text));
+  state.page = 0;
   state.charIndex = 0;
-  state.timer = 0;
-  state.choices = choices ?? null;
+  state.progress = 0;
+  state.choices = choices && choices.length > 0 ? choices : null;
+  state.choiceLines = state.choices ? state.choices.map(wrapOption) : [];
   state.selectedChoice = 0;
+  state.choiceLock = 0;
   state.onComplete = onComplete ?? null;
   state.waitingForInput = false;
+  announce(pageLines(state).join(' '));
 };
 
-export const updateDialogue = (
-  state: DialogueState,
-  dt: number,
-  actionPressed: boolean,
-  upPressed?: boolean,
-  downPressed?: boolean
-) => {
+const finishPage = (state: DialogueState) => {
+  const total = pageChars(state);
+  state.charIndex = total;
+  state.progress = total;
+  state.waitingForInput = true;
+  if (choicesVisible(state) && state.choices) {
+    state.choiceLock = CHOICE_LOCK;
+    announce(`Options: ${state.choices.join('; ')}`);
+  }
+};
+
+// Close the dialogue, then report the result. The callback may start the next dialogue, so
+// nothing may touch the state after it runs.
+const finishDialogue = (state: DialogueState, choiceIndex?: number) => {
+  const done = state.onComplete;
+  state.active = false;
+  state.onComplete = null;
+  state.choices = null;
+  state.choiceLines = [];
+  state.waitingForInput = false;
+  done?.(choiceIndex);
+};
+
+export const updateDialogue = (state: DialogueState, dt: number, inp: InputState) => {
   if (!state.active) return;
 
-  // Get the current page of lines (up to MAX_LINES)
-  const pageStart = state.currentLine;
-  const pageEnd = Math.min(pageStart + MAX_LINES, state.lines.length);
-  const pageLines = state.lines.slice(pageStart, pageEnd);
+  // A and B both advance text; only A may confirm a choice
+  const skip = inp.aPressed || inp.bPressed;
 
-  // Count total chars on this page
-  const totalCharsOnPage = pageLines.reduce((sum, l) => sum + l.length, 0);
-
-  if (state.charIndex < totalCharsOnPage) {
-    // Still typing
-    state.timer += dt;
-    const charsToAdd = Math.floor(state.timer * state.speed);
-    if (charsToAdd > 0) {
-      state.charIndex = Math.min(state.charIndex + charsToAdd, totalCharsOnPage);
-      state.timer = 0;
-    }
-
-    // Press action to skip typing
-    if (actionPressed) {
-      state.charIndex = totalCharsOnPage;
-    }
-  } else if (!state.waitingForInput) {
-    state.waitingForInput = true;
-  } else if (actionPressed) {
-    // Advance to next page or finish
-    if (pageEnd < state.lines.length && !state.choices) {
-      state.currentLine = pageEnd;
-      state.charIndex = 0;
-      state.waitingForInput = false;
-    } else if (state.choices) {
-      // Choice made
-      state.active = false;
-      state.onComplete?.(state.selectedChoice);
+  if (!state.waitingForInput) {
+    const total = pageChars(state);
+    if (skip) {
+      state.progress = total;
     } else {
-      state.active = false;
-      state.onComplete?.();
+      // Keep the fractional part so the speed stays true at any frame rate
+      const fast = inp.a || inp.b;
+      state.progress += dt * state.speed * (fast ? FAST_TYPING : 1);
     }
+    // The epsilon absorbs float error, so 60 steps of 1/60s still add up to a whole second
+    state.charIndex = Math.min(total, Math.floor(state.progress + 1e-6));
+    if (state.charIndex >= total) finishPage(state);
+    return;
   }
 
-  // Choice navigation
-  if (state.choices && state.waitingForInput) {
-    if (upPressed) {
-      state.selectedChoice = Math.max(0, state.selectedChoice - 1);
+  if (state.choices && choicesVisible(state)) {
+    const count = state.choices.length;
+    const before = state.selectedChoice;
+    if (inp.upRepeat) state.selectedChoice = (state.selectedChoice - 1 + count) % count;
+    if (inp.downRepeat) state.selectedChoice = (state.selectedChoice + 1) % count;
+    if (state.selectedChoice !== before) {
+      sfx.play('blip');
+      announce(state.choices[state.selectedChoice] ?? '');
     }
-    if (downPressed) {
-      state.selectedChoice = Math.min(state.choices.length - 1, state.selectedChoice + 1);
+
+    const locked = state.choiceLock > 0;
+    if (locked) state.choiceLock = Math.max(0, state.choiceLock - dt);
+    if (inp.aPressed && !locked) {
+      sfx.play('select');
+      finishDialogue(state, state.selectedChoice);
     }
+    return;
+  }
+
+  if (!skip) return;
+  sfx.play('blip');
+  if (!onLastPage(state)) {
+    state.page++;
+    state.charIndex = 0;
+    state.progress = 0;
+    state.waitingForInput = false;
+    announce(pageLines(state).join(' '));
+  } else {
+    finishDialogue(state);
+  }
+};
+
+const drawChoicePanel = (ctx: CanvasRenderingContext2D, state: DialogueState) => {
+  const rows = state.choiceLines;
+  if (rows.length === 0) return;
+
+  // An option's bar is OPTION_PITCH per line (the glyphs plus 1px above and below); the panel adds 4px border
+  // and 2px padding each side
+  const barHeight = (lines: string[]) => lines.length * OPTION_PITCH;
+  const panelHeight = (gap: number) =>
+    rows.reduce((sum, lines) => sum + barHeight(lines), 0) + (rows.length - 1) * gap + 12;
+  const tooTall = (gap: number, boxGap: number) => BOX_Y - boxGap - panelHeight(gap) < CHOICE_MIN_Y;
+
+  // Too tall to fit under the header: tighten the spacing until it does
+  let gap = OPTION_GAP;
+  let boxGap = CHOICE_GAP;
+  while (gap > 0 && tooTall(gap, boxGap)) gap--;
+  if (tooTall(gap, boxGap)) boxGap = 0;
+  const panelH = panelHeight(gap);
+  const panelY = BOX_Y - boxGap - panelH;
+  drawPokemonBox(ctx, CHOICE_X, panelY, CHOICE_W, panelH);
+
+  let y = panelY + 7;
+  for (let i = 0; i < rows.length; i++) {
+    const lines = rows[i]!;
+    const barH = barHeight(lines);
+    const selected = i === state.selectedChoice;
+    if (selected) {
+      // Dark bar, light text: obvious at a glance even at small sizes
+      ctx.fillStyle = INK_SOFT;
+      ctx.fillRect(CHOICE_X + 6, y - 1, CHOICE_W - 12, barH);
+      drawText(ctx, '>', CURSOR_X, y, PAPER);
+    }
+    const color = selected ? PAPER : INK_SOFT;
+    for (let k = 0; k < lines.length; k++) {
+      drawText(ctx, lines[k]!, OPTION_X, y + k * OPTION_PITCH, color);
+    }
+    y += barH + gap;
   }
 };
 
@@ -172,40 +326,24 @@ export const renderDialogue = (
 ) => {
   if (!state.active) return;
 
-  // Choice window — separate Pokemon-style box above dialogue (right-aligned)
-  if (state.choices && state.waitingForInput) {
-    const choiceW = 120;
-    const choiceH = state.choices.length * CHAR_H + 12;
-    const choiceX = GAME_W - choiceW - 8;
-    const choiceY = BOX_Y - choiceH - 4;
-    drawPokemonBox(ctx, choiceX, choiceY, choiceW, choiceH);
-    for (let i = 0; i < state.choices.length; i++) {
-      const prefix = i === state.selectedChoice ? '>' : ' ';
-      const color = i === state.selectedChoice ? '#080808' : '#606060';
-      drawText(ctx, prefix + state.choices[i]!, choiceX + 8, choiceY + 6 + i * CHAR_H, color);
-    }
-  }
+  const showChoices = choicesVisible(state);
+  if (showChoices) drawChoicePanel(ctx, state);
 
   // Main dialogue box
   drawPokemonBox(ctx, BOX_X, BOX_Y, BOX_W, BOX_H);
 
   // Draw text with typewriter effect — dark text on light background
-  const pageStart = state.currentLine;
-  const pageEnd = Math.min(pageStart + MAX_LINES, state.lines.length);
-  const pageLines = state.lines.slice(pageStart, pageEnd);
-
-  let charsDrawn = 0;
-  for (let i = 0; i < pageLines.length; i++) {
-    const line = pageLines[i]!;
-    const lineY = TEXT_Y + i * CHAR_H;
-    const visibleChars = Math.max(0, Math.min(line.length, state.charIndex - charsDrawn));
-    const visibleText = line.slice(0, visibleChars);
-    drawText(ctx, visibleText, TEXT_X, lineY, '#080808');
-    charsDrawn += line.length;
+  const lines = pageLines(state);
+  let charsLeft = state.charIndex;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    const visibleChars = Math.max(0, Math.min(line.length, charsLeft));
+    drawText(ctx, line.slice(0, visibleChars), TEXT_X, TEXT_Y + i * LINE_PITCH, INK);
+    charsLeft -= line.length;
   }
 
   // Bouncing advance arrow (Pokemon style)
-  if (state.waitingForInput && !state.choices) {
-    drawBouncingArrow(ctx, BOX_X + BOX_W - 16, BOX_Y + BOX_H - 14);
+  if (state.waitingForInput && !showChoices) {
+    drawBouncingArrow(ctx, ARROW_X, ARROW_Y);
   }
 };

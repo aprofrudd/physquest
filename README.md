@@ -1,6 +1,6 @@
 # PhysQuest
 
-A retro-style RPG where players apply sports science knowledge to train athletes across four levels. Built as a pixel-art canvas game with TypeScript and Vite.
+A retro-style RPG where players apply sports science knowledge to train athletes across four levels. Built as a pixel-art canvas game with TypeScript and Vite, played inside an on-screen handheld console that works with touch or a keyboard.
 
 **Play:** [physquest.vercel.app](https://physquest.vercel.app)
 
@@ -21,16 +21,32 @@ Each level has 4 challenge rooms:
 3. **Training Prescription**: select correct training zones
 4. **Performance Prediction**: predict realistic training adaptations
 
-Complete all rooms to face the level's rival boss in a stat-based showdown.
+Answer options are shuffled every time, and a finished room can be replayed to raise your best score. Complete all rooms to face the level's rival in a showdown minigame. Your showdown rating is 70% the level's focus stat and 30% your average across all four rooms, so every room counts. Lose, and the game tells you which room to revisit; your room progress is kept.
+
+## Controls
+
+The game sits inside a handheld console. Tap its buttons on a phone or tablet, click them with a mouse, or use the keyboard:
+
+| Console | Keyboard | Use |
+|---------|----------|-----|
+| D-pad | Arrow keys or WASD | Move, choose options |
+| A | Z, Space or Enter | Talk, interact, confirm |
+| B | X or Backspace | Back, delete a letter; hold to run |
+| START | Esc or P | Pause menu (resume, save, sound, quit) |
+| SELECT | Shift | Objectives panel in the hub |
+
+On a keyboard you can also type your coach's name directly. Progress saves automatically after naming your coach, after every room and after every showdown. On a phone, add the page to your home screen for a full-screen, app-like experience.
 
 ## Tech Stack
 
-- **TypeScript** + **Vite** (no game framework; pure canvas)
-- Pixel font rendering, tile maps, sprite sheets, dialogue system
-- Scene-based architecture: Intro, Title, Level Select, Overworld, Room Challenge, Boss Battle, Level Clear
-- Save system with localStorage persistence across sessions
-- Mobile support with touch d-pad, action button, and pause button
-- Fractional canvas scaling for crisp pixel art at any resolution
+- **TypeScript** + **Vite** (no game or UI framework: pure canvas plus a CSS console shell)
+- Pixel font rendering with cached glyphs, cached sprites and pre-rendered tile maps
+- Scene-based architecture: Title, Intro, Level Select, Overworld, Room Challenge, Boss Battle, Level Clear
+- One input layer for the keyboard and multi-touch console buttons (Pointer Events); quick taps are never lost
+- Versioned localStorage saves that keep unfinished levels
+- Synthesised chiptune sound effects (Web Audio, no audio files) with a mute switch
+- Crisp scaling: game pixels land on whole device pixels where possible, otherwise a sharp-bilinear upscale
+- Installable web app manifest and icons
 
 ## Getting Started
 
@@ -49,13 +65,18 @@ Deployed on [Vercel](https://physquest.vercel.app). Auto-deploys on push to `mas
 
 ```
 src/
+├── main.ts       Entry point
+├── game.ts       Scene wiring, autosave and pause when the app is backgrounded
 ├── engine/       GameLoop, Input, SceneManager
-├── render/       SpriteSheet, PixelFont, DialogueBox, TileMap, Palettes
-├── scenes/       IntroScene, TitleScene, LevelSelectScene, OverworldScene,
+├── render/       SpriteSheet, PixelFont, DialogueBox, TileMap, Palettes, OverworldHud
+├── scenes/       TitleScene, IntroScene, LevelSelectScene, OverworldScene,
 │                 RoomChallengeScene, BossBattleScene, LevelClearScene
 ├── systems/      Movement, Collision, Dialogue, BossMinigame, PauseMenu, SaveSystem
+├── ui/           Handheld console (DOM, layout, touch input) and screen-reader announcer
+├── audio/        Sfx
 ├── data/         sprites, maps, sports, levels, dialogue
 └── state/        GameState
+public/           Web app manifest and icons
 ```
 
 ## Author

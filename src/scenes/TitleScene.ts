@@ -1,13 +1,16 @@
 import type { Scene } from '../engine/GameLoop';
 import type { Input } from '../engine/Input';
 import type { SceneManager } from '../engine/SceneManager';
-import type { GameState } from '../state/GameState';
+import { resetGameState, type GameState } from '../state/GameState';
 import { drawText, measureText } from '../render/PixelFont';
 import { PALETTES } from '../render/Palettes';
+import { drawSprite } from '../render/SpriteSheet';
 import { GAME_W, GAME_H } from '../render/DialogueBox';
-import { hasSave, loadSave, deleteSave, applySave } from '../systems/SaveSystem';
+import { hasSave, loadSave, applySave } from '../systems/SaveSystem';
+import { sfx } from '../audio/Sfx';
+import { announce } from '../ui/announce';
 
-// Simple logo sprite: 48x16 clipboard/whistle icon (drawn at 1x scale)
+// Logo sprite: 48x16 clipboard and trophy icons, drawn at 2x
 const LOGO_SPRITE: number[][] = [
   [0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
   [0,0,0,0,1,4,4,4,4,4,4,4,4,4,4,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -27,18 +30,84 @@ const LOGO_SPRITE: number[][] = [
   [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
 ];
 
-// Draw logo sprite using palette colors
-const drawLogo = (ctx: CanvasRenderingContext2D, x: number, y: number, colors: string[]) => {
-  for (let row = 0; row < LOGO_SPRITE.length; row++) {
-    const spriteRow = LOGO_SPRITE[row]!;
-    for (let col = 0; col < spriteRow.length; col++) {
-      const idx = spriteRow[col];
-      if (idx === 0) continue;
-      const color = colors[idx!];
-      if (!color) continue;
-      ctx.fillStyle = color;
-      ctx.fillRect(Math.floor(x + col), Math.floor(y + row), 1, 1);
-    }
+const LOGO_SCALE = 2;
+
+// The artwork does not fill its 48x16 cells (empty columns on the left and right, empty rows at the
+// bottom), so find where the icons really are and centre those instead of the whole sprite.
+const LOGO_ART = (() => {
+  let left = Infinity;
+  let right = -1;
+  let top = Infinity;
+  let bottom = -1;
+  LOGO_SPRITE.forEach((row, r) =>
+    row.forEach((cell, c) => {
+      if (cell === 0) return;
+      left = Math.min(left, c);
+      right = Math.max(right, c);
+      top = Math.min(top, r);
+      bottom = Math.max(bottom, r);
+    }),
+  );
+  return { left, top, w: (right - left + 1) * LOGO_SCALE, h: (bottom - top + 1) * LOGO_SCALE };
+})();
+
+/** Draw the logo with its artwork centred on cx and its top edge at y (palette colours, cached by drawSprite). */
+const drawLogo = (ctx: CanvasRenderingContext2D, cx: number, y: number, colors: string[]) => {
+  drawSprite(
+    ctx,
+    LOGO_SPRITE,
+    Math.round(cx - LOGO_ART.w / 2) - LOGO_ART.left * LOGO_SCALE,
+    y - LOGO_ART.top * LOGO_SCALE,
+    colors,
+    LOGO_SCALE,
+  );
+};
+
+const INPUT_LOCK = 0.5; // seconds: swallow the press that brought us here (e.g. A on QUIT TO TITLE)
+
+const MENU = ['CONTINUE', 'NEW GAME'] as const;
+const CONFIRM = ['NO', 'YES'] as const;
+
+// Overwrite warning: dark enough to read on the cream background (6.5:1)
+const WARN_COLOR = '#a01818';
+
+const CONTROLS = ['D-PAD: MOVE', 'A: TALK / CHOOSE', 'B: BACK / RUN'];
+
+const CURSOR_GAP = 4; // air between the '>' column and the labels (same as the pause menu and choice lists)
+
+// Layout (game pixels), top to bottom: title, subtitle, rule, logo band, rule, controls legend; the prompt
+// or menu follows below. Everything down to the legend is the same in every state.
+const TITLE_Y = 20; // 3x text: 21px tall, plus a 1px shadow
+const SUBTITLE_Y = 46;
+const RULE_TOP_Y = 59;
+const LOGO_Y = 67; // top of the 2x artwork: 6px below the top rule and above the bottom one
+const RULE_BOTTOM_Y = 99;
+const LEGEND_Y = 110;
+const LEGEND_PITCH = 10;
+const START_Y = 156; // 'PRESS START'
+const MENU_Y = 152; // CONTINUE / NEW GAME
+const CONFIRM_HEADING_Y = 148; // 'OVERWRITE SAVE?'
+const CONFIRM_MENU_Y = 170; // NO / YES
+
+// Vertical option list at scale 2: a cursor column, a gap, then the labels on one shared left edge.
+// The whole block is centred, so the '>' sits in a fixed column however the options change.
+const drawMenu = (
+  ctx: CanvasRenderingContext2D,
+  options: readonly string[],
+  selected: number,
+  y: number,
+  activeColor: string,
+  idleColor: string,
+) => {
+  const widest = Math.max(...options.map(opt => measureText(opt, 2)));
+  const cursorW = measureText('>', 2);
+  const labelX = cursorW + CURSOR_GAP;
+  const cursorX = Math.floor((GAME_W - (labelX + widest - 2)) / 2); // -2: the last glyph's trailing gap
+  for (let i = 0; i < options.length; i++) {
+    const isSelected = i === selected;
+    const color = isSelected ? activeColor : idleColor;
+    if (isSelected) drawText(ctx, '>', cursorX, y + i * 20, color, 2);
+    drawText(ctx, options[i]!, cursorX + labelX, y + i * 20, color, 2);
   }
 };
 
@@ -49,56 +118,96 @@ export const createTitleScene = (
 ): Scene => {
   let timer = 0;
   let saveExists = false;
-  let menuIndex = 0; // 0 = Continue, 1 = New Game (when save exists)
-  let upWasDown = false;
-  let downWasDown = false;
+  let menuIndex = 0; // 0 = Continue, 1 = New Game (when a save exists)
+  let confirming = false; // inline "OVERWRITE SAVE?" prompt after choosing New Game
+  let confirmIndex = 0; // 0 = No (the safe default), 1 = Yes
+
+  const startNewGame = () => {
+    // The old save is deliberately left alone: the new game replaces it when it first saves,
+    // so backing out of the intro doesn't cost the player their progress.
+    resetGameState(gameState);
+    sfx.play('start');
+    sceneManager.switchTo('intro');
+  };
+
+  const continueGame = () => {
+    const save = loadSave();
+    if (!save) {
+      // The save disappeared since we looked (storage cleared in another tab)
+      saveExists = false;
+      sfx.play('wrong');
+      announce('Save not found. Press Start to begin.');
+      return;
+    }
+    applySave(gameState, save);
+    sfx.play('start');
+    sceneManager.switchTo('levelSelect');
+  };
 
   return {
     onEnter() {
       timer = 0;
       saveExists = hasSave();
       menuIndex = 0;
-      upWasDown = false;
-      downWasDown = false;
+      confirming = false;
+      confirmIndex = 0;
+      announce(saveExists ? 'PhysQuest. Continue.' : 'PhysQuest. Press Start to begin.');
     },
 
     update(dt: number) {
       timer += dt;
       const inp = input.read();
 
-      if (timer < 0.5) return;
+      if (timer < INPUT_LOCK) return;
 
-      if (saveExists) {
-        // Menu navigation
-        const upPressed = inp.up && !upWasDown;
-        const downPressed = inp.down && !downWasDown;
-        upWasDown = inp.up;
-        downWasDown = inp.down;
+      const confirmPressed = inp.aPressed || inp.startPressed;
 
-        if (upPressed) menuIndex = (menuIndex - 1 + 2) % 2;
-        if (downPressed) menuIndex = (menuIndex + 1) % 2;
+      if (!saveExists) {
+        if (confirmPressed) startNewGame();
+        return;
+      }
 
-        if (inp.actionPressed) {
-          if (menuIndex === 0) {
-            // Continue
-            const save = loadSave();
-            if (save) {
-              applySave(gameState, save);
-              sceneManager.switchTo('levelSelect');
-            } else {
-              // Save was deleted externally
-              saveExists = false;
-            }
+      if (confirming) {
+        // Overwriting is destructive: only A can say YES, and B or START (Esc on a keyboard) backs out
+        if (inp.bPressed || inp.startPressed) {
+          confirming = false;
+          sfx.play('back');
+          announce(MENU[menuIndex] ?? '');
+          return;
+        }
+        // Only two choices, so any direction flips between them
+        if (inp.upRepeat || inp.downRepeat || inp.leftRepeat || inp.rightRepeat) {
+          confirmIndex = 1 - confirmIndex;
+          sfx.play('blip');
+          announce(CONFIRM[confirmIndex] ?? '');
+        }
+        if (inp.aPressed) {
+          if (confirmIndex === 1) {
+            startNewGame();
           } else {
-            // New Game
-            deleteSave();
-            sceneManager.switchTo('intro');
+            confirming = false;
+            sfx.play('back');
+            announce(MENU[menuIndex] ?? '');
           }
         }
-      } else {
-        // No save — just press space
-        if (inp.actionPressed) {
-          sceneManager.switchTo('intro');
+        return;
+      }
+
+      if (inp.upRepeat || inp.downRepeat) {
+        const step = inp.upRepeat ? -1 : 1;
+        menuIndex = (menuIndex + step + MENU.length) % MENU.length;
+        sfx.play('blip');
+        announce(MENU[menuIndex] ?? '');
+      }
+
+      if (confirmPressed) {
+        if (menuIndex === 0) {
+          continueGame();
+        } else {
+          confirming = true;
+          confirmIndex = 0;
+          sfx.play('select');
+          announce('Overwrite save? No');
         }
       }
     },
@@ -127,57 +236,51 @@ export const createTitleScene = (
       const titleW = measureText(title, 3);
       const titleX = (GAME_W - titleW) / 2;
       // Drop shadow
-      drawText(ctx, title, titleX + 1, 31, pal.colors[1], 3);
+      drawText(ctx, title, titleX + 1, TITLE_Y + 1, pal.colors[1], 3);
       // Main title
-      drawText(ctx, title, titleX, 30, pal.colors[5], 3);
+      drawText(ctx, title, titleX, TITLE_Y, pal.colors[5], 3);
 
       // Subtitle
       const sub = 'SPORTS SCIENCE ADVENTURE';
       const subW = measureText(sub, 1);
-      drawText(ctx, sub, (GAME_W - subW) / 2, 56, pal.colors[1]);
+      drawText(ctx, sub, (GAME_W - subW) / 2, SUBTITLE_Y, pal.colors[1]);
 
       // Horizontal divider
       ctx.fillStyle = pal.colors[2];
-      ctx.fillRect(30, 68, GAME_W - 60, 2);
+      ctx.fillRect(30, RULE_TOP_Y, GAME_W - 60, 2);
 
-      // Logo sprite
-      drawLogo(ctx, (GAME_W - 48) / 2, 76, pal.colors as unknown as string[]);
+      // Logo sprite, at 2x
+      drawLogo(ctx, GAME_W / 2, LOGO_Y, pal.colors as unknown as string[]);
 
       // Horizontal divider
       ctx.fillStyle = pal.colors[2];
-      ctx.fillRect(30, 98, GAME_W - 60, 2);
+      ctx.fillRect(30, RULE_BOTTOM_Y, GAME_W - 60, 2);
 
-      // Instructions
-      const inst1 = 'ARROWS TO MOVE';
-      const inst2 = 'SPACE TO INTERACT';
-      drawText(ctx, inst1, (GAME_W - measureText(inst1)) / 2, 110, pal.colors[1]);
-      drawText(ctx, inst2, (GAME_W - measureText(inst2)) / 2, 122, pal.colors[1]);
+      // Controls legend: one left-aligned block, centred as a whole
+      const legendW = Math.max(...CONTROLS.map(line => measureText(line)));
+      const legendX = Math.floor((GAME_W - legendW) / 2);
+      for (let i = 0; i < CONTROLS.length; i++) {
+        drawText(ctx, CONTROLS[i]!, legendX, LEGEND_Y + i * LEGEND_PITCH, pal.colors[1]);
+      }
 
-      // Menu or press start
-      if (saveExists) {
-        const menuY = 150;
-        const options = ['CONTINUE', 'NEW GAME'];
-        for (let i = 0; i < options.length; i++) {
-          const opt = options[i]!;
-          const isSelected = i === menuIndex;
-          const prefix = isSelected ? '>' : ' ';
-          const text = prefix + opt;
-          const textW = measureText(text, 2);
-          const color = isSelected ? pal.colors[0] : pal.colors[2];
-          drawText(ctx, text, (GAME_W - textW) / 2, menuY + i * 20, color, 2);
-        }
-      } else {
+      if (!saveExists) {
         // Press start — Pokemon-style blink (500ms on, 250ms off)
         const blinkCycle = (Date.now() % 750);
         if (blinkCycle < 500) {
-          const start = 'PRESS SPACE TO START';
+          const start = 'PRESS START';
           const startW = measureText(start, 2);
-          drawText(ctx, start, (GAME_W - startW) / 2, 155, pal.colors[0], 2);
+          drawText(ctx, start, (GAME_W - startW) / 2, START_Y, pal.colors[0], 2);
         }
+      } else if (confirming) {
+        const heading = 'OVERWRITE SAVE?';
+        drawText(ctx, heading, (GAME_W - measureText(heading, 2)) / 2, CONFIRM_HEADING_Y, WARN_COLOR, 2);
+        drawMenu(ctx, CONFIRM, confirmIndex, CONFIRM_MENU_Y, pal.colors[0], pal.colors[2]);
+      } else {
+        drawMenu(ctx, MENU, menuIndex, MENU_Y, pal.colors[0], pal.colors[2]);
       }
 
       // Version
-      drawText(ctx, 'V1.0', 8, GAME_H - 14, pal.colors[2]);
+      drawText(ctx, 'V1.1', 8, GAME_H - 14, pal.colors[2]);
     },
   };
 };

@@ -1,211 +1,506 @@
-import { drawPokemonBox } from '../render/SpriteSheet';
-import { drawText } from '../render/PixelFont';
-import { GAME_W, GAME_H } from '../render/DialogueBox';
+// Boss minigames. Each game measures how well the player performs (0-1) and scales it by their showdown
+// rating, the ceiling their rooms earned, so perfect play scores exactly the rating. The rival finishes at a
+// fixed share of their own ceiling (RIVAL_FACTOR) and the player wins by finishing strictly above that.
+// All timing runs on the dt passed to updateMinigame, so pausing the game pauses the bout.
+
+import type { InputState } from '../engine/Input';
+import { sfx } from '../audio/Sfx';
+import { GAME_W } from '../render/DialogueBox';
+import { drawText, measureText } from '../render/PixelFont';
+import { ROOM_KEYS, ROOM_LABEL, ROOM_STAT, type StatKey } from '../state/GameState';
 
 export type MinigameType = 'sprint' | 'strength' | 'endurance' | 'power';
 
-interface MinigameState {
+export const MINIGAME_FOR_STAT: Record<StatKey, MinigameType> = {
+  speed: 'sprint',
+  strength: 'strength',
+  endurance: 'endurance',
+  power: 'power',
+};
+
+export const STAT_LABEL: Record<StatKey, string> = {
+  speed: 'SPEED',
+  strength: 'STRENGTH',
+  endurance: 'ENDURANCE',
+  power: 'POWER',
+};
+
+/** Hub sign label of the room that raises a stat (e.g. 'TESTING' for speed). */
+export const roomLabelForStat = (stat: StatKey): string => {
+  const key = ROOM_KEYS.find(k => ROOM_STAT[k] === stat);
+  return key ? ROOM_LABEL[key] : '';
+};
+
+/** The rival finishes at this share of their ceiling, so it is also the score the player must beat. */
+export const RIVAL_FACTOR: Record<MinigameType, number> = {
+  sprint: 0.85,
+  strength: 0.8,
+  endurance: 0.75,
+  power: 0.7,
+};
+
+const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
+
+export const rivalFinalScore = (type: MinigameType, rivalCeiling: number): number =>
+  RIVAL_FACTOR[type] * clamp01(rivalCeiling);
+
+// The text colours (ink, good, bad, rivalText) are all >= 4.5:1 on the lavender boss background
+export const HUD_COLORS = {
+  ink: '#2a1a4a',
+  track: '#faf7ff',
+  locked: '#cbbfe3',
+  player: '#3858a8',
+  reached: '#2f9a45',
+  rival: '#a83030',
+  rivalText: '#8a1f1f',
+  good: '#1f6a2c',
+  bad: '#8a1f1f',
+};
+
+// ---- Tuning ----------------------------------------------------------------
+// A that dismissed a dialogue or the countdown must not count as the first mash / tap.
+const INPUT_LOCK = 0.3;
+
+const SPRINT_DURATION = 5;
+const SPRINT_MASHES = 30; // mashes that fill the bar to the player's rating
+
+const STRENGTH_DURATION = 4;
+const STRENGTH_HOLD = 2.5; // seconds of holding that fill the bar to the player's rating
+
+// Endurance: beats land on a fixed grid so the rhythm can be read from the approaching notes
+const BEAT_FIRST = 1;
+const BEAT_INTERVAL = 0.8;
+const BEAT_COUNT = 9;
+const BEAT_EARLY = 0.12; // a press this long before the beat still hits
+const BEAT_LATE = 0.18; // ...and this long after
+const ENDURANCE_DURATION = BEAT_FIRST + (BEAT_COUNT - 1) * BEAT_INTERVAL + BEAT_LATE + 0.42;
+
+const POWER_DURATION = 3;
+const POWER_CYCLE = 1.5; // seconds for the cursor to cross the bar
+const POWER_LEAD = 0.5; // the sweet spot first comes round this long after GO
+const POWER_PERFECT = 0.02; // +/- of the bar that scores the full rating
+const POWER_FALLOFF = 3; // accuracy lost per unit of bar away from the perfect zone
+
+export const beatTime = (k: number): number => BEAT_FIRST + k * BEAT_INTERVAL;
+
+type BeatResult = 'pending' | 'hit' | 'miss';
+
+export interface MinigameState {
   type: MinigameType;
-  active: boolean;
-  timer: number;
+  timer: number; // game seconds since GO
   duration: number;
-  playerScore: number;
-  rivalScore: number;
-  playerCeiling: number; // 0-1, from stats
+  rating: number; // player's ceiling, 0-1
   rivalCeiling: number;
-  // Type-specific
-  mashCount: number;
-  holdTimer: number;
-  holdTarget: number;
-  rhythmPhase: number;
-  rhythmHits: number;
-  rhythmMisses: number;
-  rhythmBeatTimer: number;
-  powerTapTime: number;
-  powerSweetSpot: number;
-  powerResult: number;
+  target: number; // the rival's final score: the player's score must beat it
+  playerScore: number; // live, 0-1
+  rivalScore: number; // live; reaches `target` at the end
   complete: boolean;
   won: boolean;
+  aHeld: boolean;
+  crossed: boolean; // bar has passed the target
+  // sprint
+  mashCount: number;
+  // strength
+  holdTimer: number;
+  // endurance
+  beats: BeatResult[];
+  tickIndex: number; // next beat whose tick sound is due
+  hits: number;
+  missedBeats: number;
+  strayMisses: number;
+  strayGaps: boolean[]; // per gap between beat windows: a stray miss was already counted
+  hitFlash: number;
+  missFlash: number;
+  beatFlash: number;
+  // power
+  sweetSpot: number; // 0-1 along the bar
+  startPhase: number; // cursor position at GO
+  tapProgress: number; // cursor position when A was pressed, -1 until then
 }
 
 export const createMinigameState = (
   type: MinigameType,
-  playerCeiling: number,
-  rivalCeiling: number
-): MinigameState => ({
-  type,
-  active: true,
-  timer: 0,
-  duration: type === 'sprint' ? 5 : type === 'strength' ? 4 : type === 'endurance' ? 8 : 3,
-  playerScore: 0,
-  rivalScore: 0,
-  playerCeiling: Math.max(0.1, Math.min(1, playerCeiling)),
-  rivalCeiling: Math.max(0.1, Math.min(1, rivalCeiling)),
-  mashCount: 0,
-  holdTimer: 0,
-  holdTarget: 2.5,
-  rhythmPhase: 0,
-  rhythmHits: 0,
-  rhythmMisses: 0,
-  rhythmBeatTimer: 0,
-  powerTapTime: -1,
-  powerSweetSpot: 0.5 + Math.random() * 0.3,
-  powerResult: -1,
-  complete: false,
-  won: false,
-});
+  playerRating: number,
+  rivalCeiling: number,
+  rng: () => number = Math.random,
+): MinigameState => {
+  const sweetSpot = 0.5 + rng() * 0.3;
+  const wrap = (v: number) => ((v % 1) + 1) % 1;
+  return {
+    type,
+    timer: 0,
+    duration:
+      type === 'sprint' ? SPRINT_DURATION
+        : type === 'strength' ? STRENGTH_DURATION
+          : type === 'endurance' ? ENDURANCE_DURATION
+            : POWER_DURATION,
+    rating: clamp01(playerRating),
+    rivalCeiling: clamp01(rivalCeiling),
+    target: rivalFinalScore(type, rivalCeiling),
+    playerScore: 0,
+    rivalScore: 0,
+    complete: false,
+    won: false,
+    aHeld: false,
+    crossed: false,
+    mashCount: 0,
+    holdTimer: 0,
+    beats: Array.from({ length: BEAT_COUNT }, (): BeatResult => 'pending'),
+    tickIndex: 0,
+    hits: 0,
+    missedBeats: 0,
+    strayMisses: 0,
+    strayGaps: Array.from({ length: BEAT_COUNT + 1 }, () => false),
+    hitFlash: 0,
+    missFlash: 0,
+    beatFlash: 0,
+    sweetSpot,
+    startPhase: wrap(sweetSpot - POWER_LEAD / POWER_CYCLE),
+    tapProgress: -1,
+  };
+};
 
+const finish = (s: MinigameState): void => {
+  s.complete = true;
+  s.rivalScore = s.target;
+  s.won = s.playerScore > s.target;
+};
+
+const powerProgress = (s: MinigameState): number => (s.startPhase + s.timer / POWER_CYCLE) % 1;
+
+/** Half-width (of the bar) of the zone where a tap beats the target; 0 when it can't be won. */
+export const powerWinHalf = (s: MinigameState): number => {
+  if (s.rating <= s.target) return 0;
+  return POWER_PERFECT + (1 - s.target / s.rating) / POWER_FALLOFF;
+};
+
+/** Index of the beat whose hit window contains t, or -1. */
+const windowAt = (t: number): number => {
+  for (let k = 0; k < BEAT_COUNT; k++) {
+    if (t >= beatTime(k) - BEAT_EARLY && t <= beatTime(k) + BEAT_LATE) return k;
+  }
+  return -1;
+};
+
+/** Which gap between hit windows t falls in (0 = before the first window, BEAT_COUNT = after the last). */
+const gapAt = (t: number): number => {
+  let gap = 0;
+  for (let k = 0; k < BEAT_COUNT; k++) if (t >= beatTime(k) - BEAT_EARLY) gap++;
+  return gap;
+};
+
+const updateEndurance = (s: MinigameState, pressed: boolean): void => {
+  const t = s.timer;
+
+  while (s.tickIndex < BEAT_COUNT && t >= beatTime(s.tickIndex)) {
+    sfx.play('beat');
+    s.beatFlash = 0.1;
+    s.tickIndex++;
+  }
+
+  if (pressed) {
+    const k = windowAt(t);
+    if (k >= 0) {
+      // One press resolves a beat; extra presses inside an already-resolved window are ignored
+      if (s.beats[k] === 'pending') {
+        s.beats[k] = 'hit';
+        s.hits++;
+        s.hitFlash = 0.18;
+        sfx.play('correct');
+      }
+    } else {
+      const gap = gapAt(t);
+      if (!s.strayGaps[gap]) {
+        s.strayGaps[gap] = true; // at most one miss per beat interval
+        s.strayMisses++;
+        s.missFlash = 0.18;
+        sfx.play('wrong');
+      }
+    }
+  }
+
+  for (let k = 0; k < BEAT_COUNT; k++) {
+    if (s.beats[k] === 'pending' && t > beatTime(k) + BEAT_LATE) {
+      s.beats[k] = 'miss'; // each beat is resolved exactly once
+      s.missedBeats++;
+      s.missFlash = 0.18;
+      sfx.play('bump');
+    }
+  }
+
+  s.playerScore = (s.hits / (BEAT_COUNT + s.strayMisses)) * s.rating;
+};
+
+const updatePower = (s: MinigameState, pressed: boolean): void => {
+  if (s.tapProgress >= 0 || !pressed) return;
+  s.tapProgress = powerProgress(s);
+  const off = Math.abs(s.tapProgress - s.sweetSpot);
+  const accuracy = clamp01(1 - Math.max(0, off - POWER_PERFECT) * POWER_FALLOFF);
+  s.playerScore = accuracy * s.rating;
+  finish(s);
+  sfx.play(s.won ? 'select' : 'wrong');
+};
+
+/** Advance one fixed step. A is ignored for the first INPUT_LOCK seconds after GO. */
 export const updateMinigame = (
-  state: MinigameState,
+  s: MinigameState,
   dt: number,
-  actionPressed: boolean,
-  actionHeld: boolean
+  inp: Pick<InputState, 'a' | 'aPressed'>,
 ): void => {
-  if (!state.active || state.complete) return;
-  state.timer += dt;
+  if (s.complete) return;
+  s.timer += dt;
+  s.aHeld = inp.a;
+  s.hitFlash = Math.max(0, s.hitFlash - dt);
+  s.missFlash = Math.max(0, s.missFlash - dt);
+  s.beatFlash = Math.max(0, s.beatFlash - dt);
 
-  switch (state.type) {
-    case 'sprint': {
-      if (actionPressed) state.mashCount++;
-      const maxMashes = 30;
-      state.playerScore = Math.min(1, (state.mashCount / maxMashes)) * state.playerCeiling;
-      state.rivalScore = Math.min(1, (state.timer / state.duration) * 0.85) * state.rivalCeiling;
-      if (state.timer >= state.duration) {
-        state.complete = true;
-        state.won = state.playerScore > state.rivalScore;
-      }
-      break;
-    }
-    case 'strength': {
-      if (actionHeld) {
-        state.holdTimer += dt;
-        state.playerScore = Math.min(1, state.holdTimer / state.holdTarget) * state.playerCeiling;
-      }
-      state.rivalScore = Math.min(1, (state.timer / state.duration) * 0.8) * state.rivalCeiling;
-      if (state.timer >= state.duration) {
-        state.complete = true;
-        state.won = state.playerScore > state.rivalScore;
-      }
-      break;
-    }
-    case 'endurance': {
-      const beatInterval = 0.8;
-      state.rhythmBeatTimer += dt;
-      if (state.rhythmBeatTimer >= beatInterval) {
-        state.rhythmBeatTimer -= beatInterval;
-        state.rhythmPhase = 1;
-        setTimeout(() => {
-          if (state.rhythmPhase === 1) {
-            state.rhythmMisses++;
-            state.rhythmPhase = 0;
-          }
-        }, 200);
-      }
-      if (actionPressed && state.rhythmPhase === 1) {
-        state.rhythmHits++;
-        state.rhythmPhase = 0;
-      } else if (actionPressed && state.rhythmPhase === 0) {
-        state.rhythmMisses++;
-      }
-      const totalBeats = Math.max(1, state.rhythmHits + state.rhythmMisses);
-      state.playerScore = (state.rhythmHits / totalBeats) * state.playerCeiling;
-      state.rivalScore = Math.min(1, (state.timer / state.duration) * 0.75) * state.rivalCeiling;
-      if (state.timer >= state.duration) {
-        state.complete = true;
-        state.won = state.playerScore > state.rivalScore;
-      }
-      break;
-    }
-    case 'power': {
-      const cycleSpeed = 1.5;
-      const progress = (state.timer % cycleSpeed) / cycleSpeed;
+  const live = s.timer >= INPUT_LOCK;
+  const pressed = live && inp.aPressed;
+  const held = live && inp.a;
 
-      if (actionPressed && state.powerTapTime < 0) {
-        state.powerTapTime = state.timer;
-        const accuracy = 1 - Math.abs(progress - state.powerSweetSpot) * 3;
-        state.powerResult = Math.max(0, accuracy) * state.playerCeiling;
-        state.playerScore = state.powerResult;
-        state.rivalScore = 0.7 * state.rivalCeiling;
-        state.complete = true;
-        state.won = state.playerScore > state.rivalScore;
+  switch (s.type) {
+    case 'sprint':
+      if (pressed) {
+        s.mashCount++;
+        sfx.play('mash');
       }
-      if (state.timer >= state.duration && !state.complete) {
-        state.playerScore = 0;
-        state.rivalScore = 0.7 * state.rivalCeiling;
-        state.complete = true;
-        state.won = false;
-      }
+      s.playerScore = Math.min(1, s.mashCount / SPRINT_MASHES) * s.rating;
       break;
-    }
+    case 'strength':
+      if (held) s.holdTimer += dt;
+      s.playerScore = Math.min(1, s.holdTimer / STRENGTH_HOLD) * s.rating;
+      break;
+    case 'endurance':
+      updateEndurance(s, pressed);
+      break;
+    case 'power':
+      updatePower(s, pressed);
+      break;
+  }
+
+  // Cue once when the bar passes the target (the rhythm game already sounds on every hit)
+  if (!s.crossed && s.playerScore > s.target) {
+    s.crossed = true;
+    if (s.type === 'sprint' || s.type === 'strength') sfx.play('select');
+  }
+
+  if (s.complete) return;
+  if (s.type !== 'power') s.rivalScore = s.target * Math.min(1, s.timer / s.duration);
+  if (s.timer >= s.duration) {
+    if (s.type === 'power') sfx.play('wrong'); // never tapped: no score
+    finish(s);
   }
 };
 
-export const renderMinigame = (
+// ---- Drawing ---------------------------------------------------------------
+
+const BAR_X = 24;
+const BAR_W = 208;
+// Everything is stacked from PROMPT_Y, which sits 4px under the athletes' platforms (they end at y = 75).
+// RESULT_Y puts 'YOU WIN!' between the lowest HUD text (ends at y = 139) and the result dialogue box (y = 164).
+const PROMPT_Y = 80;
+const RESULT_Y = 144;
+
+export const MINIGAME_PROMPT: Record<MinigameType, string> = {
+  sprint: 'MASH A!',
+  strength: 'HOLD A!',
+  endurance: 'TAP A ON THE BEAT!',
+  power: 'TAP A AT THE MARK!',
+};
+
+const pct = (v: number): number => Math.round(clamp01(v) * 100);
+
+const fillDisc = (ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, color: string): void => {
+  ctx.fillStyle = color;
+  for (let dy = -r; dy <= r; dy++) {
+    const dx = Math.floor(Math.sqrt(r * r + r - dy * dy));
+    ctx.fillRect(cx - dx, cy + dy, dx * 2 + 1, 1);
+  }
+};
+
+/** Console-style A button; sinks while the real button is held. */
+const drawAButton = (ctx: CanvasRenderingContext2D, cx: number, cy: number, pressed: boolean): void => {
+  const dy = pressed ? 1 : 0;
+  fillDisc(ctx, cx, cy + dy, 6, '#080808');
+  fillDisc(ctx, cx, cy + dy, 5, pressed ? '#5a1a45' : '#b03a8a');
+  drawText(ctx, 'A', cx - 2, cy - 3 + dy, '#f8f8f0');
+};
+
+/** Slim outlined bar; `value` is 0-1 of the inner width. */
+export const drawMeter = (
   ctx: CanvasRenderingContext2D,
-  state: MinigameState
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  value: number,
+  fillColor: string,
 ): void => {
-  if (!state.active) return;
+  ctx.fillStyle = HUD_COLORS.ink;
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = HUD_COLORS.track;
+  ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+  const fillW = Math.round((w - 2) * clamp01(value));
+  if (fillW > 0) {
+    ctx.fillStyle = fillColor;
+    ctx.fillRect(x + 1, y + 1, fillW, h - 2);
+  }
+};
 
-  const midY = GAME_H / 2 + 20;
-  const barW = 180;
-  const barH = 16;
-  const barX = (GAME_W - barW) / 2;
+const barPx = (x: number, w: number, v: number): number => x + 1 + Math.round((w - 2) * clamp01(v));
 
-  switch (state.type) {
-    case 'sprint': {
-      drawText(ctx, 'MASH SPACE!', barX, midY - 20, '#080808');
-      drawPokemonBox(ctx, barX, midY, barW, barH);
-      const fillW = Math.floor((barW - 8) * state.playerScore);
-      ctx.fillStyle = '#38a848';
-      ctx.fillRect(barX + 4, midY + 4, fillW, barH - 8);
-      const remaining = Math.max(0, state.duration - state.timer);
-      drawText(ctx, `TIME: ${remaining.toFixed(1)}`, barX, midY + 24, '#303030');
+/** Player's score bar on a 0-100% scale: hatched beyond the rating, marker at the target. */
+const drawScoreMeter = (
+  ctx: CanvasRenderingContext2D,
+  s: MinigameState,
+  y: number,
+  h: number,
+  markerBottom: number,
+): void => {
+  drawMeter(ctx, BAR_X, y, BAR_W, h, s.playerScore, s.playerScore > s.target ? HUD_COLORS.reached : HUD_COLORS.player);
+
+  // Beyond the rating the athlete can never score: hatch it so the ceiling is visible
+  const lockedX = barPx(BAR_X, BAR_W, s.rating);
+  ctx.fillStyle = HUD_COLORS.locked;
+  for (let x = lockedX; x < BAR_X + BAR_W - 1; x += 2) ctx.fillRect(x, y + 1, 1, h - 2);
+
+  // Marker at the target
+  const mx = barPx(BAR_X, BAR_W, s.target);
+  ctx.fillStyle = HUD_COLORS.rival;
+  ctx.fillRect(mx - 1, y - 3, 2, markerBottom - y + 3);
+  ctx.fillRect(mx - 3, y - 4, 6, 2);
+  ctx.fillRect(mx - 3, markerBottom, 6, 2);
+};
+
+const drawNeedLabel = (ctx: CanvasRenderingContext2D, s: MinigameState, y: number): void => {
+  const text = `NEED ${pct(s.target)}%`;
+  const w = measureText(text);
+  const mx = barPx(BAR_X, BAR_W, s.target);
+  const x = Math.max(BAR_X, Math.min(BAR_X + BAR_W - w, Math.round(mx - w / 2)));
+  drawText(ctx, text, x, y, HUD_COLORS.rivalText);
+};
+
+const A_BUTTON_W = 13;
+const A_BUTTON_GAP = 5;
+
+const drawPrompt = (ctx: CanvasRenderingContext2D, s: MinigameState): void => {
+  const text = MINIGAME_PROMPT[s.type];
+  const total = A_BUTTON_W + A_BUTTON_GAP + measureText(text, 2);
+  const x0 = Math.round((GAME_W - total) / 2);
+  drawAButton(ctx, x0 + (A_BUTTON_W - 1) / 2, PROMPT_Y + 7, s.aHeld);
+  drawText(ctx, text, x0 + A_BUTTON_W + A_BUTTON_GAP, PROMPT_Y, HUD_COLORS.ink, 2);
+};
+
+/** Sprint and strength: one big bar with the rival chasing underneath. */
+const drawTimedBar = (ctx: CanvasRenderingContext2D, s: MinigameState): void => {
+  const y = PROMPT_Y + 19;
+  const h = 16;
+  drawScoreMeter(ctx, s, y, h, y + h + 7);
+  drawMeter(ctx, BAR_X, y + h + 2, BAR_W, 5, s.rivalScore, HUD_COLORS.rival);
+  drawNeedLabel(ctx, s, y + h + 11);
+  if (!s.complete) {
+    const remaining = Math.max(0, s.duration - s.timer);
+    const text = `TIME ${remaining.toFixed(1)}`;
+    drawText(ctx, text, Math.round((GAME_W - measureText(text)) / 2), y + h + 22, HUD_COLORS.ink);
+  }
+};
+
+// Endurance lane: notes travel left and land on the zone at the beat
+const LANE_Y = PROMPT_Y + 16;
+const LANE_H = 18;
+const ZONE_X = BAR_X + 56;
+const NOTE_SPEED = 140; // px per second
+
+const drawTrackFrame = (ctx: CanvasRenderingContext2D, frameColor: string): void => {
+  ctx.fillStyle = frameColor;
+  ctx.fillRect(BAR_X, LANE_Y, BAR_W, LANE_H);
+  ctx.fillStyle = HUD_COLORS.track;
+  ctx.fillRect(BAR_X + 1, LANE_Y + 1, BAR_W - 2, LANE_H - 2);
+};
+
+const drawLane = (ctx: CanvasRenderingContext2D, s: MinigameState): void => {
+  drawTrackFrame(ctx, s.missFlash > 0 ? HUD_COLORS.bad : HUD_COLORS.ink);
+
+  // The press window, drawn to scale: a note inside the zone is a hit
+  const zl = Math.round(ZONE_X - BEAT_LATE * NOTE_SPEED);
+  const zr = Math.round(ZONE_X + BEAT_EARLY * NOTE_SPEED);
+  ctx.fillStyle = s.hitFlash > 0 ? '#8fdc9f' : '#cdeed3';
+  ctx.fillRect(zl, LANE_Y + 1, zr - zl, LANE_H - 2);
+  ctx.fillStyle = HUD_COLORS.good;
+  ctx.fillRect(zl, LANE_Y + 1, 1, LANE_H - 2);
+  ctx.fillRect(zr - 1, LANE_Y + 1, 1, LANE_H - 2);
+  ctx.fillRect(ZONE_X, LANE_Y + 1, s.beatFlash > 0 ? 3 : 1, LANE_H - 2);
+
+  for (let k = 0; k < BEAT_COUNT; k++) {
+    const result = s.beats[k];
+    if (result === 'hit') continue;
+    const x = Math.round(ZONE_X + (beatTime(k) - s.timer) * NOTE_SPEED);
+    if (x < BAR_X + 6 || x > BAR_X + BAR_W - 6) continue;
+    const color = result === 'miss' ? HUD_COLORS.rival : HUD_COLORS.player;
+    ctx.fillStyle = HUD_COLORS.ink;
+    ctx.fillRect(x - 5, LANE_Y + 3, 11, 11);
+    ctx.fillStyle = color;
+    ctx.fillRect(x - 4, LANE_Y + 4, 9, 9);
+    ctx.fillStyle = '#f8f8f0';
+    ctx.fillRect(x - 2, LANE_Y + 6, 2, 2);
+  }
+};
+
+const drawEndurance = (ctx: CanvasRenderingContext2D, s: MinigameState): void => {
+  drawLane(ctx, s);
+  const y = LANE_Y + LANE_H + 5;
+  const h = 8;
+  const labelY = y + h + 6;
+  drawScoreMeter(ctx, s, y, h, y + h + 2);
+  drawNeedLabel(ctx, s, labelY);
+  drawText(ctx, `HITS ${s.hits}`, BAR_X, labelY, HUD_COLORS.good);
+  const miss = `MISS ${s.missedBeats + s.strayMisses}`;
+  drawText(ctx, miss, BAR_X + BAR_W - measureText(miss) + 1, labelY, HUD_COLORS.bad);
+};
+
+const drawPower = (ctx: CanvasRenderingContext2D, s: MinigameState): void => {
+  drawTrackFrame(ctx, HUD_COLORS.ink);
+
+  const span = BAR_W - 8;
+  const at = (p: number) => BAR_X + 4 + Math.round(p * span);
+
+  // Tap while the cursor is inside the light zone to beat the target; the dark centre is a perfect hit
+  const winHalf = powerWinHalf(s);
+  if (winHalf > 0) {
+    ctx.fillStyle = '#cdeed3';
+    ctx.fillRect(at(s.sweetSpot - winHalf), LANE_Y + 1, at(s.sweetSpot + winHalf) - at(s.sweetSpot - winHalf), LANE_H - 2);
+  }
+  ctx.fillStyle = HUD_COLORS.good;
+  ctx.fillRect(at(s.sweetSpot - POWER_PERFECT), LANE_Y + 1, at(s.sweetSpot + POWER_PERFECT) - at(s.sweetSpot - POWER_PERFECT) + 1, LANE_H - 2);
+
+  const progress = s.tapProgress >= 0 ? s.tapProgress : powerProgress(s);
+  const cx = at(progress);
+  ctx.fillStyle = s.tapProgress < 0 ? '#080808' : s.won ? HUD_COLORS.good : HUD_COLORS.bad;
+  ctx.fillRect(cx - 1, LANE_Y - 1, 3, LANE_H + 2);
+
+  const y = LANE_Y + LANE_H + 5;
+  const h = 8;
+  drawScoreMeter(ctx, s, y, h, y + h + 2);
+  drawNeedLabel(ctx, s, y + h + 6);
+};
+
+export const renderMinigame = (ctx: CanvasRenderingContext2D, s: MinigameState): void => {
+  drawPrompt(ctx, s);
+  switch (s.type) {
+    case 'sprint':
+    case 'strength':
+      drawTimedBar(ctx, s);
       break;
-    }
-    case 'strength': {
-      drawText(ctx, 'HOLD SPACE!', barX, midY - 20, '#080808');
-      drawPokemonBox(ctx, barX, midY, barW, barH);
-      const fillW = Math.floor((barW - 8) * state.playerScore);
-      ctx.fillStyle = '#a83030';
-      ctx.fillRect(barX + 4, midY + 4, fillW, barH - 8);
-      const remaining = Math.max(0, state.duration - state.timer);
-      drawText(ctx, `TIME: ${remaining.toFixed(1)}`, barX, midY + 24, '#303030');
+    case 'endurance':
+      drawEndurance(ctx, s);
       break;
-    }
-    case 'endurance': {
-      drawText(ctx, 'HIT THE BEAT!', barX, midY - 20, '#080808');
-      const beatOn = state.rhythmPhase === 1;
-      const beatBg = beatOn ? '#3858a8' : '#a0a0a0';
-      drawPokemonBox(ctx, GAME_W / 2 - 14, midY, 28, 28, beatBg);
-      if (beatOn) {
-        drawText(ctx, 'NOW', GAME_W / 2 - 9, midY + 10, '#080808');
-      }
-      drawText(ctx, `HITS: ${state.rhythmHits}`, barX, midY + 36, '#38a848');
-      drawText(ctx, `MISS: ${state.rhythmMisses}`, barX + 100, midY + 36, '#a83030');
+    case 'power':
+      drawPower(ctx, s);
       break;
-    }
-    case 'power': {
-      drawText(ctx, 'TAP AT THE MARK!', barX - 10, midY - 20, '#080808');
-      drawPokemonBox(ctx, barX, midY, barW, barH);
-      // Sweet spot marker
-      const sweetX = barX + 4 + state.powerSweetSpot * (barW - 8);
-      ctx.fillStyle = '#38a848';
-      ctx.fillRect(Math.floor(sweetX - 4), midY - 4, 8, barH + 8);
-      // Moving cursor
-      if (state.powerTapTime < 0) {
-        const cycleSpeed = 1.5;
-        const progress = (state.timer % cycleSpeed) / cycleSpeed;
-        const cursorX = barX + 4 + progress * (barW - 8);
-        ctx.fillStyle = '#080808';
-        ctx.fillRect(Math.floor(cursorX - 2), midY - 2, 4, barH + 4);
-      }
-      break;
-    }
   }
 
-  if (state.complete) {
-    const resultText = state.won ? 'YOU WIN!' : 'YOU LOSE!';
-    const color = state.won ? '#38a848' : '#a83030';
-    drawText(ctx, resultText, GAME_W / 2 - 30, midY + 50, color, 2);
+  if (s.complete) {
+    const text = s.won ? 'YOU WIN!' : 'YOU LOSE!';
+    drawText(ctx, text, Math.round((GAME_W - measureText(text, 2)) / 2), RESULT_Y, s.won ? HUD_COLORS.good : HUD_COLORS.bad, 2);
   }
 };

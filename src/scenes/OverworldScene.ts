@@ -1,20 +1,55 @@
 import type { Scene } from '../engine/GameLoop';
 import type { Input } from '../engine/Input';
 import type { SceneManager } from '../engine/SceneManager';
-import type { GameState } from '../state/GameState';
+import {
+  ROOM_STAT,
+  allRoomsComplete,
+  roomKeyForMap,
+  roomsCompleted,
+  type GameState,
+  type HubDoor,
+  type RoomKey,
+} from '../state/GameState';
 import type { DialogueSystem } from '../systems/Dialogue';
 import type { Movement } from '../systems/Movement';
 import type { PauseMenu } from '../systems/PauseMenu';
 import { renderTileMap, TILE_SIZE } from '../render/TileMap';
 import { drawSprite } from '../render/SpriteSheet';
-import { drawText, measureText } from '../render/PixelFont';
 import { GAME_W, GAME_H } from '../render/DialogueBox';
-import { ALL_MAPS, type MapData } from '../data/maps';
+import {
+  drawAlertBubble,
+  drawArenaArrow,
+  drawDoneStar,
+  drawHubLabels,
+  drawMapBanner,
+  drawObjectivesPanel,
+  drawRoomsBadge,
+  drawTalkPrompt,
+  levelLine,
+  objectivesSummary,
+} from '../render/OverworldHud';
+import { ALL_MAPS, HUB_RETURN, HUB_START, ROOM_SPAWN, type MapData, type Spawn } from '../data/maps';
 import { DIALOGUES } from '../data/dialogue';
 import { getCoachSprite, NPC_SPRITE, SPRITE_COLORS } from '../data/sprites';
-import { checkInteraction, checkStandingOnDoor } from '../systems/Collision';
+import { checkInteraction, checkStandingOnDoor, findOpenNeighbour } from '../systems/Collision';
 import { PALETTES } from '../render/Palettes';
-import { LEVELS } from '../data/levels';
+import { sfx } from '../audio/Sfx';
+import { announce } from '../ui/announce';
+
+const FADE_TIME = 0.15; // seconds to black, then again back in
+const EPS = 1e-4;
+const BANNER_TIME = 2;
+const BANNER_FADE = 0.4;
+const A_BUFFER = 0.25; // an A press while stepping is kept this long and used when the step ends
+
+const HUB_DOORS: readonly HubDoor[] = ['room1', 'room2', 'room3', 'room4', 'boss'];
+const asHubDoor = (target: string): HubDoor | null => HUB_DOORS.find(d => d === target) ?? null;
+
+interface Fade {
+  phase: 'out' | 'in';
+  timer: number;
+  apply: () => void; // runs at full black
+}
 
 export const createOverworldScene = (
   input: Input,
@@ -28,185 +63,279 @@ export const createOverworldScene = (
 ): Scene => {
   let currentMapId = 'hub';
   let currentMap: MapData = ALL_MAPS['hub']!;
-  let roomLabel = '';
-  let roomLabelTimer = 0;
+  let bannerTimer = 0;
+  let aBuffer = 0;
+  let panelOpen = false;
+  let fade: Fade | null = null;
 
-  const switchMap = (mapId: string) => {
+  const isHub = () => currentMapId === 'hub';
+
+  const applyMap = (mapId: string, spawn: Spawn, showBanner = true) => {
     const map = ALL_MAPS[mapId];
     if (!map) return;
     currentMapId = mapId;
     currentMap = map;
-    // Place player at the door going back
-    if (mapId === 'hub') {
-      gameState.playerPos = { x: 7, y: 7 };
-      gameState.playerDir = 'up';
-    } else {
-      gameState.playerPos = { x: 7, y: 11 };
-      gameState.playerDir = 'up';
+    gameState.playerPos.x = spawn.x;
+    gameState.playerPos.y = spawn.y;
+    gameState.playerDir = spawn.dir;
+    movement.reset(gameState); // a key held through the door must not carry into the new map
+    aBuffer = 0;
+    bannerTimer = showBanner ? BANNER_TIME : 0;
+    announce(map.name);
+  };
+
+  const hubSpawn = (door: HubDoor | null): Spawn => (door ? HUB_RETURN[door] : HUB_START);
+
+  const say = (text: string, choices?: string[], onComplete?: (choice?: number) => void) => {
+    announce(text);
+    dialogue.show(text, choices, onComplete);
+  };
+
+  const startTransition = (apply: () => void) => {
+    if (fade) return;
+    sfx.play('door');
+    fade = { phase: 'out', timer: 0, apply };
+  };
+
+  /** Fade through a hub door; remembers which door so the hub puts the player back outside it. */
+  const goThrough = (door: HubDoor, apply: () => void) => {
+    gameState.returnDoor = door;
+    startTransition(apply);
+  };
+
+  const enterRoomMap = (roomId: string) => {
+    const door = asHubDoor(roomId);
+    if (door) goThrough(door, () => applyMap(roomId, ROOM_SPAWN));
+  };
+
+  const leaveRoom = () => {
+    // The door we came in by is the one we leave by; returnDoor covers a scene re-entered mid-room
+    const door = asHubDoor(currentMapId) ?? gameState.returnDoor;
+    startTransition(() => applyMap('hub', hubSpawn(door), false)); // the hub banner only greets a fresh start
+  };
+
+  /** Put the player back on the tile they stepped onto the door from (never a fixed offset). */
+  const stepBack = () => {
+    const px = Math.round(gameState.playerPos.x);
+    const py = Math.round(gameState.playerPos.y);
+    const target = movement.stepOrigin() ?? findOpenNeighbour(currentMap.tiles, px, py);
+    if (target) movement.forceStep(gameState, target.x, target.y);
+  };
+
+  const promptReplay = (roomKey: RoomKey, roomId: string) => {
+    const best = Math.round(gameState.playerStats[ROOM_STAT[roomKey]] * 100);
+    say(`THIS ROOM IS COMPLETE (BEST ${best}%). REPLAY IT TO RAISE YOUR SCORE?`, ['YES', 'NO'], choice => {
+      if (choice === 0) enterRoomMap(roomId);
+      else stepBack();
+    });
+  };
+
+  const handleArrival = () => {
+    const standing = checkStandingOnDoor(gameState, currentMap);
+    const target = standing.target;
+    if (!target) return;
+
+    if (standing.type === 'door') {
+      if (target === 'hub') {
+        if (!isHub()) leaveRoom();
+        return;
+      }
+      if (!isHub()) return;
+      const roomKey = roomKeyForMap(target);
+      if (!roomKey) return;
+      if (gameState.roomProgress[roomKey]) promptReplay(roomKey, target);
+      else enterRoomMap(target);
+      return;
     }
-    roomLabel = map.name;
-    roomLabelTimer = 2;
+
+    if (standing.type === 'bossDoor' && isHub()) {
+      if (allRoomsComplete(gameState)) {
+        goThrough('boss', onEnterBoss);
+      } else {
+        sfx.play('wrong');
+        say(`COMPLETE ALL 4 ROOMS FIRST (${roomsCompleted(gameState)}/4 DONE).`, undefined, stepBack);
+      }
+    }
+  };
+
+  const interact = () => {
+    const hit = checkInteraction(gameState, currentMap);
+    if ((hit.type !== 'npc' && hit.type !== 'equipment') || !hit.dialogueKey) return;
+
+    // A room's athlete starts that room's challenge
+    if (hit.type === 'npc' && !isHub()) {
+      sfx.play('select');
+      onEnterRoom(currentMapId);
+      return;
+    }
+
+    const lines = DIALOGUES[hit.dialogueKey];
+    if (lines && lines.length > 0) dialogue.showSequence(lines.map(l => l.text));
+  };
+
+  const openPanel = () => {
+    panelOpen = true;
+    sfx.play('select');
+    announce(objectivesSummary(gameState));
+  };
+
+  const closePanel = () => {
+    panelOpen = false;
+    sfx.play('back');
+  };
+
+  const updateFade = (dt: number) => {
+    if (!fade) return;
+    fade.timer += dt;
+    if (fade.timer < FADE_TIME - EPS) return;
+    if (fade.phase === 'out') {
+      const { apply } = fade;
+      fade = { phase: 'in', timer: 0, apply };
+      apply();
+    } else {
+      fade = null;
+    }
   };
 
   return {
     onEnter() {
-      dialogue.state.active = false;
-      switchMap('hub');
-      roomLabel = currentMap.name;
-      roomLabelTimer = 2;
+      dialogue.reset();
+      fade = null;
+      panelOpen = false;
+      // Back from a room or the arena: stand just outside that door, with no banner (it would sit under
+      // the player). Otherwise a fresh level: start in the middle of the hub and greet it with the banner,
+      // unless every room is already done: then the banner would sit on the arena arrow, the thing to look at.
+      const door = gameState.returnDoor;
+      applyMap('hub', hubSpawn(door), door === null && !allRoomsComplete(gameState));
+    },
+
+    onExit() {
+      dialogue.reset();
+      fade = null;
+      panelOpen = false;
     },
 
     update(dt: number) {
       const inp = input.read();
 
-      // Pause menu
-      if (inp.escapePressed && !pauseMenu.isActive()) pauseMenu.toggle();
-      if (pauseMenu.isActive()) { pauseMenu.update(dt, inp); return; }
+      // START closes the objectives panel instead of opening the pause menu
+      if (panelOpen && !pauseMenu.isActive() && inp.startPressed) {
+        closePanel();
+        return;
+      }
+      if (pauseMenu.handle(dt, inp)) return;
 
-      // Track if dialogue was active before this frame's update
-      const dialogueWasActive = dialogue.isActive();
+      const tiles = currentMap.tiles;
 
-      // Update dialogue
-      dialogue.update(dt, inp);
-
-      // Room label fade
-      if (roomLabelTimer > 0) roomLabelTimer -= dt;
-
-      // Movement (blocked during dialogue)
-      movement.update(dt, inp, gameState, currentMap.tiles, dialogue.isActive());
-
-      // Check standing on door (automatic transition)
-      if (!dialogue.isActive() && !dialogueWasActive && !gameState.playerMoving) {
-        const standing = checkStandingOnDoor(gameState, currentMap);
-        if (standing.type === 'door' && standing.target) {
-          if (standing.target === 'hub' && currentMapId !== 'hub') {
-            switchMap('hub');
-            return;
-          }
-          if (standing.target.startsWith('room') && currentMapId === 'hub') {
-            const roomNum = parseInt(standing.target.replace('room', ''));
-            if (!isNaN(roomNum)) {
-              // Check if room challenge is needed
-              const roomKeys = ['testSelection', 'variableId', 'trainingPrescription', 'performancePrediction'] as const;
-              const roomKey = roomKeys[roomNum - 1];
-              if (roomKey && !gameState.roomProgress[roomKey]) {
-                switchMap(standing.target);
-                roomLabelTimer = 2;
-                return;
-              } else {
-                // Already completed — show message
-                dialogue.show('This room challenge is complete. Good work, Coach!');
-                // Push player back
-                gameState.playerPos.y -= 1;
-                return;
-              }
-            }
-          }
-        }
-        if (standing.type === 'bossDoor' && currentMapId === 'hub') {
-          // Check if all rooms are complete
-          const { testSelection, variableId, trainingPrescription, performancePrediction } = gameState.roomProgress;
-          if (testSelection && variableId && trainingPrescription && performancePrediction) {
-            onEnterBoss();
-            return;
-          } else {
-            dialogue.show('Complete all four room challenges before entering the arena.');
-            gameState.playerPos.y -= 1;
-            return;
-          }
-        }
+      // Input is ignored during the fade, but we still note when the keys are let go
+      if (fade) {
+        movement.update(dt, inp, gameState, tiles, true);
+        updateFade(dt);
+        return;
       }
 
-      // Interaction check — skip if dialogue just closed this frame
-      if (inp.actionPressed && !dialogue.isActive() && !dialogueWasActive && !gameState.playerMoving) {
-        const interaction = checkInteraction(gameState, currentMap);
+      // The world is frozen while the objectives panel is open
+      if (panelOpen) {
+        movement.update(dt, inp, gameState, tiles, true);
+        if (inp.aPressed || inp.bPressed || inp.selectPressed) closePanel();
+        return;
+      }
 
-        if (interaction.type === 'npc' || interaction.type === 'equipment') {
-          if (interaction.dialogueKey) {
-            // Check if this is a room NPC that should trigger a challenge
-            if (currentMapId.startsWith('room') && interaction.type === 'npc') {
-              onEnterRoom(currentMapId);
-              return;
-            }
+      if (bannerTimer > 0) bannerTimer -= dt;
 
-            const lines = DIALOGUES[interaction.dialogueKey];
-            if (lines && lines.length > 0) {
-              const texts = lines.map(l => l.text);
-              dialogue.showSequence(texts);
-            }
-          }
-        }
+      // The press that closes a dialogue is used up by it
+      const dialogueWasActive = dialogue.isActive();
+      dialogue.update(dt, inp);
+      if (dialogueWasActive || dialogue.isActive()) {
+        aBuffer = 0;
+        movement.update(dt, inp, gameState, tiles, true);
+        return;
+      }
+
+      if (aBuffer > 0) aBuffer = Math.max(0, aBuffer - dt);
+      if (inp.aPressed) aBuffer = A_BUFFER;
+
+      if (inp.selectPressed) {
+        openPanel();
+        return;
+      }
+
+      const moved = movement.update(dt, inp, gameState, tiles);
+      if (moved.arrived) handleArrival();
+      if (fade || dialogue.isActive()) return;
+
+      if (aBuffer > 0 && !movement.isMoving()) {
+        aBuffer = 0;
+        interact();
       }
     },
 
     render(ctx: CanvasRenderingContext2D) {
-      // Clear with background color
       const pal = PALETTES[currentMap.palette];
       ctx.fillStyle = pal.colors[4];
       ctx.fillRect(0, 0, GAME_W, GAME_H);
 
-      // Render tile map (no scrolling — single screen)
+      // Single screen, no scrolling
       renderTileMap(ctx, currentMap.tiles, currentMap.palette, 0, 0, GAME_W, GAME_H);
 
-      // Hub room labels on sign tiles
-      if (currentMapId === 'hub') {
-        const labelColor = pal.colors[0];
-        const labels: Array<{ label: string; col: number; spanCols: number; row: number; yOff: number }> = [
-          { label: 'TESTING',  col: 4, spanCols: 3, row: 1, yOff: 3 },
-          { label: 'DATA',     col: 9, spanCols: 3, row: 1, yOff: 3 },
-          { label: 'TRAINING', col: 4, spanCols: 3, row: 9, yOff: 3 },
-          { label: 'ANALYSIS', col: 9, spanCols: 3, row: 9, yOff: 3 },
-          { label: 'ARENA',    col: 7, spanCols: 2, row: 11, yOff: 5 },
-        ];
-        for (const { label, col, spanCols, row, yOff } of labels) {
-          const textW = measureText(label);
-          const x = Math.floor(col * TILE_SIZE + (spanCols * TILE_SIZE - textW) / 2);
-          const y = row * TILE_SIZE + yOff;
-          drawText(ctx, label, x, y, labelColor);
-        }
+      // The label plates stay off while the objectives panel is open: the arena's would peek out below it
+      if (isHub() && !panelOpen) drawHubLabels(ctx, gameState);
+
+      // The banner sits under the characters so it never hides the player
+      if (bannerTimer > 0) {
+        drawMapBanner(ctx, [currentMap.name, levelLine(gameState)], isHub() ? 'bottom' : 'top', bannerTimer / BANNER_FADE);
       }
 
-      // Render NPCs
+      // The arena arrow is drawn after the banner, so nothing can hide it
+      if (isHub() && allRoomsComplete(gameState)) drawArenaArrow(ctx);
+
+      // What the idle player is facing (and could talk to)
+      const idle = !movement.isMoving() && !dialogue.isActive() && !panelOpen && !fade;
+      const facing = idle ? checkInteraction(gameState, currentMap) : null;
+      const prompt =
+        facing && (facing.type === 'npc' || facing.type === 'equipment') && facing.dialogueKey
+          ? { x: facing.x ?? 0, y: facing.y ?? 0 }
+          : null;
+
+      // NPCs breathe: 1px up for half a second, then back down
+      const bob = Math.floor(Date.now() / 500) % 2 === 1 ? 1 : 0;
       for (const npc of currentMap.npcs) {
-        drawSprite(
-          ctx,
-          NPC_SPRITE,
-          npc.x * TILE_SIZE,
-          npc.y * TILE_SIZE,
-          SPRITE_COLORS['npc_athlete']!
-        );
+        drawSprite(ctx, NPC_SPRITE, npc.x * TILE_SIZE, npc.y * TILE_SIZE - bob, SPRITE_COLORS['npc_athlete']!);
       }
 
-      // Render player
+      // Player
       const frame = movement.getAnimFrame();
       const sprite = getCoachSprite(gameState.playerDir, gameState.playerMoving ? frame : 0);
       drawSprite(
         ctx,
         sprite,
-        Math.floor(gameState.playerPos.x * TILE_SIZE),
-        Math.floor(gameState.playerPos.y * TILE_SIZE),
-        SPRITE_COLORS['default']!
+        Math.round(gameState.playerPos.x * TILE_SIZE),
+        Math.round(gameState.playerPos.y * TILE_SIZE),
+        SPRITE_COLORS['default']!,
       );
 
-      // Room label
-      if (roomLabelTimer > 0) {
-        const alpha = Math.min(1, roomLabelTimer);
-        ctx.globalAlpha = alpha;
-        const labelColor = pal.colors[5] ?? '#ffffff';
-        drawText(ctx, currentMap.name, 8, 8, labelColor);
-
-        // Level info
-        const level = LEVELS[gameState.currentLevel];
-        if (level) {
-          drawText(ctx, level.name, 8, 18, pal.colors[3] ?? '#aaaaaa');
-        }
-        ctx.globalAlpha = 1;
+      // Markers above characters. A room athlete's "!" or star gives way to the "A" prompt while it is faced.
+      const roomKey = roomKeyForMap(currentMapId);
+      for (const npc of currentMap.npcs) {
+        if (prompt && prompt.x === npc.x && prompt.y === npc.y) continue;
+        if (!roomKey) continue;
+        if (gameState.roomProgress[roomKey]) drawDoneStar(ctx, npc.x, npc.y);
+        else drawAlertBubble(ctx, npc.x, npc.y);
       }
+      if (prompt) drawTalkPrompt(ctx, prompt.x, prompt.y, gameState.playerPos.x, gameState.playerPos.y);
 
-      // Render dialogue
+      if (isHub() && !panelOpen) drawRoomsBadge(ctx, gameState);
+
+      if (panelOpen) drawObjectivesPanel(ctx, gameState);
+
       dialogue.render(ctx);
 
-      // Pause overlay
+      if (fade) {
+        const t = Math.min(1, fade.timer / FADE_TIME);
+        ctx.fillStyle = `rgba(0, 0, 0, ${fade.phase === 'out' ? t : 1 - t})`;
+        ctx.fillRect(0, 0, GAME_W, GAME_H);
+      }
+
       pauseMenu.render(ctx);
     },
   };
