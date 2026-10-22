@@ -1,4 +1,4 @@
-import { drawText, CHAR_W } from './PixelFont';
+import { drawText, measureText, CHAR_W } from './PixelFont';
 import type { InputState } from '../engine/Input';
 import { sfx } from '../audio/Sfx';
 import { announce } from '../ui/announce';
@@ -18,7 +18,7 @@ const ARROW_X = BOX_X + BOX_W - 16;
 const ARROW_Y = BOX_Y + BOX_H - 11; // the arrow bobs over rows 209..214: 1px clear of the 4th line and of the border
 const MAX_CHARS_PER_LINE = Math.floor((BOX_W - 20) / CHAR_W);
 const PAGE_LINES = 4;
-const FAST_TYPING = 3; // typing speed multiplier while A or B is held
+const FAST_TYPING = 3; // typing speed multiplier while A is held
 
 // Choice panel: full width, directly above the main box
 const CHOICE_X = BOX_X;
@@ -86,6 +86,7 @@ export interface DialogueState {
   selectedChoice: number;
   choiceLock: number; // seconds left in which A cannot confirm
   onComplete: ((choiceIndex?: number) => void) | null;
+  onCancel: (() => void) | null; // B: leave the conversation (see cancelDialogue)
   waitingForInput: boolean; // current page fully typed
 }
 
@@ -101,6 +102,7 @@ export const createDialogueState = (): DialogueState => ({
   selectedChoice: 0,
   choiceLock: 0,
   onComplete: null,
+  onCancel: null,
   waitingForInput: false,
 });
 
@@ -108,6 +110,7 @@ export const createDialogueState = (): DialogueState => ({
 export const clearDialogue = (state: DialogueState) => {
   state.active = false;
   state.onComplete = null;
+  state.onCancel = null;
   state.choices = null;
   state.choiceLines = [];
   state.pages = [];
@@ -189,7 +192,8 @@ export const startDialogue = (
   state: DialogueState,
   text: string,
   choices?: string[],
-  onComplete?: (choiceIndex?: number) => void
+  onComplete?: (choiceIndex?: number) => void,
+  onCancel?: () => void,
 ) => {
   state.active = true;
   state.pages = paginate(wrapText(text));
@@ -201,6 +205,7 @@ export const startDialogue = (
   state.selectedChoice = 0;
   state.choiceLock = 0;
   state.onComplete = onComplete ?? null;
+  state.onCancel = onCancel ?? null;
   state.waitingForInput = false;
   announce(pageLines(state).join(' '));
 };
@@ -222,17 +227,49 @@ const finishDialogue = (state: DialogueState, choiceIndex?: number) => {
   const done = state.onComplete;
   state.active = false;
   state.onComplete = null;
+  state.onCancel = null;
   state.choices = null;
   state.choiceLines = [];
   state.waitingForInput = false;
   done?.(choiceIndex);
 };
 
+/** B leaves a conversation part-way: whatever is still to come is skipped. */
+const canCancel = (state: DialogueState): boolean => state.onCancel !== null || state.choices === null;
+
+/**
+ * B: the conversation's own exit if it has one; otherwise plain text simply closes (reporting it as
+ * finished, so anything waiting on it, such as a step back off a door, still happens). A choice with no
+ * exit has to be answered.
+ */
+const cancelDialogue = (state: DialogueState) => {
+  if (!canCancel(state)) return;
+  const cancel = state.onCancel;
+  if (!cancel) {
+    finishDialogue(state);
+    return;
+  }
+  state.active = false;
+  state.onComplete = null;
+  state.onCancel = null;
+  state.choices = null;
+  state.choiceLines = [];
+  state.waitingForInput = false;
+  cancel();
+};
+
 export const updateDialogue = (state: DialogueState, dt: number, inp: InputState) => {
   if (!state.active) return;
 
-  // A and B both advance text; only A may confirm a choice
-  const skip = inp.aPressed || inp.bPressed;
+  // B leaves the conversation at any point, even mid-sentence
+  if (inp.bPressed && canCancel(state)) {
+    sfx.play('back');
+    cancelDialogue(state);
+    return;
+  }
+
+  // A skips the typing, advances pages and confirms choices
+  const skip = inp.aPressed;
 
   if (!state.waitingForInput) {
     const total = pageChars(state);
@@ -240,7 +277,7 @@ export const updateDialogue = (state: DialogueState, dt: number, inp: InputState
       state.progress = total;
     } else {
       // Keep the fractional part so the speed stays true at any frame rate
-      const fast = inp.a || inp.b;
+      const fast = inp.a;
       state.progress += dt * state.speed * (fast ? FAST_TYPING : 1);
     }
     // The epsilon absorbs float error, so 60 steps of 1/60s still add up to a whole second
@@ -320,6 +357,20 @@ const drawChoicePanel = (ctx: CanvasRenderingContext2D, state: DialogueState) =>
   }
 };
 
+// A small tag hanging off the box's bottom edge: B leaves the conversation. It sits below the 4th text
+// line and left of the advance arrow, half on the frame and half on the margin under the box.
+const drawExitTag = (ctx: CanvasRenderingContext2D) => {
+  const label = 'B: EXIT';
+  const w = measureText(label) - 1 + 6;
+  const x = BOX_X + 10;
+  const y = BOX_Y + BOX_H - 6;
+  ctx.fillStyle = INK;
+  ctx.fillRect(x, y, w, 9);
+  ctx.fillStyle = INK_SOFT;
+  ctx.fillRect(x + 1, y + 1, w - 2, 7);
+  drawText(ctx, label, x + 3, y + 1, PAPER);
+};
+
 export const renderDialogue = (
   ctx: CanvasRenderingContext2D,
   state: DialogueState
@@ -346,4 +397,6 @@ export const renderDialogue = (
   if (state.waitingForInput && !showChoices) {
     drawBouncingArrow(ctx, ARROW_X, ARROW_Y);
   }
+
+  if (canCancel(state)) drawExitTag(ctx);
 };

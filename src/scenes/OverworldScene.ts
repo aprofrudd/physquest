@@ -86,9 +86,9 @@ export const createOverworldScene = (
 
   const hubSpawn = (door: HubDoor | null): Spawn => (door ? HUB_RETURN[door] : HUB_START);
 
-  const say = (text: string, choices?: string[], onComplete?: (choice?: number) => void) => {
+  const say = (text: string, choices?: string[], onComplete?: (choice?: number) => void, onCancel?: () => void) => {
     announce(text);
-    dialogue.show(text, choices, onComplete);
+    dialogue.show(text, choices, onComplete, onCancel);
   };
 
   const startTransition = (apply: () => void) => {
@@ -124,10 +124,15 @@ export const createOverworldScene = (
 
   const promptReplay = (roomKey: RoomKey, roomId: string) => {
     const best = Math.round(gameState.playerStats[ROOM_STAT[roomKey]] * 100);
-    say(`THIS ROOM IS COMPLETE (BEST ${best}%). REPLAY IT TO RAISE YOUR SCORE?`, ['YES', 'NO'], choice => {
-      if (choice === 0) enterRoomMap(roomId);
-      else stepBack();
-    });
+    say(
+      `THIS ROOM IS COMPLETE (BEST ${best}%). REPLAY IT TO RAISE YOUR SCORE?`,
+      ['YES', 'NO'],
+      choice => {
+        if (choice === 0) enterRoomMap(roomId);
+        else stepBack();
+      },
+      stepBack, // B: same as NO
+    );
   };
 
   const handleArrival = () => {
@@ -202,6 +207,13 @@ export const createOverworldScene = (
       dialogue.reset();
       fade = null;
       panelOpen = false;
+      if (gameState.resumeRoom) {
+        // Back from a challenge the player walked away from (B): still in the room, where they stood
+        gameState.resumeRoom = false;
+        movement.reset(gameState);
+        aBuffer = 0;
+        return;
+      }
       // Back from a room or the arena: stand just outside that door, with no banner (it would sit under
       // the player). Otherwise a fresh level: start in the middle of the hub and greet it with the banner,
       // unless every room is already done: then the banner would sit on the arena arrow, the thing to look at.

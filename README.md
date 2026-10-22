@@ -31,7 +31,7 @@ The game sits inside a handheld console. Tap its buttons on a phone or tablet, c
 |---------|----------|-----|
 | D-pad | Arrow keys or WASD | Move, choose options |
 | A | Z, Space or Enter | Talk, interact, confirm |
-| B | X or Backspace | Back, delete a letter; hold to run |
+| B | X or Backspace | Leave a conversation or challenge, go back, delete a letter; hold to run |
 | START | Esc or P | Pause menu (resume, save, sound, quit) |
 | SELECT | Shift | Objectives panel in the hub |
 

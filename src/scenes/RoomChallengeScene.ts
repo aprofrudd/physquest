@@ -58,6 +58,26 @@ export const createRoomChallengeScene = (
   let variableAccuracy = 0;
   let headerText = '';
 
+  /** The room is finished: back to the hub outside this room's door. */
+  const finish = () => {
+    gameState.returnDoor = roomType; // the hub puts the player back outside this door
+    onComplete();
+  };
+
+  /** B walks away. Nothing is recorded until the room completes, so a replay keeps the old best. */
+  const leave = () => {
+    if (phase === 'complete') {
+      finish();
+      return;
+    }
+    gameState.resumeRoom = true; // back in the room, in front of the athlete
+    sceneManager.switchTo('overworld');
+  };
+
+  /** Every line of a challenge can be left with B. */
+  const say = (text: string, choices?: string[], onDone?: (choiceIndex?: number) => void) =>
+    dialogue.show(text, choices, onDone, leave);
+
   /** Ask a multiple-choice question with the options in a fresh random order. */
   const ask = <T>(
     prompt: string,
@@ -66,7 +86,7 @@ export const createRoomChallengeScene = (
     onPick: (option: T) => void,
   ) => {
     const order = shuffledOrder(options.length);
-    dialogue.show(prompt, order.map(i => label(options[i]!)), (choiceIdx) => {
+    say(prompt, order.map(i => label(options[i]!)), (choiceIdx) => {
       const picked = options[order[choiceIdx ?? 0] ?? 0];
       if (picked !== undefined) onPick(picked);
     });
@@ -74,7 +94,7 @@ export const createRoomChallengeScene = (
 
   const giveFeedback = (correct: boolean, text: string, then: () => void) => {
     sfx.play(correct ? 'correct' : 'wrong');
-    dialogue.show(text, undefined, then);
+    say(text, undefined, then);
   };
 
   /**
@@ -140,7 +160,7 @@ export const createRoomChallengeScene = (
 
   const runTestSelection = () => {
     phase = 'challenge';
-    dialogue.show(
+    say(
       `${sport.athleteProfile} Goal: ${sport.goal}`,
       undefined,
       () => {
@@ -152,7 +172,7 @@ export const createRoomChallengeScene = (
             ? `Good choice! ${chosen.description}`
             : `Not ideal. ${chosen.description} This isn't the best match for the athlete's needs.`;
           giveFeedback(chosen.correct, text, () => {
-            dialogue.show(sport.testInsight, undefined, completeRoom);
+            say(sport.testInsight, undefined, completeRoom);
           });
         });
       }
@@ -161,7 +181,7 @@ export const createRoomChallengeScene = (
 
   const runVariableId = () => {
     phase = 'challenge';
-    dialogue.show(
+    say(
       `Test data: ${sport.dataOutput}`,
       undefined,
       () => {
@@ -173,7 +193,7 @@ export const createRoomChallengeScene = (
           (correctCount, total) => {
             variableAccuracy = correctCount / Math.max(1, total);
             dataQuality = variableAccuracy > 0.5 ? 0.8 : 0.5;
-            dialogue.show(sport.variableInsight, undefined, completeRoom);
+            say(sport.variableInsight, undefined, completeRoom);
           }
         );
       }
@@ -182,7 +202,7 @@ export const createRoomChallengeScene = (
 
   const runTrainingZones = () => {
     phase = 'challenge';
-    dialogue.show(
+    say(
       'Based on the test data, which training zones should we prescribe?',
       undefined,
       () => {
@@ -194,7 +214,7 @@ export const createRoomChallengeScene = (
           (correctCount, total) => {
             variableAccuracy = correctCount / Math.max(1, total);
             dataQuality = variableAccuracy > 0.5 ? 0.85 : 0.5;
-            dialogue.show(sport.zoneInsight, undefined, completeRoom);
+            say(sport.zoneInsight, undefined, completeRoom);
           }
         );
       }
@@ -203,7 +223,7 @@ export const createRoomChallengeScene = (
 
   const runPrediction = () => {
     phase = 'challenge';
-    dialogue.show(
+    say(
       sport.predictionScenario,
       undefined,
       () => {
@@ -241,10 +261,7 @@ export const createRoomChallengeScene = (
       message = `Your best stays at ${percent(best)}%`;
     }
 
-    dialogue.show(message, undefined, () => {
-      gameState.returnDoor = roomType; // the hub puts the player back outside this door
-      onComplete();
-    });
+    say(message, undefined, finish);
   };
 
   return {

@@ -41,6 +41,8 @@ export interface GameState {
   // Unfinished levels, by level index (null = not started or already won)
   levelProgress: (LevelProgress | null)[];
   returnDoor: HubDoor | null;
+  /** The player left a room challenge with B: the overworld keeps them in that room, where they stood. */
+  resumeRoom: boolean;
   playerPos: { x: number; y: number };
   playerDir: 'up' | 'down' | 'left' | 'right';
   playerMoving: boolean;
@@ -97,6 +99,7 @@ export const createInitialState = (): GameState => ({
   challengeResults: [],
   levelProgress: [null, null, null, null],
   returnDoor: null,
+  resumeRoom: false,
   playerPos: { x: 7, y: 8 }, // starting tile
   playerDir: 'down',
   playerMoving: false,
@@ -130,6 +133,7 @@ export const activateLevel = (state: GameState, level: number): void => {
   state.playerStats = saved ? { ...saved.playerStats } : freshStats();
   state.challengeResults = [];
   state.returnDoor = null;
+  state.resumeRoom = false;
 };
 
 /** Forget the active level's progress (after the level is won). */

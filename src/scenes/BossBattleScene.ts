@@ -215,6 +215,7 @@ export const createBossBattleScene = (
         if (choice === 1) startCountdown(s);
         else leaveToHub(); // also the safe default if nothing was chosen
       },
+      leaveToHub, // B: back to the hub
     );
   };
 
@@ -360,11 +361,16 @@ export const createBossBattleScene = (
         return;
       }
 
-      dialogue.show(`${s.rivalName}: "${s.rivalTaunt}"`, undefined, () => {
-        phase = 'statDisplay';
-        statTimer = 0;
-        announce(`${focusLine(s)}. ${ratingLine(s)}.`);
-      });
+      dialogue.show(
+        `${s.rivalName}: "${s.rivalTaunt}"`,
+        undefined,
+        () => {
+          phase = 'statDisplay';
+          statTimer = 0;
+          announce(`${focusLine(s)}. ${ratingLine(s)}.`);
+        },
+        leaveToHub, // B: not ready for this bout yet
+      );
     },
 
     update(dt: number) {

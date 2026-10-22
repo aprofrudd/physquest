@@ -10,8 +10,10 @@ import type { InputState } from '../engine/Input';
 
 export interface DialogueSystem {
   state: DialogueState;
-  show(text: string, choices?: string[], onComplete?: (choiceIndex?: number) => void): void;
-  showSequence(texts: string[], onComplete?: () => void): void;
+  /** onCancel runs if the player leaves with B instead (see DialogueBox cancelDialogue). */
+  show(text: string, choices?: string[], onComplete?: (choiceIndex?: number) => void, onCancel?: () => void): void;
+  /** B on any line ends the whole sequence: onCancel if given, otherwise onComplete. */
+  showSequence(texts: string[], onComplete?: () => void, onCancel?: () => void): void;
   update(dt: number, input: InputState): void;
   render(ctx: CanvasRenderingContext2D): void;
   isActive(): boolean;
@@ -25,19 +27,18 @@ export const createDialogueSystem = (onChoicesShown?: () => void): DialogueSyste
   return {
     state,
 
-    show(text: string, choices?: string[], onComplete?: (choiceIndex?: number) => void) {
-      startDialogue(state, text, choices, onComplete);
+    show(text: string, choices?: string[], onComplete?: (choiceIndex?: number) => void, onCancel?: () => void) {
+      startDialogue(state, text, choices, onComplete, onCancel);
     },
 
-    showSequence(texts: string[], onComplete?: () => void) {
+    showSequence(texts: string[], onComplete?: () => void, onCancel?: () => void) {
       let index = 0;
+      const leave = () => (onCancel ?? onComplete)?.();
       const showNext = () => {
         if (index < texts.length) {
           const text = texts[index]!;
           index++;
-          startDialogue(state, text, undefined, () => {
-            showNext();
-          });
+          startDialogue(state, text, undefined, showNext, leave);
         } else {
           onComplete?.();
         }

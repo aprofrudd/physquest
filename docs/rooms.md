@@ -29,6 +29,7 @@ Progress saves automatically after name entry, after every room and after every 
 
 - Options are **shuffled** every time a list is shown, so the cursor's starting option is never a reliable answer
 - A list ignores A for its first 0.35 s, so a press meant to skip text can't pick an option by accident
+- **B leaves** a challenge at any point: the player is back in the room in front of the athlete, nothing is recorded, and a replay keeps the previous best
 - Multi-select rooms **remove options already picked** and show progress, e.g. "PICK A KEY VARIABLE (2 OF 3)"
 - **Replays**: a completed room can be replayed from its hub door; the stat keeps the best result ("NEW BEST!" or "YOUR BEST STAYS AT NN%")
 
