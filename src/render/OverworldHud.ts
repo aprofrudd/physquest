@@ -1,5 +1,6 @@
-// Pixel-drawn HUD pieces for the overworld: hub label plates, prompt bubbles, map banner,
-// ROOMS badge and the objectives panel. Everything is drawn with fillRect so it never depends on font glyphs.
+// Pixel-drawn HUD pieces for the overworld: hub label plates, door arrow, prompt bubbles, map banner,
+// ROOMS badge (and its SELECT hint) and the objectives panel. Everything is drawn with fillRect so it never
+// depends on font glyphs.
 import { drawText, CHAR_W } from './PixelFont';
 import { drawPokemonBox } from './SpriteSheet';
 import { GAME_W, GAME_H } from './DialogueBox';
@@ -12,9 +13,13 @@ import {
   ROOM_STAT,
   STAT_KEYS,
   allRoomsComplete,
+  nextRoom,
   roomKeyForMap,
+  roomUnlocked,
   roomsCompleted,
   type GameState,
+  type HubDoor,
+  type RoomKey,
   type StatKey,
 } from '../state/GameState';
 
@@ -42,6 +47,9 @@ const ARROW: Pixels = [
   [2, 0], [3, 0], [4, 0], [2, 1], [3, 1], [4, 1], [2, 2], [3, 2], [4, 2],
   [0, 3], [1, 3], [2, 3], [3, 3], [4, 3], [5, 3], [6, 3], [1, 4], [2, 4], [3, 4], [4, 4], [5, 4], [2, 5], [3, 5], [4, 5], [3, 6],
 ];
+
+const ARROW_H = 7;
+const ARROW_UP: Pixels = ARROW.map(([px, py]) => [px, ARROW_H - 1 - py] as const); // the same arrow, tip up
 
 // Lock: shackle on top of a body with a keyhole (keyhole is left transparent so the plate shows through)
 const LOCK: Pixels = [
@@ -110,17 +118,32 @@ export const drawHubLabels = (ctx: CanvasRenderingContext2D, state: GameState) =
   for (const sign of HUB_SIGNS) {
     const roomKey = sign.door === 'boss' ? null : roomKeyForMap(sign.door);
     if (roomKey) {
-      drawLabelPlate(ctx, ROOM_LABEL[roomKey], sign.cx * TILE_SIZE, sign.cy * TILE_SIZE, state.roomProgress[roomKey] ? 'check' : null);
+      const icon = state.roomProgress[roomKey] ? 'check' : roomUnlocked(state, roomKey) ? null : 'lock';
+      drawLabelPlate(ctx, ROOM_LABEL[roomKey], sign.cx * TILE_SIZE, sign.cy * TILE_SIZE, icon);
     } else {
       drawLabelPlate(ctx, 'ARENA', sign.cx * TILE_SIZE, sign.cy * TILE_SIZE, allRoomsComplete(state) ? null : 'lock');
     }
   }
 };
 
-/** Bobbing gold arrow above the boss doors (7,12)-(8,12) once every room is done. */
-export const drawArenaArrow = (ctx: CanvasRenderingContext2D) => {
-  const bob = Math.round((Math.sin(Date.now() / 220) + 1) * 2); // 0..4
-  plotOutlined(ctx, ARROW, 8 * TILE_SIZE - 3, 11 * TILE_SIZE + 1 + bob, GOLD);
+// Where each hub door's arrow stands: its centre x and the tile edge it faces (both in tiles), and which way it
+// points. The north doors (row 2) are entered from below, so their arrow points up; the others are entered from above.
+const DOOR_ARROWS: Record<HubDoor, { x: number; edge: number; up: boolean }> = {
+  room1: { x: 5.5, edge: 3, up: true },
+  room2: { x: 10.5, edge: 3, up: true },
+  room3: { x: 5.5, edge: 8, up: false },
+  room4: { x: 10.5, edge: 8, up: false },
+  boss: { x: 8, edge: 12, up: false }, // the arena doors (7,12)-(8,12)
+};
+
+/** Bobbing gold arrow in front of a hub door: the next room's, or the arena's once every room is done. */
+export const drawDoorArrow = (ctx: CanvasRenderingContext2D, door: HubDoor) => {
+  const { x, edge, up } = DOOR_ARROWS[door];
+  const bob = Math.round((Math.sin(Date.now() / 220) + 1) * 2); // 0..4, towards the door and back
+  const left = Math.round(x * TILE_SIZE) - 3;
+  // The tip comes within 4px of the door at the nearest point of the bob
+  const top = up ? edge * TILE_SIZE + 9 - bob : edge * TILE_SIZE - 15 + bob;
+  plotOutlined(ctx, up ? ARROW_UP : ARROW, left, top, GOLD);
 };
 
 // --- Prompt bubbles and markers above characters ---------------------------------------
@@ -174,30 +197,55 @@ export const drawDoneStar = (ctx: CanvasRenderingContext2D, tileX: number, tileY
 
 // --- Banner, badge ------------------------------------------------------------------
 
-/** Map-name banner on a dark plate, hanging from the top edge or resting just above the hub's south doors. */
-export const drawMapBanner = (ctx: CanvasRenderingContext2D, lines: string[], where: 'top' | 'bottom', alpha: number) => {
+export type BannerSpot = 'top' | 'bottom' | 'signs';
+
+// The hub's north sign plates (HUB_SIGNS row 1.5) run y=17..29
+const SIGNS_BOTTOM = 30;
+
+/**
+ * Banner on a dark plate: hanging from the top edge, resting just above the hub's south doors, or ('signs') in
+ * the hub's top band with its bottom edge level with the north sign plates', so it covers them whole. A third
+ * line is drawn gold, as the thing to do.
+ */
+export const drawMapBanner = (ctx: CanvasRenderingContext2D, lines: string[], where: BannerSpot, alpha: number) => {
   if (alpha <= 0 || lines.length === 0) return;
   const w = Math.max(...lines.map(l => textWidth(l))) + 14;
   const h = lines.length * 10 + 5;
   const x = Math.round((GAME_W - w) / 2);
-  const y = where === 'top' ? 4 : 189 - h;
+  const y = where === 'top' ? 4 : where === 'signs' ? SIGNS_BOTTOM - h : 189 - h;
   ctx.globalAlpha = Math.min(1, alpha);
   rect(ctx, x, y, w, h, LIGHT_EDGE, DARK_PLATE);
   lines.forEach((line, i) => {
     const lx = Math.round((GAME_W - textWidth(line)) / 2);
-    drawText(ctx, line, lx, y + 4 + i * 10, i === 0 ? '#f8f8f0' : '#a8d0f0');
+    drawText(ctx, line, lx, y + 4 + i * 10, i === 0 ? '#f8f8f0' : i === 1 ? '#a8d0f0' : GOLD);
   });
   ctx.globalAlpha = 1;
 };
 
+const BADGE_Y = 2;
+const BADGE_H = 13;
+const BADGE_GAP = 4; // from the screen edge, and between the badge and its hint
+
+const badgeLabel = (state: GameState): string => `ROOMS ${roomsCompleted(state)}/${ROOM_KEYS.length}`;
+const badgeX = (state: GameState): number => GAME_W - BADGE_GAP - (textWidth(badgeLabel(state)) + 10);
+
 /** Hub badge, top right: how many of the four rooms are done. */
 export const drawRoomsBadge = (ctx: CanvasRenderingContext2D, state: GameState) => {
-  const done = roomsCompleted(state);
-  const label = `ROOMS ${done}/${ROOM_KEYS.length}`;
-  const w = textWidth(label) + 10;
-  const x = GAME_W - 4 - w;
-  rect(ctx, x, 2, w, 13, LIGHT_EDGE, DARK_PLATE);
-  drawText(ctx, label, x + 5, 5, done === ROOM_KEYS.length ? GOLD : '#f8f8f0');
+  const label = badgeLabel(state);
+  const x = badgeX(state);
+  rect(ctx, x, BADGE_Y, textWidth(label) + 10, BADGE_H, LIGHT_EDGE, DARK_PLATE);
+  drawText(ctx, label, x + 5, BADGE_Y + 3, allRoomsComplete(state) ? GOLD : '#f8f8f0');
+};
+
+/**
+ * Hint plate just left of the ROOMS badge, in the badge's style. It sits on the hub's top wall, clear of the
+ * sign plates (which start 2px below), so nothing a player walks to is covered.
+ */
+export const drawSelectHint = (ctx: CanvasRenderingContext2D, state: GameState, text: string) => {
+  const w = textWidth(text) + 10;
+  const x = badgeX(state) - BADGE_GAP - w;
+  rect(ctx, x, BADGE_Y, w, BADGE_H, LIGHT_EDGE, DARK_PLATE);
+  drawText(ctx, text, x + 5, BADGE_Y + 3, '#f8f8f0');
 };
 
 // --- Objectives panel ---------------------------------------------------------------
@@ -222,19 +270,26 @@ const NEXT_BLUE = '#2858a8';
 const percent = (v: number): number => Math.max(0, Math.min(100, Math.round(v * 100)));
 
 export const objectivesHint = (state: GameState): string => {
-  const next = ROOM_KEYS.find(k => !state.roomProgress[k]);
+  const next = nextRoom(state);
   return next ? `NEXT: VISIT THE ${ROOM_LABEL[next]} ROOM` : 'ALL ROOMS DONE - HEAD TO THE ARENA!';
 };
 
-/** Plain-text version of the panel, for the screen-reader live region. */
-export const objectivesSummary = (state: GameState): string => {
-  const rooms = ROOM_KEYS.map(k =>
-    `${ROOM_LABEL[k]} ${state.roomProgress[k] ? `${percent(state.playerStats[ROOM_STAT[k]])} percent` : 'not done'}`,
-  ).join(', ');
-  return `Objectives. Coach ${state.playerName}. ${levelLine(state)}. ${rooms}. ${objectivesHint(state)}. Select closes.`;
+/** A room's row in the panel: its sign name and the stat it raises, e.g. "TRAINING (ENDURANCE)". */
+const roomRowLabel = (key: RoomKey): string => `${ROOM_LABEL[key]} (${STAT_NAME[ROOM_STAT[key]]})`;
+
+/** Plain-text version of the panel, for the screen-reader live region. `closeName` is the player's name for the SELECT button. */
+export const objectivesSummary = (state: GameState, closeName = 'SELECT'): string => {
+  const rooms = ROOM_KEYS.map(k => {
+    const status = state.roomProgress[k]
+      ? `${percent(state.playerStats[ROOM_STAT[k]])} percent`
+      : roomUnlocked(state, k) ? 'not done' : 'locked';
+    return `${ROOM_LABEL[k]} raises ${STAT_NAME[ROOM_STAT[k]].toLowerCase()}, ${status}`;
+  }).join('. ');
+  return `Objectives. Coach ${state.playerName}. ${levelLine(state)}. ${rooms}. ${objectivesHint(state)}. ${closeName} closes.`;
 };
 
-export const drawObjectivesPanel = (ctx: CanvasRenderingContext2D, state: GameState) => {
+/** `footer` is the close hint in the player's button names, e.g. "SELECT: CLOSE". */
+export const drawObjectivesPanel = (ctx: CanvasRenderingContext2D, state: GameState, footer: string) => {
   ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
   ctx.fillRect(0, 0, GAME_W, GAME_H);
   drawPokemonBox(ctx, 8, 8, GAME_W - 16, GAME_H - 16);
@@ -253,20 +308,22 @@ export const drawObjectivesPanel = (ctx: CanvasRenderingContext2D, state: GameSt
 
   // Rooms
   drawText(ctx, 'ROOMS', left, 50, DIM);
-  const nextRoom = ROOM_KEYS.find(k => !state.roomProgress[k]);
+  const next = nextRoom(state);
   ROOM_KEYS.forEach((key, i) => {
     const y = 61 + i * 13;
     const done = state.roomProgress[key];
-    drawText(ctx, ROOM_LABEL[key], left, y, done || key === nextRoom ? TEXT : DIM);
+    drawText(ctx, roomRowLabel(key), left, y, done || key === next ? TEXT : DIM);
     if (done) {
       const pct = `${percent(state.playerStats[ROOM_STAT[key]])}%`;
       const pw = textWidth(pct);
       drawText(ctx, pct, right - pw, y, TEXT);
       plot(ctx, CHECK, right - pw - CHECK_W - 4, y + 1, GREEN);
-    } else if (key === nextRoom) {
+    } else if (key === next) {
       drawText(ctx, 'NEXT', right - textWidth('NEXT'), y, NEXT_BLUE);
+    } else if (!roomUnlocked(state, key)) {
+      plot(ctx, LOCK, right - LOCK_W, y, DIM);
     } else {
-      drawText(ctx, '-', right - textWidth('-'), y, DIM);
+      drawText(ctx, '-', right - textWidth('-'), y, DIM); // open, but not the next one (an older save)
     }
   });
   divider(114);
@@ -293,6 +350,5 @@ export const drawObjectivesPanel = (ctx: CanvasRenderingContext2D, state: GameSt
   const hint = objectivesHint(state);
   drawText(ctx, hint, Math.round((GAME_W - textWidth(hint)) / 2), 188, TEXT);
 
-  const footer = 'SELECT: CLOSE';
   drawText(ctx, footer, Math.round((GAME_W - textWidth(footer)) / 2), 201, DIM);
 };

@@ -2,13 +2,15 @@
 
 ## Overview
 
-Each level contains **4 challenge rooms** plus a **boss arena**. The player navigates a hub overworld (Sports Performance Centre) and enters rooms through doors. All 4 rooms must be completed before the arena opens.
+Each level contains **4 challenge rooms** plus a **boss arena**. The player navigates a hub overworld (Sports Performance Centre) and enters rooms through doors. The rooms are taken **in order** (TESTING, DATA, TRAINING, ANALYSIS): a room opens once the one before it is done, and a finished room stays open for replays. All 4 rooms must be completed before the arena opens.
 
 Each room awards a **player stat** (0 to 100%) based on performance. The stats combine into a **showdown rating** that caps how well the player's athlete can perform in the boss minigame.
 
-Controls are console buttons (keyboard equivalents in brackets): D-pad (arrows/WASD) to move, A (Z/Space/Enter) to talk and confirm, B (X/Backspace) to go back and to run while held, START (Esc/P) for the pause menu, SELECT (Shift) for the objectives panel.
+Controls are console buttons (keyboard equivalents in brackets): D-pad (arrows/WASD) to move, A (Z/Space/Enter) to talk and confirm, B (X/Backspace) to go back and to run while held, START (Esc/P) for the pause menu, SELECT (Shift) for the objectives panel. Prompts name the buttons the player is using: console names after a touch or click on the console, key names (SPACE, X, ESC, SHIFT, ARROWS) after a key press; desktops start on key names. The title screen lists every control.
 
-Progress saves automatically after name entry, after every room and after every showdown (and from the pause menu). Unfinished levels keep their room progress, even when the player switches to another level.
+Progress saves automatically after name entry, after every room and after every showdown (and from the pause menu, which says so). Unfinished levels keep their room progress, even when the player switches to another level.
+
+The coach's intro teaches the loop before name entry: the four rooms in order, walking through a door and pressing A to talk to the athlete, answers raising stats, the arena, SELECT for objectives, START to pause, B to leave a chat, and autosave. B skips it.
 
 ---
 
@@ -16,12 +18,13 @@ Progress saves automatically after name entry, after every room and after every 
 
 - **Map**: 16x14 tile grid, `lab` palette
 - **Layout**: 4 room doors (top-left, top-right, bottom-left, bottom-right), boss doors at bottom centre
-- **Labels**: each door has a readable label plate (TESTING, DATA, TRAINING, ANALYSIS) that gains a check mark when the room is complete; the ARENA plate shows a lock until all rooms are done, then a bobbing arrow marks the doors
-- **HUD**: ROOMS N/4 badge; the map name and level show briefly on entry
-- **Objectives panel** (SELECT): coach name, level, each room's status and score, the four stats, and a "next" hint
-- **NPCs**: athlete at centre introduces themselves, gives an overview and a controls tip. NPCs, signs and plants are solid
-- **Doors**: returning from a room puts the player just outside that room's door. Stepping on a completed room's door offers a replay (YES/NO). Stepping on the arena doors before all rooms are done shows "COMPLETE ALL FOUR ROOMS FIRST (N/4 DONE)" and steps the player back
-- **Rooms**: the player enters at (7,10), two tiles inside the exit door; a "!" bubble marks the room athlete while the challenge is open. Facing the athlete and pressing A starts the challenge
+- **Labels**: each door has a readable label plate (TESTING, DATA, TRAINING, ANALYSIS) that gains a check mark when the room is complete and shows a lock while the room is not open yet; the ARENA plate shows a lock until all rooms are done
+- **Arrow**: a bobbing gold arrow points at the next room's door, and at the arena doors once all four rooms are done
+- **HUD**: ROOMS N/4 badge, with a "SELECT: OBJECTIVES" hint beside it until the panel has been opened once (per session); the map name and level show briefly on a fresh start. The first time the hub is seen with all four rooms done (per level, per session), a banner says "THE ARENA IS OPEN! / BEAT THE RIVAL TO CLEAR THE LEVEL"
+- **Objectives panel** (SELECT): coach name, level, each room with the stat it raises (e.g. "TESTING (SPEED)") and its status (score, NEXT, or a lock), the four stats, and a "next" hint
+- **NPCs**: the athlete at the centre wears a "!" until the player has talked to it (per session); it explains the room order, the arena and the SELECT/B controls. NPCs, signs and plants are solid
+- **Doors**: returning from a room puts the player just outside that room's door. Stepping on a completed room's door offers a replay (YES/NO). A room door that is not open yet says "FINISH THE <ROOM> ROOM FIRST." and the arena doors before all rooms are done say "THE ARENA OPENS WHEN ALL 4 ROOMS ARE DONE (N/4). NEXT: THE <ROOM> ROOM."; both step the player back
+- **Rooms**: the player enters at (7,10), two tiles inside the exit door; while the challenge is open the room banner adds "A: TALK TO THE ATHLETE" (3 s) and a "!" bubble marks the room athlete. Facing the athlete and pressing A starts the challenge
 
 ---
 
@@ -29,7 +32,8 @@ Progress saves automatically after name entry, after every room and after every 
 
 - Options are **shuffled** every time a list is shown, so the cursor's starting option is never a reliable answer
 - A list ignores A for its first 0.35 s, so a press meant to skip text can't pick an option by accident
-- **B leaves** a challenge at any point: the player is back in the room in front of the athlete, nothing is recorded, and a replay keeps the previous best
+- **B leaves** a challenge at any point (the box's hint reads "B: QUIT"): the player is back in the room in front of the athlete, nothing is recorded, and a replay keeps the previous best
+- **Completion**: "Room complete! Your <STAT> stat is now NN%." followed by the next room ("Next up: the DATA room. You can replay any room to raise its score.") or, after the fourth room, "All four rooms are done: the ARENA is open!"
 - Multi-select rooms **remove options already picked** and show progress, e.g. "PICK A KEY VARIABLE (2 OF 3)"
 - **Replays**: a completed room can be replayed from its hub door; the stat keeps the best result ("NEW BEST!" or "YOUR BEST STAYS AT NN%")
 
@@ -198,12 +202,12 @@ The focus stat is the level's boss stat (speed, strength, endurance or power), a
 
 ### Boss Flow
 
-1. **Rival taunt**: the rival jabs at the skill the bout tests
-2. **Stat display** (about 3 s; A skips it after 1 s): player vs rival stats, with the focus stat highlighted, its room named, and "RATING NN% VS TARGET NN%"
-3. **Pre-check**: if the rating cannot beat the rival's target, the coach warns the player and offers BACK TO HUB (to replay the room) or FIGHT ANYWAY
+1. **Rival taunt**: the rival jabs at the skill the bout tests. From here until the countdown the stat comparison stays on screen: player vs rival stats, the focus stat highlighted, its room named, and "RATING NN% VS TARGET NN%". B on any dialogue before the countdown ("B: LEAVE ARENA") returns to the hub outside the arena doors
+2. **Pre-check**: if the rating cannot beat the rival's target, the coach warns the player and offers BACK TO HUB (to replay the room) or FIGHT ANYWAY
+3. **Rules card** (the gate before every bout; "A: READY" on its last page): the first time this session that a bout type comes up, two pages: "Your <STAT> rating is NN%: that is the most your bar can reach. Finish above <RIVAL>'s target of NN% to win." and how to play (e.g. "Tap A as fast as you can until the time runs out. Every tap pushes your bar higher."). Later bouts of that type get one line, e.g. "Beat 34% to win. Tap A as fast as you can."
 4. **Countdown**: 3, 2, 1, GO with the control prompt on screen; A is ignored for the first 0.3 s after GO
-5. **Minigame**: the player's bar shows a marker at the target score and "NEED NN%"
-6. **Result**: 1.5 s later the rival's line (win) or the coach's (loss), then the level-clear screen
+5. **Minigame**: the prompt shows the A button (or, on a keyboard, a SPACE key) and what to do ("TAP FAST!", "HOLD IT DOWN!", "TAP ON THE BEAT!", "TAP AT THE MARK!"). The player's bar is labelled YOU, hatched beyond the rating, with a marker at the rival's "TARGET NN%"
+6. **Result**: 1.5 s later the rival's line (win) or the coach's (loss), which ignores A and B for 1 s so a mash carried over from the bout can't skip it, then the results screen (which ignores input for 1.5 s)
 
 ### Rival Target
 
@@ -215,7 +219,7 @@ The focus stat is the level's boss stat (speed, strength, endurance or power), a
 
 | Type | Level | Boss Stat | Mechanic | Duration | Full score |
 |------|-------|-----------|----------|----------|------------|
-| **Sprint** | 1 | Speed | Mash A | 5s | 30 presses |
+| **Sprint** | 1 | Speed | Tap A fast | 5s | 30 presses |
 | **Strength** | 2 | Strength | Hold A | 4s | 2.5 s of holding |
 | **Endurance** | 3 | Endurance | Press A on the beat as notes approach | ~8 s | Hit all 9 beats (every 0.8 s, from 1 s); window 0.12 s early to 0.18 s late; stray presses count as misses, once per gap |
 | **Power** | 4 | Power | One press when the cursor crosses the mark | 3s | Within ±2% of the sweet spot; the mark first comes round ~0.5 s after GO |
@@ -223,7 +227,8 @@ The focus stat is the level's boss stat (speed, strength, endurance or power), a
 ### After the Bout
 
 - **Win**: LEVEL CLEAR (or GAME COMPLETE after the last unbeaten level) with the four stats; the level's room progress resets, so a replay starts fresh
-- **Loss**: DEFEATED with a diagnosis: if the rating was too low, which room to replay; otherwise a nudge to sharpen timing. Choices: RETRY SHOWDOWN, BACK TO HUB (room progress kept), LEVEL SELECT
+- **Win** screen line: "SCORE NN% VS TARGET NN%"
+- **Loss**: DEFEATED with "RATING NN% VS TARGET NN%", "SCORE NN% VS TARGET NN%" and a diagnosis: if the rating could not beat the target, "YOUR <STAT> RATING WAS TOO LOW. REPLAY THE <ROOM> ROOM."; if the bout saw no A at all, "NO A PRESSES DETECTED. PRESS A DURING THE BOUT."; otherwise "YOUR SCIENCE WAS GOOD ENOUGH." with a tip for the bout type (tap faster, keep A held, press as each note hits the zone, tap when the cursor is in the green). Choices: RETRY SHOWDOWN, BACK TO HUB (room progress kept), LEVEL SELECT
 
 ### Rivals per Level
 

@@ -16,7 +16,10 @@ import {
   HUD_COLORS,
   MINIGAME_FOR_STAT,
   MINIGAME_PROMPT,
+  MINIGAME_RULES,
+  MINIGAME_RULES_SHORT,
   STAT_LABEL,
+  boutWasIdle,
   createMinigameState,
   drawMeter,
   renderMinigame,
@@ -27,16 +30,15 @@ import {
   type MinigameType,
 } from '../systems/BossMinigame';
 
-type BossPhase = 'intro' | 'statDisplay' | 'precheck' | 'countdown' | 'minigame' | 'result';
+type BossPhase = 'intro' | 'precheck' | 'rules' | 'countdown' | 'minigame' | 'result';
 
 // Mirrored once, not every frame
 const RIVAL_SPRITE = ATHLETE_SPRITE.map(row => [...row].reverse());
 
-const STAT_DISPLAY_TIME = 3.2; // seconds the stat comparison stays up
-const STAT_SKIP_AFTER = 1; // A can skip the rest after this long
 const COUNT_STEP = 0.7; // seconds per 3 / 2 / 1 / GO
 const RESULT_SFX_DELAY = 0.25; // lets the last hit sound finish before the jingle
 const RESULT_DELAY = 1.5; // game seconds between the end of the minigame and the result dialogue
+const RESULT_LOCK = 1; // ...which ignores A and B this long, so a mash carried over from the bout can't skip it
 
 // Layout (game pixels). Everything stays above the dialogue box at y = 164.
 const TITLE_Y = 2;
@@ -153,13 +155,13 @@ export const createBossBattleScene = (
   let phase: BossPhase = 'intro';
   let setup: Setup | null = null;
   let minigame: MinigameState | null = null;
-  let statTimer = 0;
   let stepTimer = 0;
   let lastStep = -1;
   let goTimer = 0;
   let resultTimer = 0;
   let resultSfxPlayed = false;
   let resultShown = false;
+  const rulesSeen = new Set<MinigameType>(); // bout types already explained this session
 
   const buildSetup = (): Setup | null => {
     const sport = LEVEL_DATA[gameState.currentLevel];
@@ -200,10 +202,34 @@ export const createBossBattleScene = (
     sceneManager.switchTo('overworld');
   };
 
+  // The rules card is the gate before every bout. The first time a bout type comes up it explains the bar
+  // and the controls over two pages; after that a line is enough.
+  const rulesPages = (s: Setup): string[] => {
+    const target = pct(s.target);
+    if (rulesSeen.has(s.type)) return [`Beat ${target}% to win. ${MINIGAME_RULES_SHORT[s.type]}`];
+    return [
+      `Your ${STAT_LABEL[s.focus]} rating is ${pct(s.rating)}%: that is the most your bar can reach. Finish above ${s.rivalName}'s target of ${target}% to win.`,
+      MINIGAME_RULES[s.type],
+    ];
+  };
+
+  const showRules = (s: Setup) => {
+    phase = 'rules';
+    dialogue.showSequence(
+      rulesPages(s),
+      () => {
+        rulesSeen.add(s.type); // only once the card has been read through
+        startCountdown(s);
+      },
+      leaveToHub, // B: back to the hub
+      { exitLabel: 'LEAVE ARENA', nextLabel: 'READY' },
+    );
+  };
+
   // The coach warns when even perfect play can't beat the rival
-  const afterStatDisplay = (s: Setup) => {
+  const afterTaunt = (s: Setup) => {
     if (s.rating > s.target) {
-      startCountdown(s);
+      showRules(s);
       return;
     }
     phase = 'precheck';
@@ -212,10 +238,11 @@ export const createBossBattleScene = (
       `YOUR ${STAT_LABEL[s.focus]} RATING (${pct(s.rating)}%) CAN'T BEAT ${rival}'S ${pct(s.target)}%. REPLAY THE ${s.room} ROOM TO RAISE IT.`,
       ['BACK TO HUB', 'FIGHT ANYWAY'],
       (choice) => {
-        if (choice === 1) startCountdown(s);
+        if (choice === 1) showRules(s);
         else leaveToHub(); // also the safe default if nothing was chosen
       },
       leaveToHub, // B: back to the hub
+      { exitLabel: 'LEAVE ARENA' },
     );
   };
 
@@ -224,16 +251,23 @@ export const createBossBattleScene = (
     const text = won
       ? `${s.rivalName}: "${s.rivalLoseLine}"`
       : 'Better data next time, Coach. The margins matter.';
-    dialogue.show(text, undefined, () => {
-      onResult({
-        won,
-        focus: s.focus,
-        rating: s.rating,
-        rivalRating: s.rivalCeiling,
-        playerScore: mg.playerScore,
-        rivalScore: mg.rivalScore,
-      });
-    });
+    dialogue.show(
+      text,
+      undefined,
+      () => {
+        onResult({
+          won,
+          focus: s.focus,
+          rating: s.rating,
+          rivalRating: s.rivalCeiling,
+          playerScore: mg.playerScore,
+          rivalScore: mg.rivalScore,
+          idle: boutWasIdle(mg),
+        });
+      },
+      undefined,
+      { lock: RESULT_LOCK, exitLabel: '' },
+    );
   };
 
   // Header (focus + rating) and the comparison rows. While the coach's warning is up its choice box
@@ -345,7 +379,6 @@ export const createBossBattleScene = (
     onEnter() {
       phase = 'intro';
       minigame = null;
-      statTimer = 0;
       stepTimer = 0;
       lastStep = -1;
       goTimer = 0;
@@ -364,12 +397,9 @@ export const createBossBattleScene = (
       dialogue.show(
         `${s.rivalName}: "${s.rivalTaunt}"`,
         undefined,
-        () => {
-          phase = 'statDisplay';
-          statTimer = 0;
-          announce(`${focusLine(s)}. ${ratingLine(s)}.`);
-        },
+        () => afterTaunt(s),
         leaveToHub, // B: not ready for this bout yet
+        { exitLabel: 'LEAVE ARENA' },
       );
     },
 
@@ -386,13 +416,6 @@ export const createBossBattleScene = (
       if (!s) return;
 
       switch (phase) {
-        case 'statDisplay':
-          statTimer += dt;
-          if (statTimer >= STAT_DISPLAY_TIME || (statTimer >= STAT_SKIP_AFTER && inp.aPressed)) {
-            afterStatDisplay(s);
-          }
-          break;
-
         case 'countdown': {
           stepTimer += dt;
           const step = Math.floor(stepTimer / COUNT_STEP);
@@ -458,10 +481,10 @@ export const createBossBattleScene = (
       if (s) {
         drawArena(ctx, s);
         drawCentre(ctx);
-        if (phase === 'intro' || phase === 'statDisplay' || phase === 'precheck') {
+        if (phase === 'intro' || phase === 'precheck' || phase === 'rules') {
           drawStatRows(ctx, s, phase === 'precheck');
         } else if (minigame) {
-          renderMinigame(ctx, minigame);
+          renderMinigame(ctx, minigame, input.label('a'));
         }
       }
 

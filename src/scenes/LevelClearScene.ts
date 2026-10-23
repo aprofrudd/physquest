@@ -10,13 +10,13 @@ import { LEVELS } from '../data/levels';
 import { LEVEL_DATA } from '../data/sports';
 import { sfx } from '../audio/Sfx';
 import { announce } from '../ui/announce';
-import { HUD_COLORS, STAT_LABEL, drawMeter, roomLabelForStat } from '../systems/BossMinigame';
+import { HUD_COLORS, MINIGAME_FOR_STAT, STAT_LABEL, drawMeter, roomLabelForStat, type MinigameType } from '../systems/BossMinigame';
 
 export type LevelClearChoice = 'next' | 'retry' | 'hub';
 
 type View = 'win' | 'complete' | 'lose';
 
-const INPUT_LOCK = 1; // seconds before the screen reacts, so a mashed A from the bout can't skip it
+const INPUT_LOCK = 1.5; // seconds before the screen reacts, so a mashed A from the bout can't skip it
 const SAFE_W = GAME_W - 16; // widest title that keeps clear of the frame
 const ARROW_W = measureText('>', 2) + 4; // cursor column at scale 2 plus a 4px gap, as in the pause menu
 const MENU_PAD = 12; // menu panel edge to the cursor / labels: 4px border and 8px of air
@@ -32,6 +32,14 @@ const MENU: readonly { label: string; choice: LevelClearChoice }[] = [
 const WIN_GREEN = '#2a8a3a'; // >= 3:1 on the cream background (large text)
 const LOSE_RED = '#a83030';
 
+// What to practise after a defeat the science didn't cause, by bout type. {A} is the player's name for the button.
+const TIMING_TIP: Record<MinigameType, string> = {
+  sprint: 'TAP {A} FASTER NEXT TIME!',
+  strength: 'KEEP {A} HELD THE WHOLE TIME!',
+  endurance: 'PRESS {A} AS EACH NOTE HITS THE ZONE!',
+  power: 'TAP WHEN THE CURSOR IS IN THE GREEN!',
+};
+
 const pct = (v: number): number => Math.round(Math.max(0, Math.min(1, v)) * 100);
 
 /** Largest scale (up to maxScale) at which the text fits maxW. */
@@ -40,6 +48,12 @@ const fitScale = (text: string, maxScale: number, maxW: number): number => {
     if (measureText(text, scale) <= maxW) return scale;
   }
   return 1;
+};
+
+/** Spoken form of an on-screen sentence in capitals: sentence case, but a button's name ({A}) is kept as written. */
+const spoken = (text: string): string => {
+  const lower = text.toLowerCase().replace(/\{[a-z]+\}/g, token => token.toUpperCase());
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
 };
 
 /** Word-wrap to maxChars. A word with no letters or digits (a spaced dash) stays with the word before it. */
@@ -64,6 +78,25 @@ const wrapLines = (text: string, maxChars: number): string[] => {
   }
   if (current) lines.push(current);
   return lines;
+};
+
+/** Like wrapLines, but a sentence that needs two lines is split as evenly as it can be, so the second never dangles one short word. */
+const wrapEven = (text: string, maxChars: number): string[] => {
+  const lines = wrapLines(text, maxChars);
+  if (lines.length !== 2) return lines;
+  const longestWord = Math.max(...text.split(' ').map(word => word.length));
+  for (let width = Math.max(Math.ceil(text.length / 2), longestWord); width < maxChars; width++) {
+    const even = wrapLines(text, width);
+    if (even.length === 2) return even;
+  }
+  return lines;
+};
+
+/** Why the player lost, as sentences (button names as {A} tokens): the rating first, since it caps the score; then whether they pressed at all. */
+const defeatAdvice = (r: LevelResult): string[] => {
+  if (r.rating <= r.rivalScore) return [`YOUR ${STAT_LABEL[r.focus]} RATING WAS TOO LOW.`, `REPLAY THE ${roomLabelForStat(r.focus)} ROOM.`];
+  if (r.idle) return ['NO {A} PRESSES DETECTED.', 'PRESS {A} DURING THE BOUT.'];
+  return ['YOUR SCIENCE WAS GOOD ENOUGH.', TIMING_TIP[MINIGAME_FOR_STAT[r.focus]]];
 };
 
 export const createLevelClearScene = (
@@ -130,7 +163,7 @@ export const createLevelClearScene = (
 
     const rival = LEVEL_DATA[r.level]?.rivalName;
     if (rival) centred(ctx, `YOU BEAT ${rival.toUpperCase()}!`, 154, pal.colors[1]);
-    centred(ctx, `FINAL SCORE ${pct(r.playerScore)}% VS ${pct(r.rivalScore)}%`, 168, pal.colors[1]);
+    centred(ctx, `SCORE ${pct(r.playerScore)}% VS TARGET ${pct(r.rivalScore)}%`, 168, pal.colors[1]);
   };
 
   const drawComplete = (ctx: CanvasRenderingContext2D, r: LevelResult | null) => {
@@ -157,15 +190,14 @@ export const createLevelClearScene = (
     const stat = STAT_LABEL[r.focus];
     const room = roomLabelForStat(r.focus);
     const tooLow = r.rating <= r.rivalScore;
-    centred(ctx, `FOCUS: ${stat} (${room} ROOM)`, 47, HUD_COLORS.ink);
-    centred(ctx, `RATING ${pct(r.rating)}% VS TARGET ${pct(r.rivalScore)}%`, 59, tooLow ? HUD_COLORS.bad : HUD_COLORS.good);
-    // Two sentences, each on its own line(s), so a wrap never starts a line with a dash or a stray word
-    const advice = tooLow
-      ? [`YOUR ${stat} RATING WAS TOO LOW.`, `REPLAY THE ${room} ROOM.`]
-      : ['YOUR SCIENCE WAS GOOD ENOUGH.', 'SHARPEN YOUR TIMING!'];
-    advice
-      .flatMap(sentence => wrapLines(sentence, 34))
-      .forEach((line, i) => centred(ctx, line, 77 + i * 11, '#080808'));
+    centred(ctx, `FOCUS: ${stat} (${room} ROOM)`, 46, HUD_COLORS.ink);
+    centred(ctx, `RATING ${pct(r.rating)}% VS TARGET ${pct(r.rivalScore)}%`, 56, tooLow ? HUD_COLORS.bad : HUD_COLORS.good);
+    centred(ctx, `SCORE ${pct(r.playerScore)}% VS TARGET ${pct(r.rivalScore)}%`, 66, HUD_COLORS.bad);
+    // Each sentence on its own line(s), so a wrap never starts a line with a dash or a stray word. The block is
+    // centred in the 40px between the score line and the bottom of the box, so two lines or three both sit evenly.
+    const advice = defeatAdvice(r).flatMap(sentence => wrapEven(input.fill(sentence), 34));
+    const adviceY = 72 + Math.round((40 - (advice.length * 10 - 3)) / 2);
+    advice.forEach((line, i) => centred(ctx, line, adviceY + i * 10, '#080808'));
 
     // Menu: a cursor column, a gap, then the labels. The block is centred in a panel sized from the
     // widest label, so nothing touches the border.
@@ -183,7 +215,7 @@ export const createLevelClearScene = (
       drawText(ctx, item.label, menuX + MENU_PAD + ARROW_W, y, selected ? '#080808' : '#606060', 2);
     }
 
-    if (timer >= INPUT_LOCK) centred(ctx, 'D-PAD: MOVE   A: CHOOSE', 206, pal.colors[1]);
+    if (timer >= INPUT_LOCK) centred(ctx, input.fill('{DPAD}: MOVE   {A}: CHOOSE'), 206, pal.colors[1]);
   };
 
   const announceView = () => {
@@ -193,17 +225,17 @@ export const createLevelClearScene = (
       ? STAT_KEYS.map(k => `${STAT_LABEL[k].toLowerCase()} ${pct(r.stats[k])} percent`).join(', ')
       : '';
     if (view === 'lose' && r) {
-      const tooLow = r.rating <= r.rivalScore;
       announce(
         `Defeated. Focus ${STAT_LABEL[r.focus].toLowerCase()}, ${roomLabelForStat(r.focus).toLowerCase()} room. ` +
         `Rating ${pct(r.rating)} percent versus target ${pct(r.rivalScore)} percent. ` +
-        (tooLow ? 'Your rating was too low. Replay that room.' : 'Your science was good enough. Sharpen your timing.') +
-        ` Menu: ${MENU[menuIndex]?.label.toLowerCase() ?? ''}.`,
+        `Score ${pct(r.playerScore)} percent versus target ${pct(r.rivalScore)} percent. ` +
+        `${defeatAdvice(r).map(sentence => input.fill(spoken(sentence))).join(' ')} ` +
+        `Menu: ${MENU[menuIndex]?.label.toLowerCase() ?? ''}.`,
       );
     } else if (view === 'complete') {
-      announce(`Game complete! ${stats ? `${stats}. ` : ''}Press A to continue.`);
+      announce(`Game complete! ${stats ? `${stats}. ` : ''}${input.fill('Press {A} to continue.')}`);
     } else {
-      announce(`Level clear! ${level}. ${stats}. Press A to continue.`);
+      announce(`Level clear! ${level}. ${stats}. ${input.fill('Press {A} to continue.')}`);
     }
   };
 
@@ -270,7 +302,7 @@ export const createLevelClearScene = (
 
       // Continue prompt blinks once the screen is listening
       if (view !== 'lose' && timer >= INPUT_LOCK && Date.now() % 800 < 520) {
-        centred(ctx, 'PRESS A TO CONTINUE', GAME_H - 22, pal.colors[0]);
+        centred(ctx, input.fill('PRESS {A} TO CONTINUE'), GAME_H - 22, pal.colors[0]);
       }
     },
   };

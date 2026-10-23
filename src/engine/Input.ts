@@ -85,6 +85,7 @@ const TEXT_MODE_CODES: Record<string, Button> = {
   ArrowRight: 'right',
   Backspace: 'b',
   Enter: 'start',
+  Escape: 'start',
   NumpadEnter: 'start',
 };
 
@@ -114,6 +115,47 @@ const record = <T>(make: () => T): Record<Button, T> => ({
 
 export type InputListener = (button: Button, isDown: boolean) => void;
 
+/** What the player is using right now: the physical keyboard, or the on-screen console (touch or mouse). */
+export type InputDevice = 'keyboard' | 'console';
+
+// What to call each button in on-screen prompts when the player is on a keyboard
+const KEY_LABEL: Record<Button | 'dpad', string> = {
+  up: 'UP',
+  down: 'DOWN',
+  left: 'LEFT',
+  right: 'RIGHT',
+  a: 'SPACE',
+  b: 'X',
+  start: 'ESC',
+  select: 'SHIFT',
+  dpad: 'ARROWS',
+};
+
+const CONSOLE_LABEL: Record<Button | 'dpad', string> = {
+  up: 'UP',
+  down: 'DOWN',
+  left: 'LEFT',
+  right: 'RIGHT',
+  a: 'A',
+  b: 'B',
+  start: 'START',
+  select: 'SELECT',
+  dpad: 'D-PAD',
+};
+
+/** Names a button for prompts. */
+export type ButtonLabel = (button: Button | 'dpad') => string;
+
+/** Console wording regardless of device (see createInput's label for the device-aware one). */
+export const consoleLabel: ButtonLabel = button => CONSOLE_LABEL[button];
+
+// Prompt text names buttons as {A}, {B}, {START}, {SELECT} or {DPAD}
+const BUTTON_TOKEN = /\{(A|B|START|SELECT|DPAD)\}/g;
+
+/** Replace the button tokens in `text` with the names `name` gives them. */
+export const fillButtonNames = (text: string, name: ButtonLabel): string =>
+  text.replace(BUTTON_TOKEN, (_, key: string) => name(key === 'DPAD' ? 'dpad' : (key.toLowerCase() as Button)));
+
 export const createInput = () => {
   const sources = record(() => new Set<string>());
   const pressSerial = record(() => 0);
@@ -124,8 +166,14 @@ export const createInput = () => {
   const keyButtons = new Map<string, Button>(); // key source -> button it is holding
   let textMode = false;
   let typed: string[] = [];
+  // Desktops start on keyboard wording; the first touch or click of a console button switches it
+  let device: InputDevice =
+    typeof window.matchMedia === 'function' && window.matchMedia('(hover: hover) and (pointer: fine)').matches
+      ? 'keyboard'
+      : 'console';
 
   const press = (button: Button, source: string) => {
+    if (!source.startsWith('key:')) device = 'console';
     const set = sources[button];
     if (set.has(source)) return;
     const wasUp = set.size === 0;
@@ -162,6 +210,7 @@ export const createInput = () => {
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && !isEditableTarget(e.target)) device = 'keyboard';
     if (isEditableTarget(e.target)) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return; // leave browser shortcuts alone
 
@@ -286,7 +335,25 @@ export const createInput = () => {
     listeners.clear();
   };
 
-  return { read, press, release, releaseSource, releaseAll, setTextMode, blockRepeats, onChange, destroy };
+  /** What to call a button in a prompt: console names (A, B, START, SELECT, D-PAD), or key names on a keyboard. */
+  const label: ButtonLabel = button => (device === 'keyboard' ? KEY_LABEL : CONSOLE_LABEL)[button];
+  /** `text` with its {A}/{B}/{START}/{SELECT}/{DPAD} tokens named for the player's device. */
+  const fill = (text: string): string => fillButtonNames(text, label);
+
+  return {
+    read,
+    press,
+    release,
+    releaseSource,
+    releaseAll,
+    setTextMode,
+    blockRepeats,
+    onChange,
+    destroy,
+    label,
+    fill,
+    lastDevice: (): InputDevice => device,
+  };
 };
 
 export type Input = ReturnType<typeof createInput>;

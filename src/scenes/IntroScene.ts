@@ -13,7 +13,7 @@ import { sfx } from '../audio/Sfx';
 import { announce } from '../ui/announce';
 
 type Phase = 'dialogue' | 'nameEntry';
-type CellKind = 'char' | 'del' | 'end';
+type CellKind = 'char' | 'del' | 'done';
 
 interface Cell {
   label: string;
@@ -25,31 +25,31 @@ interface Cell {
 const GRID_COLS = 9;
 const MAX_NAME = 8;
 
-// Every cell is a real action, so the cursor can never rest on an empty square. DEL and END are
-// wide (they split the last row's remaining 7 columns; END, the main action, gets the bigger share).
+// Every cell is a real action, so the cursor can never rest on an empty square. DEL and DONE are
+// wide (they split the last row's remaining 7 columns; DONE, the main action, gets the bigger share).
 const ROWS: string[][] = [
   ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'],
   ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R'],
   ['S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '.'],
   ['-', '0', '1', '2', '3', '4', '5', '6', '7'],
-  ['8', '9', 'DEL', 'END'],
+  ['8', '9', 'DEL', 'DONE'],
 ];
-const SPANS: Record<string, number> = { DEL: 3, END: 4 };
+const SPANS: Record<string, number> = { DEL: 3, DONE: 4 };
 
 const GRID: Cell[][] = ROWS.map(labels => {
   let col = 0;
   return labels.map(label => {
     const span = SPANS[label] ?? 1;
-    const kind: CellKind = label === 'DEL' ? 'del' : label === 'END' ? 'end' : 'char';
+    const kind: CellKind = label === 'DEL' ? 'del' : label === 'DONE' ? 'done' : 'char';
     const cell: Cell = { label, kind, col, span };
     col += span;
     return cell;
   });
 });
-const END_ROW = GRID.length - 1;
+const DONE_ROW = GRID.length - 1;
 
 // Spoken names for the cells (the canvas itself is invisible to screen readers)
-const SPOKEN: Record<string, string> = { '.': 'period', '-': 'dash', DEL: 'delete', END: 'done' };
+const SPOKEN: Record<string, string> = { '.': 'period', '-': 'dash', DEL: 'delete', DONE: 'done' };
 
 const NAME_CHAR = /^[A-Z0-9.-]$/;
 
@@ -86,11 +86,18 @@ const FLOOR_END_Y = 160; // clear of the dialogue box (y = 164)
 const FLOOR_LINE = '#e2d8c0'; // a shade darker than the cream background
 const FLOOR_SHADOW = '#d3c8ae';
 
+// The room names are the hub signs' (ROOM_LABEL). Button tokens are filled in for the player's device
+// as each line opens (see DialogueSystem).
 const COACH_LINES = [
   'Welcome, Coach. Your job is to guide athletes through science-based training.',
-  'Test selection, variable ID, training prescription, performance prediction. Get it right.',
-  'Rival scientists will challenge you. Your data is your weapon.',
+  'Each sport has four rooms: TESTING, DATA, TRAINING and ANALYSIS. Do them in order: walk through a door and press {A} to talk to the athlete.',
+  'Every answer counts: good answers raise your athlete\'s stats. Finish all four rooms to open the ARENA, then beat the rival scientist there.',
+  'Press {SELECT} for your objectives and {START} to pause. {B} leaves any chat. Progress saves automatically.',
 ];
+
+// Under the name grid: console buttons, or the keyboard (where letters type straight into the name)
+const FOOTER_CONSOLE = 'A: ADD   B: DELETE   START: DONE';
+const FOOTER_KEYBOARD = 'TYPE YOUR NAME   ENTER: DONE';
 
 const drawStage = (ctx: CanvasRenderingContext2D, t: number) => {
   // Floor lines, as on the boss arena
@@ -156,9 +163,9 @@ export const createIntroScene = (
     announce(spoken(currentCell()));
   };
 
-  const parkOnEnd = () => {
-    cursorRow = END_ROW;
-    cursorIdx = (GRID[END_ROW]?.length ?? 1) - 1;
+  const parkOnDone = () => {
+    cursorRow = DONE_ROW;
+    cursorIdx = (GRID[DONE_ROW]?.length ?? 1) - 1;
     anchorCol = anchorOf(currentCell());
   };
 
@@ -216,7 +223,7 @@ export const createIntroScene = (
   const activateCell = (): boolean => {
     const cell = currentCell();
     if (cell.kind === 'del') deleteChar();
-    else if (cell.kind === 'end') return confirm();
+    else if (cell.kind === 'done') return confirm();
     else addChars([cell.label]);
     return false;
   };
@@ -235,13 +242,22 @@ export const createIntroScene = (
       entryLock = 0;
       input.setTextMode(false);
 
-      // Start coach dialogue sequence
-      dialogue.showSequence(COACH_LINES, () => {
-        phase = 'nameEntry';
-        entryLock = ENTRY_LOCK;
-        input.setTextMode(true); // from here on letters and digits type into the name
-        announce(`Enter your name, up to ${MAX_NAME} characters. D-pad moves, A adds, B deletes, Start when done.`);
-      });
+      // Start coach dialogue sequence (B skips it straight to name entry)
+      dialogue.showSequence(
+        COACH_LINES,
+        () => {
+          phase = 'nameEntry';
+          entryLock = ENTRY_LOCK;
+          input.setTextMode(true); // from here on letters and digits type into the name
+          announce(
+            input.lastDevice() === 'keyboard'
+              ? `Enter your name, up to ${MAX_NAME} characters. Type it, Backspace deletes, Enter when done.`
+              : `Enter your name, up to ${MAX_NAME} characters. D-pad moves, A adds, B deletes, Start when done.`,
+          );
+        },
+        undefined,
+        { exitLabel: 'SKIP' },
+      );
     },
 
     onExit() {
@@ -264,10 +280,10 @@ export const createIntroScene = (
       const unlocked = entryLock <= 0;
       entryLock = Math.max(0, entryLock - dt);
 
-      // Physical keyboard: typing parks the cursor on END, so Enter (START) finishes in one press
+      // Physical keyboard: typing parks the cursor on DONE, so Enter (START) finishes in one press
       if (unlocked && inp.typed.length > 0) {
         addChars(inp.typed);
-        parkOnEnd();
+        parkOnDone();
       }
       if (unlocked && inp.bPressed) deleteChar();
 
@@ -280,8 +296,8 @@ export const createIntroScene = (
 
       if (unlocked && inp.startPressed) {
         // START is DONE: with a name it finishes in one press, wherever the cursor is. With no name
-        // yet there is nothing to finish, so it jumps to END and says why it can't.
-        if (name.length === 0) parkOnEnd();
+        // yet there is nothing to finish, so it jumps to DONE and says why it can't.
+        if (name.length === 0) parkOnDone();
         confirm();
       }
     },
@@ -381,8 +397,8 @@ export const createIntroScene = (
         }
       }
 
-      // Instructions
-      const inst = 'A: ADD   B: DELETE   START: DONE';
+      // Instructions, in the wording of the player's device
+      const inst = input.lastDevice() === 'keyboard' ? FOOTER_KEYBOARD : FOOTER_CONSOLE;
       drawText(ctx, inst, (GAME_W - measureText(inst)) / 2, GAME_H - 16, pal.colors[2]);
     },
   };

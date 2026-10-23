@@ -36,9 +36,15 @@ export const startGame = (root: HTMLElement) => {
   const gameState = createInitialState();
   // A direction held from the previous screen must not scroll a menu that has just opened
   const sceneManager = createSceneManager(() => input.blockRepeats());
-  const dialogue = createDialogueSystem(() => input.blockRepeats());
+  const dialogue = createDialogueSystem(() => input.blockRepeats(), button => input.label(button));
   const movement = createMovement();
-  const pauseMenu = createPauseMenu(sceneManager, gameState, dialogue, () => input.blockRepeats());
+  const pauseMenu = createPauseMenu(
+    sceneManager,
+    gameState,
+    dialogue,
+    () => input.blockRepeats(),
+    button => input.label(button),
+  );
 
   let lastResult: LevelResult | null = null;
 

@@ -216,8 +216,8 @@ export const createLevelSelectScene = (
         drawText(ctx, athlete, nameX, y + 25, pal.colors[1]);
       }
 
-      // Footer prompt
-      const footer = 'A: PLAY   B: BACK';
+      // Footer prompt, in the player's button names; a cleared sport is replayed rather than played
+      const footer = input.fill(gameState.bossDefeated[selectedIndex] ? '{A}: REPLAY   {B}: BACK' : '{A}: PLAY   {B}: BACK');
       drawText(ctx, footer, (GAME_W - measureText(footer)) / 2, FOOTER_Y, pal.colors[2]);
     },
   };

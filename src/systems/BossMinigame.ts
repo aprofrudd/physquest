@@ -3,7 +3,7 @@
 // fixed share of their own ceiling (RIVAL_FACTOR) and the player wins by finishing strictly above that.
 // All timing runs on the dt passed to updateMinigame, so pausing the game pauses the bout.
 
-import type { InputState } from '../engine/Input';
+import { consoleLabel, type InputState } from '../engine/Input';
 import { sfx } from '../audio/Sfx';
 import { GAME_W } from '../render/DialogueBox';
 import { drawText, measureText } from '../render/PixelFont';
@@ -292,20 +292,53 @@ export const updateMinigame = (
   }
 };
 
+/** The bout saw no valid input (no press, or the wrong key), so the result can say how to play. */
+export const boutWasIdle = (s: MinigameState): boolean => {
+  switch (s.type) {
+    case 'sprint':
+      return s.mashCount === 0;
+    case 'strength':
+      return s.holdTimer === 0;
+    case 'endurance':
+      return s.hits === 0 && s.strayMisses === 0;
+    case 'power':
+      return s.tapProgress < 0;
+  }
+};
+
 // ---- Drawing ---------------------------------------------------------------
 
 const BAR_X = 24;
 const BAR_W = 208;
+const YOU_X = 3; // 'YOU' names the player's bar from the margin to its left (17px wide: 4px clear of the bar)
 // Everything is stacked from PROMPT_Y, which sits 4px under the athletes' platforms (they end at y = 75).
 // RESULT_Y puts 'YOU WIN!' between the lowest HUD text (ends at y = 139) and the result dialogue box (y = 164).
 const PROMPT_Y = 80;
 const RESULT_Y = 144;
+const TEXT_H = 7; // glyph height
 
+// The glyph beside the prompt names the button, so the prompt itself never has to
 export const MINIGAME_PROMPT: Record<MinigameType, string> = {
-  sprint: 'MASH A!',
-  strength: 'HOLD A!',
-  endurance: 'TAP A ON THE BEAT!',
-  power: 'TAP A AT THE MARK!',
+  sprint: 'TAP FAST!',
+  strength: 'HOLD IT DOWN!',
+  endurance: 'TAP ON THE BEAT!',
+  power: 'TAP AT THE MARK!',
+};
+
+// The rules card: how each bout type is played. {A} is filled in with the player's name for the button.
+export const MINIGAME_RULES: Record<MinigameType, string> = {
+  sprint: 'Tap {A} as fast as you can until the time runs out. Every tap pushes your bar higher.',
+  strength: 'Hold {A} down. Your bar rises while you hold it and stops when you let go.',
+  endurance: 'Press {A} each time a note reaches the green zone. Taps between notes count as misses.',
+  power: 'You get one tap. Press {A} while the cursor is in the green zone: the dark centre scores the most.',
+};
+
+/** The same rules in a line, for a bout type the player has already been through. */
+export const MINIGAME_RULES_SHORT: Record<MinigameType, string> = {
+  sprint: 'Tap {A} as fast as you can.',
+  strength: 'Hold {A} down the whole time.',
+  endurance: 'Press {A} as each note hits the green zone.',
+  power: 'One tap: press {A} in the green zone.',
 };
 
 const pct = (v: number): number => Math.round(clamp01(v) * 100);
@@ -318,12 +351,37 @@ const fillDisc = (ctx: CanvasRenderingContext2D, cx: number, cy: number, r: numb
   }
 };
 
+// The prompt's button glyph: a console A button, or on a keyboard a key with the same colours
+const BUTTON_INK = '#080808';
+const BUTTON_FACE = '#b03a8a';
+const BUTTON_FACE_HELD = '#5a1a45';
+const BUTTON_LABEL = '#f8f8f0';
+const A_BUTTON_W = 13;
+const A_BUTTON_GAP = 5;
+const KEY_H = A_BUTTON_W;
+const KEY_PAD = 4; // from the key's edge to its name: 1px border and 3px of air
+
 /** Console-style A button; sinks while the real button is held. */
 const drawAButton = (ctx: CanvasRenderingContext2D, cx: number, cy: number, pressed: boolean): void => {
   const dy = pressed ? 1 : 0;
-  fillDisc(ctx, cx, cy + dy, 6, '#080808');
-  fillDisc(ctx, cx, cy + dy, 5, pressed ? '#5a1a45' : '#b03a8a');
-  drawText(ctx, 'A', cx - 2, cy - 3 + dy, '#f8f8f0');
+  fillDisc(ctx, cx, cy + dy, 6, BUTTON_INK);
+  fillDisc(ctx, cx, cy + dy, 5, pressed ? BUTTON_FACE_HELD : BUTTON_FACE);
+  drawText(ctx, 'A', cx - 2, cy - 3 + dy, BUTTON_LABEL);
+};
+
+const keycapWidth = (name: string): number => measureText(name) - 1 + KEY_PAD * 2; // -1: the last glyph's trailing gap
+
+/** Keyboard key with its name on it, rounded by one pixel at the corners; sinks while the real key is held. */
+const drawKeycap = (ctx: CanvasRenderingContext2D, x: number, cy: number, name: string, pressed: boolean): void => {
+  const w = keycapWidth(name);
+  const y = cy - (KEY_H - 1) / 2 + (pressed ? 1 : 0);
+  ctx.fillStyle = BUTTON_INK;
+  ctx.fillRect(x + 1, y, w - 2, KEY_H);
+  ctx.fillRect(x, y + 1, w, KEY_H - 2);
+  ctx.fillStyle = pressed ? BUTTON_FACE_HELD : BUTTON_FACE;
+  ctx.fillRect(x + 2, y + 1, w - 4, KEY_H - 2);
+  ctx.fillRect(x + 1, y + 2, w - 2, KEY_H - 4);
+  drawText(ctx, name, x + KEY_PAD, y + (KEY_H - TEXT_H) / 2, BUTTON_LABEL);
 };
 
 /** Slim outlined bar; `value` is 0-1 of the inner width. */
@@ -358,6 +416,7 @@ const drawScoreMeter = (
   markerBottom: number,
 ): void => {
   drawMeter(ctx, BAR_X, y, BAR_W, h, s.playerScore, s.playerScore > s.target ? HUD_COLORS.reached : HUD_COLORS.player);
+  drawText(ctx, 'YOU', YOU_X, y + Math.floor((h - TEXT_H) / 2), HUD_COLORS.player);
 
   // Beyond the rating the athlete can never score: hatch it so the ceiling is visible
   const lockedX = barPx(BAR_X, BAR_W, s.rating);
@@ -372,23 +431,23 @@ const drawScoreMeter = (
   ctx.fillRect(mx - 3, markerBottom, 6, 2);
 };
 
-const drawNeedLabel = (ctx: CanvasRenderingContext2D, s: MinigameState, y: number): void => {
-  const text = `NEED ${pct(s.target)}%`;
+const drawTargetLabel = (ctx: CanvasRenderingContext2D, s: MinigameState, y: number): void => {
+  const text = `TARGET ${pct(s.target)}%`;
   const w = measureText(text);
   const mx = barPx(BAR_X, BAR_W, s.target);
   const x = Math.max(BAR_X, Math.min(BAR_X + BAR_W - w, Math.round(mx - w / 2)));
   drawText(ctx, text, x, y, HUD_COLORS.rivalText);
 };
 
-const A_BUTTON_W = 13;
-const A_BUTTON_GAP = 5;
-
-const drawPrompt = (ctx: CanvasRenderingContext2D, s: MinigameState): void => {
+const drawPrompt = (ctx: CanvasRenderingContext2D, s: MinigameState, aName: string): void => {
   const text = MINIGAME_PROMPT[s.type];
-  const total = A_BUTTON_W + A_BUTTON_GAP + measureText(text, 2);
+  const onConsole = aName === consoleLabel('a');
+  const glyphW = onConsole ? A_BUTTON_W : keycapWidth(aName);
+  const total = glyphW + A_BUTTON_GAP + measureText(text, 2);
   const x0 = Math.round((GAME_W - total) / 2);
-  drawAButton(ctx, x0 + (A_BUTTON_W - 1) / 2, PROMPT_Y + 7, s.aHeld);
-  drawText(ctx, text, x0 + A_BUTTON_W + A_BUTTON_GAP, PROMPT_Y, HUD_COLORS.ink, 2);
+  if (onConsole) drawAButton(ctx, x0 + (A_BUTTON_W - 1) / 2, PROMPT_Y + 7, s.aHeld);
+  else drawKeycap(ctx, x0, PROMPT_Y + 7, aName, s.aHeld);
+  drawText(ctx, text, x0 + glyphW + A_BUTTON_GAP, PROMPT_Y, HUD_COLORS.ink, 2);
 };
 
 /** Sprint and strength: one big bar with the rival chasing underneath. */
@@ -397,7 +456,7 @@ const drawTimedBar = (ctx: CanvasRenderingContext2D, s: MinigameState): void => 
   const h = 16;
   drawScoreMeter(ctx, s, y, h, y + h + 7);
   drawMeter(ctx, BAR_X, y + h + 2, BAR_W, 5, s.rivalScore, HUD_COLORS.rival);
-  drawNeedLabel(ctx, s, y + h + 11);
+  drawTargetLabel(ctx, s, y + h + 11);
   if (!s.complete) {
     const remaining = Math.max(0, s.duration - s.timer);
     const text = `TIME ${remaining.toFixed(1)}`;
@@ -452,7 +511,7 @@ const drawEndurance = (ctx: CanvasRenderingContext2D, s: MinigameState): void =>
   const h = 8;
   const labelY = y + h + 6;
   drawScoreMeter(ctx, s, y, h, y + h + 2);
-  drawNeedLabel(ctx, s, labelY);
+  drawTargetLabel(ctx, s, labelY);
   drawText(ctx, `HITS ${s.hits}`, BAR_X, labelY, HUD_COLORS.good);
   const miss = `MISS ${s.missedBeats + s.strayMisses}`;
   drawText(ctx, miss, BAR_X + BAR_W - measureText(miss) + 1, labelY, HUD_COLORS.bad);
@@ -481,11 +540,12 @@ const drawPower = (ctx: CanvasRenderingContext2D, s: MinigameState): void => {
   const y = LANE_Y + LANE_H + 5;
   const h = 8;
   drawScoreMeter(ctx, s, y, h, y + h + 2);
-  drawNeedLabel(ctx, s, y + h + 6);
+  drawTargetLabel(ctx, s, y + h + 6);
 };
 
-export const renderMinigame = (ctx: CanvasRenderingContext2D, s: MinigameState): void => {
-  drawPrompt(ctx, s);
+/** `aName` is what the player calls the A button right now ('A' on the console, 'SPACE' on a keyboard). */
+export const renderMinigame = (ctx: CanvasRenderingContext2D, s: MinigameState, aName: string): void => {
+  drawPrompt(ctx, s, aName);
   switch (s.type) {
     case 'sprint':
     case 'strength':

@@ -1,4 +1,4 @@
-import type { InputState } from '../engine/Input';
+import { consoleLabel, fillButtonNames, type ButtonLabel, type InputState } from '../engine/Input';
 import type { SceneManager } from '../engine/SceneManager';
 import { CHAR_W, drawText, measureText } from '../render/PixelFont';
 import { drawPokemonBox } from '../render/SpriteSheet';
@@ -20,6 +20,19 @@ const optionLabel = (opt: Option): string => {
   }
 };
 
+// Layout (game pixels), top to bottom inside the box: header, the options, a rule, the button hint and the
+// save note. The box is wide enough for the 168px note, with air either side.
+const BOX_W = 200;
+const OPTIONS_Y = 30;
+const OPTION_PITCH = 14;
+const RULE_Y = OPTIONS_Y + OPTIONS.length * OPTION_PITCH;
+const HINT_Y = RULE_Y + 7;
+const NOTE_Y = HINT_Y + 11;
+const BOX_H = NOTE_Y + 16;
+
+const HINT = '{A}: CHOOSE   {B}: BACK';
+const NOTE = 'PROGRESS SAVES AUTOMATICALLY';
+
 export interface PauseMenu {
   isActive(): boolean;
   open(): void;
@@ -37,6 +50,7 @@ export const createPauseMenu = (
   gameState: GameState,
   dialogue: DialogueSystem,
   onOpen?: () => void,
+  name: ButtonLabel = consoleLabel, // button names for prompts (see Input.label)
 ): PauseMenu => {
   let active = false;
   let selectedIndex = 0;
@@ -125,10 +139,10 @@ export const createPauseMenu = (
       ctx.fillRect(0, 0, GAME_W, GAME_H);
 
       // Pause box
-      const boxW = 140;
-      const boxH = 30 + OPTIONS.length * 14 + 8;
-      const boxX = (GAME_W - boxW) / 2;
-      const boxY = (GAME_H - boxH) / 2;
+      const boxW = BOX_W;
+      const boxH = BOX_H;
+      const boxX = Math.floor((GAME_W - boxW) / 2);
+      const boxY = Math.floor((GAME_H - boxH) / 2);
       drawPokemonBox(ctx, boxX, boxY, boxW, boxH);
 
       // Header
@@ -140,15 +154,22 @@ export const createPauseMenu = (
       const labels = OPTIONS.map(optionLabel);
       const labelsW = Math.max(...labels.map(l => measureText(l)));
       const cursorX = Math.floor(boxX + (boxW - (CHAR_W + 4 + labelsW)) / 2);
-      const optStartY = boxY + 30;
+      const optStartY = boxY + OPTIONS_Y;
       for (let i = 0; i < labels.length; i++) {
         const isSelected = i === selectedIndex;
-        const y = optStartY + i * 14;
+        const y = optStartY + i * OPTION_PITCH;
         if (isSelected) drawText(ctx, '>', cursorX, y, '#080808');
         drawText(ctx, labels[i]!, cursorX + CHAR_W + 4, y, isSelected ? '#080808' : '#606060');
       }
 
-      // Save confirmation
+      // What the buttons do here, and why SAVE GAME is rarely needed (button names follow the device)
+      ctx.fillStyle = '#a0a0a0';
+      ctx.fillRect(boxX + 12, boxY + RULE_Y, boxW - 24, 1);
+      const hint = fillButtonNames(HINT, name);
+      drawText(ctx, hint, (GAME_W - measureText(hint)) / 2, boxY + HINT_Y, '#303030');
+      drawText(ctx, NOTE, (GAME_W - measureText(NOTE)) / 2, boxY + NOTE_Y, '#606060');
+
+      // Save confirmation, just under the box
       if (flashTimer > 0) {
         const flashW = measureText(flashText, 2);
         ctx.fillStyle = '#080808';

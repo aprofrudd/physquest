@@ -15,13 +15,13 @@ You play as a sports scientist guiding athletes through test selection, data ana
 | 3: National Finals | Boxing | Carlos, 22, middleweight | Endurance / Anaerobic capacity | Coach Steele |
 | 4: International Selection | Distance Running | Aisha, 26, 5000m runner | Power / Speed reserve | Dr. Okafor |
 
-Each level has 4 challenge rooms:
-1. **Test Selection**: choose appropriate fitness tests for the athlete
-2. **Variable Identification**: identify key performance variables from test data
-3. **Training Prescription**: select correct training zones
-4. **Performance Prediction**: predict realistic training adaptations
+Each level has 4 challenge rooms, taken in order (a gold arrow in the hub points at the next door):
+1. **Testing** (Test Selection, raises Speed): choose appropriate fitness tests for the athlete
+2. **Data** (Variable Identification, raises Strength): identify key performance variables from test data
+3. **Training** (Training Prescription, raises Endurance): select correct training zones
+4. **Analysis** (Performance Prediction, raises Power): predict realistic training adaptations
 
-Answer options are shuffled every time, and a finished room can be replayed to raise your best score. Complete all rooms to face the level's rival in a showdown minigame. Your showdown rating is 70% the level's focus stat and 30% your average across all four rooms, so every room counts. Lose, and the game tells you which room to revisit; your room progress is kept.
+Answer options are shuffled every time, and a finished room can be replayed to raise your best score. Complete all rooms to open the arena and face the level's rival in a showdown minigame. Your showdown rating is 70% the level's focus stat and 30% your average across all four rooms, so every room counts: it is the most your bar can reach. A rules card before each bout explains the controls and the target to beat. Lose, and the game tells you why: which room to replay if your rating was too low, otherwise how to play the bout better; your room progress is kept.
 
 ## Controls
 
@@ -35,7 +35,7 @@ The game sits inside a handheld console. Tap its buttons on a phone or tablet, c
 | START | Esc or P | Pause menu (resume, save, sound, quit) |
 | SELECT | Shift | Objectives panel in the hub |
 
-On a keyboard you can also type your coach's name directly. Progress saves automatically after naming your coach, after every room and after every showdown. On a phone, add the page to your home screen for a full-screen, app-like experience.
+On-screen prompts follow what you are using: key names (SPACE, X, ESC, SHIFT, ARROWS) after a key press, console names after a tap or click on the console. On a keyboard you can also type your coach's name directly and finish it with Enter. Progress saves automatically after naming your coach, after every room and after every showdown. On a phone, add the page to your home screen for a full-screen, app-like experience.
 
 ## Tech Stack
 

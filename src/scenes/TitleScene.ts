@@ -71,23 +71,29 @@ const CONFIRM = ['NO', 'YES'] as const;
 // Overwrite warning: dark enough to read on the cream background (6.5:1)
 const WARN_COLOR = '#a01818';
 
-const CONTROLS = ['D-PAD: MOVE', 'A: TALK / CHOOSE', 'B: BACK / RUN'];
+// Button names are filled in for the player's device when the legend is drawn (input.fill)
+const CONTROLS = [
+  '{DPAD}: MOVE',
+  '{A}: TALK / CHOOSE',
+  '{B}: BACK (HOLD TO RUN)',
+  '{START}: PAUSE   {SELECT}: OBJECTIVES',
+];
 
 const CURSOR_GAP = 4; // air between the '>' column and the labels (same as the pause menu and choice lists)
 
-// Layout (game pixels), top to bottom: title, subtitle, rule, logo band, rule, controls legend; the prompt
-// or menu follows below. Everything down to the legend is the same in every state.
+// Layout (game pixels), top to bottom: title, subtitle, rule, logo band, rule, controls legend (4 lines,
+// ending at y 145); the prompt or menu follows below. Everything down to the legend is the same in every state.
 const TITLE_Y = 20; // 3x text: 21px tall, plus a 1px shadow
 const SUBTITLE_Y = 46;
 const RULE_TOP_Y = 59;
 const LOGO_Y = 67; // top of the 2x artwork: 6px below the top rule and above the bottom one
 const RULE_BOTTOM_Y = 99;
-const LEGEND_Y = 110;
+const LEGEND_Y = 108;
 const LEGEND_PITCH = 10;
-const START_Y = 156; // 'PRESS START'
-const MENU_Y = 152; // CONTINUE / NEW GAME
-const CONFIRM_HEADING_Y = 148; // 'OVERWRITE SAVE?'
-const CONFIRM_MENU_Y = 170; // NO / YES
+const START_Y = 164; // 'PRESS START'
+const MENU_Y = 160; // CONTINUE / NEW GAME
+const CONFIRM_HEADING_Y = 154; // 'OVERWRITE SAVE?'
+const CONFIRM_MENU_Y = 176; // NO / YES
 
 // Vertical option list at scale 2: a cursor column, a gap, then the labels on one shared left edge.
 // The whole block is centred, so the '>' sits in a fixed column however the options change.
@@ -122,6 +128,13 @@ export const createTitleScene = (
   let confirming = false; // inline "OVERWRITE SAVE?" prompt after choosing New Game
   let confirmIndex = 0; // 0 = No (the safe default), 1 = Yes
 
+  /** What begins a new game: A (SPACE) on a keyboard, START on the console. Both buttons work on either. */
+  const startName = () => input.label(input.lastDevice() === 'keyboard' ? 'a' : 'start');
+  const startPrompt = () => {
+    const name = startName();
+    return `Press ${name.charAt(0)}${name.slice(1).toLowerCase()} to begin.`;
+  };
+
   const startNewGame = () => {
     // The old save is deliberately left alone: the new game replaces it when it first saves,
     // so backing out of the intro doesn't cost the player their progress.
@@ -136,7 +149,7 @@ export const createTitleScene = (
       // The save disappeared since we looked (storage cleared in another tab)
       saveExists = false;
       sfx.play('wrong');
-      announce('Save not found. Press Start to begin.');
+      announce(`Save not found. ${startPrompt()}`);
       return;
     }
     applySave(gameState, save);
@@ -151,7 +164,7 @@ export const createTitleScene = (
       menuIndex = 0;
       confirming = false;
       confirmIndex = 0;
-      announce(saveExists ? 'PhysQuest. Continue.' : 'PhysQuest. Press Start to begin.');
+      announce(saveExists ? 'PhysQuest. Continue.' : `PhysQuest. ${startPrompt()}`);
     },
 
     update(dt: number) {
@@ -256,18 +269,17 @@ export const createTitleScene = (
       ctx.fillStyle = pal.colors[2];
       ctx.fillRect(30, RULE_BOTTOM_Y, GAME_W - 60, 2);
 
-      // Controls legend: one left-aligned block, centred as a whole
-      const legendW = Math.max(...CONTROLS.map(line => measureText(line)));
-      const legendX = Math.floor((GAME_W - legendW) / 2);
+      // Controls legend: every line centred (they differ a lot in length), named for the player's device
       for (let i = 0; i < CONTROLS.length; i++) {
-        drawText(ctx, CONTROLS[i]!, legendX, LEGEND_Y + i * LEGEND_PITCH, pal.colors[1]);
+        const line = input.fill(CONTROLS[i]!);
+        drawText(ctx, line, (GAME_W - measureText(line)) / 2, LEGEND_Y + i * LEGEND_PITCH, pal.colors[1]);
       }
 
       if (!saveExists) {
         // Press start — Pokemon-style blink (500ms on, 250ms off)
         const blinkCycle = (Date.now() % 750);
         if (blinkCycle < 500) {
-          const start = 'PRESS START';
+          const start = `PRESS ${startName()}`;
           const startW = measureText(start, 2);
           drawText(ctx, start, (GAME_W - startW) / 2, START_Y, pal.colors[0], 2);
         }

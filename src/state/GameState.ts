@@ -117,6 +117,19 @@ export const roomsCompleted = (state: GameState): number =>
 
 export const allRoomsComplete = (state: GameState): boolean => roomsCompleted(state) === ROOM_KEYS.length;
 
+/**
+ * Rooms are taken in order (TESTING, DATA, TRAINING, ANALYSIS): a room is open once the room before it
+ * is done. A finished room always stays open for replays.
+ */
+export const roomUnlocked = (state: GameState, key: RoomKey): boolean => {
+  const i = ROOM_KEYS.indexOf(key);
+  const prev = ROOM_KEYS[i - 1];
+  return i <= 0 || state.roomProgress[key] || (prev !== undefined && state.roomProgress[prev]);
+};
+
+/** The next room to do, in order, or null when all four are done. */
+export const nextRoom = (state: GameState): RoomKey | null => ROOM_KEYS.find(k => !state.roomProgress[k]) ?? null;
+
 /** Copy the active level's progress into levelProgress (null if no room has been completed yet). */
 export const stashLevel = (state: GameState): void => {
   const started = ROOM_KEYS.some(k => state.roomProgress[k]);
@@ -157,6 +170,8 @@ export interface BoutResult {
   rivalRating: number; // rival's ceiling, 0-1
   playerScore: number; // final minigame scores, 0-1
   rivalScore: number;
+  /** The player made no valid input during the bout (e.g. pressed the wrong key), so say how to play. */
+  idle: boolean;
 }
 
 export type LevelOutcome = 'win' | 'lose' | 'complete';

@@ -1,5 +1,5 @@
 import { drawText, measureText, CHAR_W } from './PixelFont';
-import type { InputState } from '../engine/Input';
+import { consoleLabel, type ButtonLabel, type InputState } from '../engine/Input';
 import { sfx } from '../audio/Sfx';
 import { announce } from '../ui/announce';
 
@@ -87,7 +87,20 @@ export interface DialogueState {
   choiceLock: number; // seconds left in which A cannot confirm
   onComplete: ((choiceIndex?: number) => void) | null;
   onCancel: (() => void) | null; // B: leave the conversation (see cancelDialogue)
+  exitLabel: string; // what B does here, shown on the box ('' hides it)
+  nextLabel: string; // what A does on the last page when there is no question ('NEXT' by default)
+  inputLock: number; // seconds left in which A and B are ignored (e.g. a mash carried over from a bout)
   waitingForInput: boolean; // current page fully typed
+}
+
+/** Per-dialogue options. */
+export interface DialogueOptions {
+  /** What B does, for the box's hint: 'LEAVE' by default; '' when B shouldn't be advertised. */
+  exitLabel?: string;
+  /** What A does on the last page, for the box's hint, e.g. 'READY' before a bout: 'NEXT' by default. */
+  nextLabel?: string;
+  /** Ignore A and B for this long after the dialogue opens. */
+  lock?: number;
 }
 
 export const createDialogueState = (): DialogueState => ({
@@ -103,6 +116,9 @@ export const createDialogueState = (): DialogueState => ({
   choiceLock: 0,
   onComplete: null,
   onCancel: null,
+  exitLabel: 'LEAVE',
+  nextLabel: 'NEXT',
+  inputLock: 0,
   waitingForInput: false,
 });
 
@@ -111,6 +127,7 @@ export const clearDialogue = (state: DialogueState) => {
   state.active = false;
   state.onComplete = null;
   state.onCancel = null;
+  state.inputLock = 0;
   state.choices = null;
   state.choiceLines = [];
   state.pages = [];
@@ -194,6 +211,7 @@ export const startDialogue = (
   choices?: string[],
   onComplete?: (choiceIndex?: number) => void,
   onCancel?: () => void,
+  options?: DialogueOptions,
 ) => {
   state.active = true;
   state.pages = paginate(wrapText(text));
@@ -206,6 +224,9 @@ export const startDialogue = (
   state.choiceLock = 0;
   state.onComplete = onComplete ?? null;
   state.onCancel = onCancel ?? null;
+  state.exitLabel = options?.exitLabel ?? 'LEAVE';
+  state.nextLabel = options?.nextLabel ?? 'NEXT';
+  state.inputLock = options?.lock ?? 0;
   state.waitingForInput = false;
   announce(pageLines(state).join(' '));
 };
@@ -258,8 +279,15 @@ const cancelDialogue = (state: DialogueState) => {
   cancel();
 };
 
-export const updateDialogue = (state: DialogueState, dt: number, inp: InputState) => {
+export const updateDialogue = (state: DialogueState, dt: number, rawInp: InputState) => {
   if (!state.active) return;
+
+  // While locked, the text keeps typing but A and B do nothing
+  let inp = rawInp;
+  if (state.inputLock > 0) {
+    state.inputLock = Math.max(0, state.inputLock - dt);
+    inp = { ...rawInp, a: false, aPressed: false, b: false, bPressed: false };
+  }
 
   // B leaves the conversation at any point, even mid-sentence
   if (inp.bPressed && canCancel(state)) {
@@ -357,10 +385,12 @@ const drawChoicePanel = (ctx: CanvasRenderingContext2D, state: DialogueState) =>
   }
 };
 
-// A small tag hanging off the box's bottom edge: B leaves the conversation. It sits below the 4th text
+// A small tag hanging off the box's bottom edge naming what A and B do here. It sits below the 4th text
 // line and left of the advance arrow, half on the frame and half on the margin under the box.
-const drawExitTag = (ctx: CanvasRenderingContext2D) => {
-  const label = 'B: EXIT';
+const drawHintTag = (ctx: CanvasRenderingContext2D, state: DialogueState, name: ButtonLabel) => {
+  const aDoes = choicesVisible(state) ? 'CHOOSE' : onLastPage(state) ? state.nextLabel : 'NEXT';
+  const showB = canCancel(state) && state.exitLabel !== '';
+  const label = `${name('a')}: ${aDoes}${showB ? `   ${name('b')}: ${state.exitLabel}` : ''}`;
   const w = measureText(label) - 1 + 6;
   const x = BOX_X + 10;
   const y = BOX_Y + BOX_H - 6;
@@ -373,7 +403,8 @@ const drawExitTag = (ctx: CanvasRenderingContext2D) => {
 
 export const renderDialogue = (
   ctx: CanvasRenderingContext2D,
-  state: DialogueState
+  state: DialogueState,
+  name: ButtonLabel = consoleLabel,
 ) => {
   if (!state.active) return;
 
@@ -398,5 +429,5 @@ export const renderDialogue = (
     drawBouncingArrow(ctx, ARROW_X, ARROW_Y);
   }
 
-  if (canCancel(state)) drawExitTag(ctx);
+  drawHintTag(ctx, state, name);
 };

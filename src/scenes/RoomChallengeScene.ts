@@ -4,14 +4,14 @@ import type { SceneManager } from '../engine/SceneManager';
 import type { GameState, RoomKey } from '../state/GameState';
 import type { DialogueSystem } from '../systems/Dialogue';
 import type { PauseMenu } from '../systems/PauseMenu';
-import { GAME_W, GAME_H } from '../render/DialogueBox';
+import { GAME_W, GAME_H, type DialogueOptions } from '../render/DialogueBox';
 import { drawText, measureText } from '../render/PixelFont';
 import { drawPokemonBox } from '../render/SpriteSheet';
 import { PALETTES } from '../render/Palettes';
 import { renderTileMap } from '../render/TileMap';
 import { ALL_MAPS } from '../data/maps';
 import { LEVEL_DATA, type SportData } from '../data/sports';
-import { calcStat, roomKeyForMap, ROOM_MAP, ROOM_STAT } from '../state/GameState';
+import { calcStat, nextRoom, roomKeyForMap, ROOM_LABEL, ROOM_MAP, ROOM_STAT } from '../state/GameState';
 import { sfx } from '../audio/Sfx';
 
 type ChallengePhase = 'intro' | 'challenge' | 'feedback' | 'complete';
@@ -74,9 +74,13 @@ export const createRoomChallengeScene = (
     sceneManager.switchTo('overworld');
   };
 
-  /** Every line of a challenge can be left with B. */
-  const say = (text: string, choices?: string[], onDone?: (choiceIndex?: number) => void) =>
-    dialogue.show(text, choices, onDone, leave);
+  /** Every line of a challenge can be left with B, so its hint says QUIT (the completion line hides it). */
+  const say = (
+    text: string,
+    choices?: string[],
+    onDone?: (choiceIndex?: number) => void,
+    options: DialogueOptions = { exitLabel: 'QUIT' },
+  ) => dialogue.show(text, choices, onDone, leave, options);
 
   /** Ask a multiple-choice question with the options in a fresh random order. */
   const ask = <T>(
@@ -254,14 +258,19 @@ export const createRoomChallengeScene = (
 
     let message: string;
     if (!wasComplete) {
-      message = `Room complete! ${label} stat: ${percent(statValue)}%`; // one 38-char line, even ENDURANCE at 100%
+      // This room is recorded, so nextRoom is what is left: the room to do next, or nothing, which opens the arena
+      const next = nextRoom(gameState);
+      const what = next
+        ? `Next up: the ${ROOM_LABEL[next]} room. You can replay any room to raise its score.`
+        : 'All four rooms are done: the ARENA is open!';
+      message = `Room complete! Your ${label} stat is now ${percent(statValue)}%. ${what}`;
     } else if (percent(statValue) > percent(previous)) {
       message = `New best! ${label} now ${percent(best)}%`;
     } else {
       message = `Your best stays at ${percent(best)}%`;
     }
 
-    say(message, undefined, finish);
+    say(message, undefined, finish, { exitLabel: '' }); // B just finishes here, like A
   };
 
   return {
