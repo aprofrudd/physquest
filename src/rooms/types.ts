@@ -32,8 +32,13 @@ export interface RoomHost {
   quit(): void;
   /** Record the result: the scene shows the stat line, then goes back to the hub. Call once. */
   complete(result: RoomResult): void;
-  /** True the first time this room's instrument opens this session (full rules), false after (short rules). */
+  /**
+   * True until this room's full rules have been read to the end this session (show the full rules), false after
+   * (show the short ones). It does not change during a visit.
+   */
   firstVisit: boolean;
+  /** Call when the full rules have been read to the end, so later visits this session get the short rules. */
+  rulesRead(): void;
   /** The room was finished before this visit (a replay: the best stat is kept). */
   replay: boolean;
 }

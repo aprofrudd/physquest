@@ -1,7 +1,8 @@
 // Distance Running (level 4: Aisha, 5000 m): content for the redesigned rooms.
-// DRAFT: every item here is new physiology content awaiting Alan's review. Numbers already in sports.ts are
-// reused; derived numbers are arithmetic on them (3:45/km = 16.0 km/h, 3:20/km = 18.0, 2:55/km = 20.6,
-// 30 m in 3.86 s = 28.0 km/h); everything else is a placeholder until Alan approves or replaces it.
+// Approved for release by Alan on 2026-10-23 and open for team review (docs/content-review.md lists what is
+// provisional; answers come back through the review page linked there and are applied verbatim). Numbers
+// already in sports.ts are reused; derived numbers are arithmetic on them (3:45/km = 16.0 km/h,
+// 3:20/km = 18.0, 2:55/km = 20.6, 30 m in 3.86 s = 28.0 km/h).
 import type { RoomsContent } from './types';
 
 export const RUNNING: RoomsContent = {

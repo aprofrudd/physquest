@@ -1,13 +1,13 @@
-// The redesigned rooms are switched on per browser while their physiology content is under review:
-// ?rooms=new turns them on (remembered on this device), ?rooms=classic turns them off again.
+// The redesigned rooms are on for the levels listed below. A browser can switch back to the classic rooms with
+// ?rooms=classic (remembered on that device) and return with ?rooms=new.
 
 const STORAGE_KEY = 'physquest_rooms';
 
 /** Levels whose four rooms have been redesigned, by level index. Distance Running is first. */
 export const REDESIGNED_LEVELS: ReadonlySet<number> = new Set([3]);
 
-/** Flip to true once the content is approved, so every player gets the redesigned rooms. */
-const ON_BY_DEFAULT = false;
+/** Every player gets the redesigned rooms unless their browser chose the classic ones (approved 2026-10-23). */
+const ON_BY_DEFAULT = true;
 
 type Choice = 'new' | 'classic';
 

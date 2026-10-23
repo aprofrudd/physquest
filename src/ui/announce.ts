@@ -5,6 +5,7 @@ let region: HTMLElement | null = null;
 let lastText = '';
 let lastAt = -Infinity;
 let pending = 0;
+let queued = ''; // lines waiting to be read together
 
 const getRegion = (): HTMLElement | null => {
   if (region) return region;
@@ -40,10 +41,13 @@ export const announce = (text: string): void => {
   lastAt = now;
   const el = getRegion();
   if (!el) return;
+  // Lines said at the same moment (a dialogue line and a room's own note) are read together, never dropped
+  queued = queued ? `${queued} ${text}` : text;
   // Clearing first makes screen readers treat a repeat of the previous line as new content
   el.textContent = '';
   window.clearTimeout(pending);
   pending = window.setTimeout(() => {
-    el.textContent = text;
+    el.textContent = queued;
+    queued = '';
   }, 30);
 };

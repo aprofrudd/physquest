@@ -62,7 +62,7 @@ export const createRoomChallengeScene = (
   let headerText = '';
   let instrument: RoomInstrument | null = null; // a redesigned room runs the challenge instead of the lists below
   let clock = 0; // seconds since the room opened, for the background's animation
-  const opened = new Set<RoomType>(); // rooms whose instrument has opened this session (full rules the first time)
+  const rulesRead = new Set<RoomType>(); // rooms whose full rules have been read this session (short rules after)
 
   /** The room is finished: back to the hub outside this room's door. */
   const finish = () => {
@@ -140,6 +140,7 @@ export const createRoomChallengeScene = (
   /** What a redesigned room is given to run the challenge (see rooms/types.ts). */
   const makeHost = (): RoomHost => {
     let done = false;
+    const room = roomType;
     return {
       sport,
       level: gameState.currentLevel,
@@ -156,7 +157,10 @@ export const createRoomChallengeScene = (
         variableAccuracy = result.variableAccuracy;
         completeRoom();
       },
-      firstVisit: !opened.has(roomType),
+      firstVisit: !rulesRead.has(room),
+      rulesRead: () => {
+        rulesRead.add(room);
+      },
       replay: wasComplete,
     };
   };
@@ -181,9 +185,7 @@ export const createRoomChallengeScene = (
     const make = instrumentFor(roomType, gameState.currentLevel);
     if (make) {
       phase = 'challenge';
-      const host = makeHost();
-      opened.add(roomType);
-      instrument = make(host);
+      instrument = make(makeHost());
       return;
     }
 
