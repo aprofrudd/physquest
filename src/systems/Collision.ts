@@ -45,6 +45,10 @@ const describe = (mapData: MapData, tile: number, x: number, y: number): Interac
     return { type: 'door', target: door?.target, x, y };
   }
 
+  // Equipment is listed by position, so a solid machine can be looked at as well as an EQUIP floor tile
+  const listed = mapData.equipment.find(e => e.x === x && e.y === y);
+  if (listed && tile !== T.NPC) return { type: 'equipment', dialogueKey: listed.dialogueKey, x, y };
+
   if (isInteractable(tile)) {
     if (tile === T.NPC) {
       const npc = mapData.npcs.find(n => n.x === x && n.y === y);

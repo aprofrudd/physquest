@@ -65,19 +65,16 @@ export const startGame = (root: HTMLElement) => {
 
   sceneManager.register('intro', createIntroScene(input, sceneManager, gameState, dialogue));
 
-  sceneManager.register('levelSelect', createLevelSelectScene(
-    input,
-    sceneManager,
-    gameState,
-    (levelIndex: number) => {
-      stashLevel(gameState); // keep any unfinished progress in the level we're leaving
-      activateLevel(gameState, levelIndex);
-      saveGame(gameState);
-      sceneManager.switchTo('overworld');
-    },
-  ));
+  const playLevel = (levelIndex: number) => {
+    stashLevel(gameState); // keep any unfinished progress in the level we're leaving
+    activateLevel(gameState, levelIndex);
+    saveGame(gameState);
+    sceneManager.switchTo('overworld');
+  };
 
-  sceneManager.register('overworld', createOverworldScene(
+  sceneManager.register('levelSelect', createLevelSelectScene(input, sceneManager, gameState, playLevel));
+
+  const overworldScene = createOverworldScene(
     input,
     sceneManager,
     gameState,
@@ -91,7 +88,8 @@ export const startGame = (root: HTMLElement) => {
       sceneManager.switchTo('bossBattle');
     },
     pauseMenu,
-  ));
+  );
+  sceneManager.register('overworld', overworldScene);
 
   sceneManager.register('roomChallenge', roomChallengeScene);
 
@@ -168,6 +166,12 @@ export const startGame = (root: HTMLElement) => {
       enterRoom: (roomId: string) => {
         sceneManager.switchTo('roomChallenge');
         roomChallengeScene.setRoom(roomId);
+      },
+      playLevel,
+      instrument: () => roomChallengeScene.debug(),
+      showRoom: (mapId: string) => {
+        sceneManager.switchTo('overworld');
+        overworldScene.showRoom(mapId);
       },
       input,
       dialogue,

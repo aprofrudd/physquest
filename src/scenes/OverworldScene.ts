@@ -36,6 +36,9 @@ import {
   type BannerSpot,
 } from '../render/OverworldHud';
 import { ALL_MAPS, HUB_RETURN, HUB_START, ROOM_SPAWN, type MapData, type Spawn } from '../data/maps';
+import { mapFor } from '../data/rooms';
+import { LEVEL_DATA } from '../data/sports';
+import { ambientTime } from '../render/motion';
 import { DIALOGUES } from '../data/dialogue';
 import { getCoachSprite, NPC_SPRITE, SPRITE_COLORS } from '../data/sprites';
 import { checkInteraction, checkStandingOnDoor, findOpenNeighbour } from '../systems/Collision';
@@ -80,7 +83,7 @@ export const createOverworldScene = (
   onEnterRoom: (roomId: string) => void,
   onEnterBoss: () => void,
   pauseMenu: PauseMenu,
-): Scene => {
+): Scene & { showRoom(mapId: string): void } => {
   let currentMapId = 'hub';
   let currentMap: MapData = ALL_MAPS['hub']!;
   let bannerTimer = 0;
@@ -88,6 +91,7 @@ export const createOverworldScene = (
   let aBuffer = 0;
   let panelOpen = false;
   let fade: Fade | null = null;
+  let roomClock = 0; // seconds, for the room's animated details; stops while paused
   // Cues that teach the controls and go away once used, for the rest of the session
   let metHubAthlete = false; // the hub athlete's "!" stays until the first chat with it
   let panelSeen = false; // the SELECT hint stays until the objectives panel has been opened
@@ -100,8 +104,10 @@ export const createOverworldScene = (
     bannerTimer = seconds;
   };
 
+  const sport = () => LEVEL_DATA[gameState.currentLevel] ?? LEVEL_DATA[0]!;
+
   const applyMap = (mapId: string, spawn: Spawn, withBanner = true) => {
-    const map = ALL_MAPS[mapId];
+    const map = mapFor(mapId, gameState.currentLevel);
     if (!map) return;
     currentMapId = mapId;
     currentMap = map;
@@ -119,7 +125,8 @@ export const createOverworldScene = (
       if (toDo) lines.push(TALK_HINT);
       showBanner(lines, mapId === 'hub' ? 'bottom' : 'top', toDo ? BANNER_TIME_LONG : BANNER_TIME);
     }
-    announce(withBanner && toDo ? `${map.name}. ${input.fill(TALK_HINT)}` : map.name);
+    const described = map.describe ? `${map.name}. ${map.describe}` : map.name;
+    announce(withBanner && toDo ? `${described} ${input.fill(TALK_HINT)}` : described);
   };
 
   const hubSpawn = (door: HubDoor | null): Spawn => (door ? HUB_RETURN[door] : HUB_START);
@@ -232,10 +239,12 @@ export const createOverworldScene = (
       return;
     }
 
-    const lines = DIALOGUES[hit.dialogueKey];
+    // A room's own lines (they may use the level's data), else the shared scripts
+    const own = currentMap.talk?.[hit.dialogueKey]?.(sport());
+    const lines = own ?? DIALOGUES[hit.dialogueKey]?.map(l => l.text);
     if (!lines || lines.length === 0) return;
     if (hit.type === 'npc') metHubAthlete = true; // a room athlete never gets here: that was the challenge above
-    dialogue.showSequence(lines.map(l => l.text));
+    dialogue.showSequence(lines);
   };
 
   const openPanel = () => {
@@ -305,6 +314,7 @@ export const createOverworldScene = (
         return;
       }
       if (pauseMenu.handle(dt, inp)) return;
+      roomClock += dt;
 
       const tiles = currentMap.tiles;
 
@@ -357,7 +367,8 @@ export const createOverworldScene = (
       ctx.fillRect(0, 0, GAME_W, GAME_H);
 
       // Single screen, no scrolling
-      renderTileMap(ctx, currentMap.tiles, currentMap.palette, 0, 0, GAME_W, GAME_H);
+      renderTileMap(ctx, currentMap.tiles, currentMap.palette, 0, 0, GAME_W, GAME_H, currentMap.npcFloor);
+      currentMap.life?.(ctx, ambientTime(roomClock), sport());
 
       // The label plates stay off while the objectives panel is open: the arena's would peek out below it
       if (isHub() && !panelOpen) drawHubLabels(ctx, gameState);
@@ -438,6 +449,14 @@ export const createOverworldScene = (
       }
 
       pauseMenu.render(ctx);
+    },
+
+    /** Tests: stand in a room (at its spawn), skipping the hub and the doors. */
+    showRoom(mapId: string) {
+      dialogue.reset();
+      fade = null;
+      panelOpen = false;
+      applyMap(mapId, mapId === 'hub' ? HUB_START : ROOM_SPAWN, false);
     },
   };
 };

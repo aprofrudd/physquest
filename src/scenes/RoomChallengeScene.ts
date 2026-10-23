@@ -9,8 +9,11 @@ import { drawText, measureText } from '../render/PixelFont';
 import { drawPokemonBox } from '../render/SpriteSheet';
 import { PALETTES } from '../render/Palettes';
 import { renderTileMap } from '../render/TileMap';
-import { ALL_MAPS } from '../data/maps';
+import { ambientTime } from '../render/motion';
+import { mapFor } from '../data/rooms';
 import { LEVEL_DATA, type SportData } from '../data/sports';
+import { instrumentFor } from '../rooms';
+import type { RoomHost, RoomInstrument, RoomResult } from '../rooms/types';
 import { calcStat, nextRoom, roomKeyForMap, ROOM_LABEL, ROOM_MAP, ROOM_STAT } from '../state/GameState';
 import { sfx } from '../audio/Sfx';
 
@@ -48,7 +51,7 @@ export const createRoomChallengeScene = (
   dialogue: DialogueSystem,
   onComplete: () => void,
   pauseMenu: PauseMenu,
-): Scene & { setRoom(room: string): void } => {
+): Scene & { setRoom(room: string): void; debug(): unknown } => {
   let phase: ChallengePhase = 'intro';
   let roomType: RoomType = 'room1';
   let roomKey: RoomKey = 'testSelection';
@@ -57,6 +60,9 @@ export const createRoomChallengeScene = (
   let dataQuality = 0;
   let variableAccuracy = 0;
   let headerText = '';
+  let instrument: RoomInstrument | null = null; // a redesigned room runs the challenge instead of the lists below
+  let clock = 0; // seconds since the room opened, for the background's animation
+  const opened = new Set<RoomType>(); // rooms whose instrument has opened this session (full rules the first time)
 
   /** The room is finished: back to the hub outside this room's door. */
   const finish = () => {
@@ -131,6 +137,30 @@ export const createRoomChallengeScene = (
     askNext();
   };
 
+  /** What a redesigned room is given to run the challenge (see rooms/types.ts). */
+  const makeHost = (): RoomHost => {
+    let done = false;
+    return {
+      sport,
+      level: gameState.currentLevel,
+      input,
+      dialogue,
+      say: (text, choices, onDone, options) => say(text, choices, onDone, options),
+      sayAll: (texts, onDone, options = { exitLabel: 'QUIT' }) =>
+        dialogue.showSequence(texts, onDone, leave, { exitLabel: 'QUIT', ...options }),
+      quit: leave,
+      complete: (result: RoomResult) => {
+        if (done) return;
+        done = true;
+        dataQuality = result.dataQuality;
+        variableAccuracy = result.variableAccuracy;
+        completeRoom();
+      },
+      firstVisit: !opened.has(roomType),
+      replay: wasComplete,
+    };
+  };
+
   const startRoom = (room: string) => {
     const key = roomKeyForMap(room);
     if (!key) {
@@ -145,6 +175,17 @@ export const createRoomChallengeScene = (
     dataQuality = 0;
     variableAccuracy = 0;
     headerText = HEADERS[roomType];
+    clock = 0;
+    instrument = null;
+
+    const make = instrumentFor(roomType, gameState.currentLevel);
+    if (make) {
+      phase = 'challenge';
+      const host = makeHost();
+      opened.add(roomType);
+      instrument = make(host);
+      return;
+    }
 
     switch (roomType) {
       case 'room1':
@@ -278,23 +319,31 @@ export const createRoomChallengeScene = (
       // Room type set externally before switching scene
     },
 
+    onExit() {
+      instrument = null;
+    },
+
     update(dt: number) {
       const inp = input.read();
 
       // Pause menu
       if (pauseMenu.handle(dt, inp)) return;
+      clock += dt;
 
+      // The press that closes a line is used up by it: the instrument only acts when the box is idle
+      const busy = dialogue.isActive();
       dialogue.update(dt, inp);
+      instrument?.update(dt, inp, busy || dialogue.isActive());
     },
 
     render(ctx: CanvasRenderingContext2D) {
-      const palId = roomType === 'room1' ? 'lab' : roomType === 'room2' ? 'gym' : roomType === 'room3' ? 'track' : 'lab';
+      // The room itself, dimmed, behind the challenge
+      const mapData = mapFor(roomType, gameState.currentLevel);
+      const palId = mapData?.palette ?? 'lab';
       const pal = PALETTES[palId];
-
-      // Render actual tile map as dimmed background
-      const mapData = ALL_MAPS[roomType];
       if (mapData) {
-        renderTileMap(ctx, mapData.tiles, palId, 0, 0, GAME_W, GAME_H);
+        renderTileMap(ctx, mapData.tiles, palId, 0, 0, GAME_W, GAME_H, mapData.npcFloor);
+        mapData.life?.(ctx, ambientTime(clock), sport);
         // Dim overlay
         ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
         ctx.fillRect(0, 0, GAME_W, GAME_H);
@@ -321,6 +370,9 @@ export const createRoomChallengeScene = (
       ctx.fillRect(plateX + 1, plateY + 1, plateW - 2, 9);
       drawText(ctx, sport.sport, plateX + 6, plateY + 2, '#f8f8f0');
 
+      // A redesigned room draws its instrument between the plates and the dialogue box
+      instrument?.render(ctx);
+
       // Render dialogue
       dialogue.render(ctx);
 
@@ -330,6 +382,10 @@ export const createRoomChallengeScene = (
 
     setRoom(room: string) {
       startRoom(room);
+    },
+
+    debug() {
+      return instrument?.debug?.() ?? null;
     },
   };
 };

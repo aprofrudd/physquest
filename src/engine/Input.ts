@@ -149,8 +149,8 @@ export type ButtonLabel = (button: Button | 'dpad') => string;
 /** Console wording regardless of device (see createInput's label for the device-aware one). */
 export const consoleLabel: ButtonLabel = button => CONSOLE_LABEL[button];
 
-// Prompt text names buttons as {A}, {B}, {START}, {SELECT} or {DPAD}
-const BUTTON_TOKEN = /\{(A|B|START|SELECT|DPAD)\}/g;
+// Prompt text names buttons as {A}, {B}, {START}, {SELECT}, {DPAD} or one direction ({UP}, {DOWN}, {LEFT}, {RIGHT})
+const BUTTON_TOKEN = /\{(A|B|START|SELECT|DPAD|UP|DOWN|LEFT|RIGHT)\}/g;
 
 /** Replace the button tokens in `text` with the names `name` gives them. */
 export const fillButtonNames = (text: string, name: ButtonLabel): string =>

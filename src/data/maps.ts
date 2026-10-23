@@ -1,6 +1,7 @@
 import { T } from '../render/TileMap';
 import type { PaletteId } from '../render/Palettes';
 import type { HubDoor } from '../state/GameState';
+import type { SportData } from './sports';
 
 // Map data: each room is a 2D array of tile types
 // Maps are 16x14 tiles (256x224 pixels = one screen)
@@ -10,8 +11,20 @@ export interface MapData {
   palette: PaletteId;
   name: string;
   npcs: NpcData[];
+  /** Things to look at: facing one of these tiles and pressing A shows its lines (any tile, solid or not). */
   equipment: EquipData[];
   doors: DoorData[];
+  /** The tile drawn under the athlete (NPC tiles) when the room's floor is not the plain FLOOR. */
+  npcFloor?: number;
+  /**
+   * Animated details drawn over the room every frame, under the characters: screens, belts, staff, lights.
+   * `t` is the room clock in seconds: it stops while the game is paused (and under reduced motion).
+   */
+  life?: (ctx: CanvasRenderingContext2D, t: number, sport: SportData) => void;
+  /** Lines for this room's equipment keys, which may use the level's data; otherwise DIALOGUES is used. */
+  talk?: Readonly<Record<string, (sport: SportData) => string[]>>;
+  /** Said to screen readers when the room is entered, after its name (what is where). */
+  describe?: string;
 }
 
 export interface NpcData {

@@ -346,51 +346,92 @@ export const updateDialogue = (state: DialogueState, dt: number, rawInp: InputSt
   }
 };
 
+// An option's bar is OPTION_PITCH per line (the glyphs plus 1px above and below); the panel adds 4px border
+// and 2px padding each side
+const barHeight = (lines: string[]) => lines.length * OPTION_PITCH;
+const listHeight = (rows: string[][], gap: number) =>
+  rows.reduce((sum, lines) => sum + barHeight(lines), 0) + (rows.length - 1) * gap + 12;
+
+/** The option bars inside a list panel whose top is panelY (cursor on `selected`; -1 for none). */
+const drawOptionRows = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  w: number,
+  panelY: number,
+  rows: string[][],
+  selected: number,
+  gap: number,
+  dimmed?: readonly boolean[],
+) => {
+  let y = panelY + 7;
+  for (let i = 0; i < rows.length; i++) {
+    const lines = rows[i]!;
+    const barH = barHeight(lines);
+    const isSelected = i === selected;
+    if (isSelected) {
+      // Dark bar, light text: obvious at a glance even at small sizes
+      ctx.fillStyle = INK_SOFT;
+      ctx.fillRect(x + 6, y - 1, w - 12, barH);
+      drawText(ctx, '>', x + (CURSOR_X - CHOICE_X), y, PAPER);
+    }
+    const color = isSelected ? PAPER : dimmed?.[i] ? '#909090' : INK_SOFT;
+    for (let k = 0; k < lines.length; k++) {
+      drawText(ctx, lines[k]!, x + (OPTION_X - CHOICE_X), y + k * OPTION_PITCH, color);
+    }
+    y += barH + gap;
+  }
+};
+
 const drawChoicePanel = (ctx: CanvasRenderingContext2D, state: DialogueState) => {
   const rows = state.choiceLines;
   if (rows.length === 0) return;
 
-  // An option's bar is OPTION_PITCH per line (the glyphs plus 1px above and below); the panel adds 4px border
-  // and 2px padding each side
-  const barHeight = (lines: string[]) => lines.length * OPTION_PITCH;
-  const panelHeight = (gap: number) =>
-    rows.reduce((sum, lines) => sum + barHeight(lines), 0) + (rows.length - 1) * gap + 12;
-  const tooTall = (gap: number, boxGap: number) => BOX_Y - boxGap - panelHeight(gap) < CHOICE_MIN_Y;
+  const tooTall = (gap: number, boxGap: number) => BOX_Y - boxGap - listHeight(rows, gap) < CHOICE_MIN_Y;
 
   // Too tall to fit under the header: tighten the spacing until it does
   let gap = OPTION_GAP;
   let boxGap = CHOICE_GAP;
   while (gap > 0 && tooTall(gap, boxGap)) gap--;
   if (tooTall(gap, boxGap)) boxGap = 0;
-  const panelH = panelHeight(gap);
+  const panelH = listHeight(rows, gap);
   const panelY = BOX_Y - boxGap - panelH;
   drawPokemonBox(ctx, CHOICE_X, panelY, CHOICE_W, panelH);
-
-  let y = panelY + 7;
-  for (let i = 0; i < rows.length; i++) {
-    const lines = rows[i]!;
-    const barH = barHeight(lines);
-    const selected = i === state.selectedChoice;
-    if (selected) {
-      // Dark bar, light text: obvious at a glance even at small sizes
-      ctx.fillStyle = INK_SOFT;
-      ctx.fillRect(CHOICE_X + 6, y - 1, CHOICE_W - 12, barH);
-      drawText(ctx, '>', CURSOR_X, y, PAPER);
-    }
-    const color = selected ? PAPER : INK_SOFT;
-    for (let k = 0; k < lines.length; k++) {
-      drawText(ctx, lines[k]!, OPTION_X, y + k * OPTION_PITCH, color);
-    }
-    y += barH + gap;
-  }
+  drawOptionRows(ctx, CHOICE_X, CHOICE_W, panelY, rows, state.selectedChoice, gap);
 };
 
-// A small tag hanging off the box's bottom edge naming what A and B do here. It sits below the 4th text
-// line and left of the advance arrow, half on the frame and half on the margin under the box.
-const drawHintTag = (ctx: CanvasRenderingContext2D, state: DialogueState, name: ButtonLabel) => {
-  const aDoes = choicesVisible(state) ? 'CHOOSE' : onLastPage(state) ? state.nextLabel : 'NEXT';
-  const showB = canCancel(state) && state.exitLabel !== '';
-  const label = `${name('a')}: ${aDoes}${showB ? `   ${name('b')}: ${state.exitLabel}` : ''}`;
+/** The dialogue box's frame and text area, for screens that draw their own box contents. */
+export const DIALOGUE_BOX = { x: BOX_X, y: BOX_Y, w: BOX_W, h: BOX_H, textX: TEXT_X, textY: TEXT_Y, linePitch: LINE_PITCH, chars: MAX_CHARS_PER_LINE, lines: PAGE_LINES } as const;
+
+/** Characters per line in an option list panel the width of the dialogue box. */
+export const OPTION_LIST_CHARS = OPTION_CHARS;
+
+/** Height of an option list panel (see drawOptionList). */
+export const optionListHeight = (options: readonly string[], gap = OPTION_GAP): number =>
+  listHeight(options.map(wrapOption), gap);
+
+/**
+ * A list of options drawn exactly like the dialogue's choice panel, for screens that run their own cursor.
+ * The panel's bottom edge sits at `bottom` (by default just above the dialogue box). Returns the panel's top.
+ * `dimmed` options are drawn grey (e.g. already used).
+ */
+export const drawOptionList = (
+  ctx: CanvasRenderingContext2D,
+  options: readonly string[],
+  selected: number,
+  bottom: number = BOX_Y - CHOICE_GAP,
+  dimmed?: readonly boolean[],
+  gap = OPTION_GAP,
+): number => {
+  const rows = options.map(wrapOption);
+  const panelH = listHeight(rows, gap);
+  const panelY = bottom - panelH;
+  drawPokemonBox(ctx, CHOICE_X, panelY, CHOICE_W, panelH);
+  drawOptionRows(ctx, CHOICE_X, CHOICE_W, panelY, rows, selected, gap, dimmed);
+  return panelY;
+};
+
+/** The small tag naming what the buttons do, hanging off the bottom edge of the dialogue box. */
+export const drawBoxHint = (ctx: CanvasRenderingContext2D, label: string) => {
   const w = measureText(label) - 1 + 6;
   const x = BOX_X + 10;
   const y = BOX_Y + BOX_H - 6;
@@ -399,6 +440,33 @@ const drawHintTag = (ctx: CanvasRenderingContext2D, state: DialogueState, name: 
   ctx.fillStyle = INK_SOFT;
   ctx.fillRect(x + 1, y + 1, w - 2, 7);
   drawText(ctx, label, x + 3, y + 1, PAPER);
+};
+
+/**
+ * The dialogue box with fixed text (no typing, no advance arrow): for screens whose box text follows a
+ * cursor. Text is word-wrapped to the box (at most 4 lines are shown); `hint` goes in the tag.
+ * `colors` may colour individual lines (by index), e.g. a second sentence in blue.
+ */
+export const drawPromptBox = (
+  ctx: CanvasRenderingContext2D,
+  text: string | readonly string[],
+  hint?: string,
+  colors?: readonly (string | undefined)[],
+) => {
+  drawPokemonBox(ctx, BOX_X, BOX_Y, BOX_W, BOX_H);
+  const lines = typeof text === 'string' ? wrapText(text) : text;
+  for (let i = 0; i < Math.min(PAGE_LINES, lines.length); i++) {
+    drawText(ctx, lines[i]!, TEXT_X, TEXT_Y + i * LINE_PITCH, colors?.[i] ?? INK);
+  }
+  if (hint) drawBoxHint(ctx, hint);
+};
+
+// A small tag hanging off the box's bottom edge naming what A and B do here. It sits below the 4th text
+// line and left of the advance arrow, half on the frame and half on the margin under the box.
+const drawHintTag = (ctx: CanvasRenderingContext2D, state: DialogueState, name: ButtonLabel) => {
+  const aDoes = choicesVisible(state) ? 'CHOOSE' : onLastPage(state) ? state.nextLabel : 'NEXT';
+  const showB = canCancel(state) && state.exitLabel !== '';
+  drawBoxHint(ctx, `${name('a')}: ${aDoes}${showB ? `   ${name('b')}: ${state.exitLabel}` : ''}`);
 };
 
 export const renderDialogue = (

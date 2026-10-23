@@ -499,6 +499,30 @@ const TILE_PATTERNS: Record<number, number[][]> = {
   [T.RUG]: RUG_PATTERN,
 };
 
+/** A tile defined outside this file (the redesigned rooms'): its 16x16 pattern of palette indices. */
+export interface TileDef {
+  pattern: number[][];
+  /** Blocks walking (furniture, machines, walls). */
+  solid?: boolean;
+  /** Colours for this tile's indices instead of the room palette's (e.g. a red stop button). */
+  colors?: readonly string[];
+}
+
+// Tiles registered from other modules: numbered 100 and up so they never clash with T
+const EXTRA_SOLID = new Set<number>();
+const EXTRA_COLORS = new Map<number, readonly string[]>();
+
+/** Add tiles (ids 100+). Each room's tile module registers its own when it is imported. */
+export const registerTiles = (defs: Readonly<Record<number, TileDef>>): void => {
+  for (const [key, def] of Object.entries(defs)) {
+    const id = Number(key);
+    if (id < 100) throw new Error(`tile ${id}: registered tiles are numbered from 100`);
+    TILE_PATTERNS[id] = def.pattern;
+    if (def.solid) EXTRA_SOLID.add(id);
+    if (def.colors) EXTRA_COLORS.set(id, def.colors);
+  }
+};
+
 // --- Tile cache: pre-render each (tileType, paletteId) to an offscreen canvas ---
 
 // Indexed by palette, then tile number, so the per-frame path builds no string keys
@@ -519,6 +543,7 @@ const renderTileToCache = (tile: number, paletteId: PaletteId): HTMLCanvasElemen
   const ctx = canvas.getContext('2d')!;
   const palette = PALETTES[paletteId];
   const pattern = TILE_PATTERNS[tile];
+  const colors = EXTRA_COLORS.get(tile) ?? palette.colors;
 
   if (pattern) {
     for (let row = 0; row < TILE_SIZE; row++) {
@@ -527,7 +552,7 @@ const renderTileToCache = (tile: number, paletteId: PaletteId): HTMLCanvasElemen
       for (let col = 0; col < TILE_SIZE; col++) {
         const idx = patRow[col];
         if (idx === undefined) continue;
-        const color = palette.colors[idx];
+        const color = colors[idx];
         if (!color) continue;
         ctx.fillStyle = color;
         ctx.fillRect(col, row, 1, 1);
@@ -543,9 +568,8 @@ const renderTileToCache = (tile: number, paletteId: PaletteId): HTMLCanvasElemen
   return canvas;
 };
 
-// NPC tile renders as floor (sprite system draws the character)
-const NPC_FLOOR_ALIAS = T.FLOOR;
-const screenTile = (tile: number): number => (tile === T.NPC ? NPC_FLOOR_ALIAS : tile);
+// NPC tile renders as the room's floor (sprite system draws the character)
+const screenTile = (tile: number, npcFloor: number): number => (tile === T.NPC ? npcFloor : tile);
 
 export const isSolid = (tile: number): boolean => {
   return (
@@ -564,7 +588,8 @@ export const isSolid = (tile: number): boolean => {
     tile === T.BENCH ||
     tile === T.PLANT ||
     tile === T.SIGN ||
-    tile === T.NPC
+    tile === T.NPC ||
+    EXTRA_SOLID.has(tile)
   );
 };
 
@@ -579,7 +604,7 @@ export const isInteractable = (tile: number): boolean => {
 // Whole maps are baked once per palette. Map arrays are read-only at runtime, so keying by identity is safe.
 const bakedMaps = new WeakMap<number[][], Map<PaletteId, HTMLCanvasElement>>();
 
-const bakeMap = (map: number[][], paletteId: PaletteId): HTMLCanvasElement => {
+const bakeMap = (map: number[][], paletteId: PaletteId, npcFloor: number): HTMLCanvasElement => {
   let byPalette = bakedMaps.get(map);
   if (!byPalette) {
     byPalette = new Map<PaletteId, HTMLCanvasElement>();
@@ -599,7 +624,7 @@ const bakeMap = (map: number[][], paletteId: PaletteId): HTMLCanvasElement => {
     for (let col = 0; col < cols; col++) {
       const tile = mapRow[col];
       if (tile === undefined || tile === T.EMPTY) continue;
-      ctx.drawImage(renderTileToCache(screenTile(tile), paletteId), col * TILE_SIZE, row * TILE_SIZE);
+      ctx.drawImage(renderTileToCache(screenTile(tile, npcFloor), paletteId), col * TILE_SIZE, row * TILE_SIZE);
     }
   }
   byPalette.set(paletteId, canvas);
@@ -613,12 +638,13 @@ export const renderTileMap = (
   cameraX: number,
   cameraY: number,
   viewW: number,
-  viewH: number
+  viewH: number,
+  npcFloor: number = T.FLOOR, // what the athlete's tile looks like under the sprite (the map's own floor)
 ) => {
   // Map on screen from the origin with the view covering it: one blit of the baked map
   const cols = map[0]?.length ?? 0;
   if (cameraX === 0 && cameraY === 0 && cols > 0 && viewW >= cols * TILE_SIZE && viewH >= map.length * TILE_SIZE) {
-    ctx.drawImage(bakeMap(map, paletteId), 0, 0);
+    ctx.drawImage(bakeMap(map, paletteId, npcFloor), 0, 0);
     return;
   }
 
@@ -637,7 +663,7 @@ export const renderTileMap = (
       const screenX = Math.floor(col * TILE_SIZE - cameraX);
       const screenY = Math.floor(row * TILE_SIZE - cameraY);
 
-      ctx.drawImage(renderTileToCache(screenTile(tile), paletteId), screenX, screenY);
+      ctx.drawImage(renderTileToCache(screenTile(tile, npcFloor), paletteId), screenX, screenY);
     }
   }
 };
