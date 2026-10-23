@@ -6,6 +6,8 @@ Each level contains **4 challenge rooms** plus a **boss arena**. The player navi
 
 Each room awards a **player stat** (0 to 100%) based on performance. The stats combine into a **showdown rating** that caps how well the player's athlete can perform in the boss minigame.
 
+**Distance Running** (level 4) plays the **redesigned rooms**: four different places, each with its own task (see "Redesigned rooms" below). The other levels play the **classic rooms** (a question and a choice list over the dimmed room). A browser can switch level 4 back to the classic rooms with `?rooms=classic` (remembered on that device; `?rooms=new` undoes it).
+
 Controls are console buttons (keyboard equivalents in brackets): D-pad (arrows/WASD) to move, A (Z/Space/Enter) to talk and confirm, B (X/Backspace) to go back and to run while held, START (Esc/P) for the pause menu, SELECT (Shift) for the objectives panel. Prompts name the buttons the player is using: console names after a touch or click on the console, key names (SPACE, X, ESC, SHIFT, ARROWS) after a key press; desktops start on key names. The title screen lists every control.
 
 Progress saves automatically after name entry, after every room and after every showdown (and from the pause menu, which says so). Unfinished levels keep their room progress, even when the player switches to another level.
@@ -44,6 +46,42 @@ stat = dataQuality × 0.4 + variableAccuracy × 0.6
 ```
 
 ---
+
+## Redesigned rooms (Distance Running)
+
+Each redesigned room is an **instrument** (`src/rooms/<room>/`): a dt-driven state machine plus its renderer, run by `RoomChallengeScene` between the header plates and the dialogue box. It ends in the same `calcStat(dataQuality, variableAccuracy)` as the classic rooms, so the showdown maths is unchanged. Its map, tiles, animation and equipment lines live in `src/data/rooms/<room>*.ts`. All new physiology wording comes from `src/rooms/content/running.ts` (approved by Alan on 23 October 2026 and open for team review: `docs/content-review.md`); names, descriptions, right answers and explanations still come from `src/data/sports.ts`.
+
+Shared behaviour: the first visit of a session shows the full rules, later visits the short line (a room counts as seen once its full rules were read to the end); B quits with nothing recorded, but asks "LEAVE?" (STAY / LEAVE) once decisions would be lost; new decisions ignore A and B for 0.35 s; START pauses everything; button names follow the device; screen readers hear every decision and result; ambient animation stops under reduced motion.
+
+### Testing Lab (SPEED): show the test, then run it
+
+- **Look**: lab cabinets, whiteboard and wall clock; treadmill with console and gas-analysis cart; cycle ergometer; a sprint lane with timing gates, cones and a finish; the lactate bench (analyser, tube rack, laptop, centrifuge); a technician. Aisha waits at the start of the lane.
+- **Flow**: brief (profile and goal) -> pick (the highlighted test plays live on a stage: its kit, three chips, what it gives and an effort chart, under "AISHA NEEDS: ..."; the prompt shows its sports.ts description) -> test day (one of five readiness checks at random: RUN THE TEST or RE-BOOK IT; a re-book turns the calendar on two days) -> run (about 5 s on the test's own kit, A skips; SHAKY if she should have been re-booked) -> lab printout (what it records; sent to the Data Lab, or not what she needs) -> the classic verdict and insight.
+- **Score**: variableAccuracy = 1 (right test) or 0.3; dataQuality = the test's data quality x 1 (right call), 0.7 (ran when she should have been re-booked) or 0.95 (re-booked a ready athlete). Perfect 0.98; random about 0.64.
+
+### Data Lab (STRENGTH): Trace Desk
+
+- **Look**: a dark control room (`data` palette): a video wall of the level's five variables, workstations with analysts, server racks, a printer and the results desk where Aisha stands.
+- **Flow**: brief (how the file was collected, the rules) -> clean-up (blood lactate against speed with the 2 and 4 mmol/L lines, plus three flying 30 m times; 4-5 flagged readings per attempt: the real steep rise and the real highest value, and 2-3 glitches from a contaminated sample, a failed 0.0 sample and a gate misfire; the lens shows each with its neighbours; A removes, RIGHT keeps; each call is explained) -> pin (the cleaned file beside a speed ladder with the speed reserve bracketed; pin 3 of the 5 variables; a value changed by the player's own cleaning shows with a '?') -> reveal (sports.ts explanations and insight).
+- **Score**: dataQuality = 0.5 + 0.3 x the share of flagged readings judged right; variableAccuracy = right pins / 3. Perfect 0.92; random about 0.62.
+
+### Training Floor (ENDURANCE): Hard-Easy Week
+
+- **Look**: an orange running track (fenced; a jogger loops it), turf, plyo boxes, racks and mats; four coach boards (ZONES, INTERVAL, LEGS, WEEK) that are the same widgets as the planner; a coach with a stopwatch; Aisha skipping.
+- **Flow**: brief -> plan a 7-day week (LEFT/RIGHT day, UP/DOWN session: the three KEY zones, EASY as a support session, REST; one random AWAY day, Tuesday to Thursday) while each morning's LEGS gauge updates live -> "Run the week?" -> the week plays out on the track (hold A to fast-forward) -> debrief (each key session's quality, the week's checks, the zone insight).
+- **Score**: legs drop 50 the morning after a key session, 20 two mornings after, 5 after an easy run; a key session is full quality at 75+ and worthless at 45 or less. variableAccuracy = mean best quality of the three key sessions; dataQuality = 0.5 + 0.4 x structure (5+ sessions, 1-3 rest days, no morning under 45) when that mean is over 0.5, else 0.5. Perfect 0.96; key every day about 0.43.
+
+### Analysis Room (POWER): Signal or Noise
+
+- **Look**: a warm wood briefing room (`office` palette): projector chart, whiteboard with the noise band (TE, SWC), season planner, conference table, colleagues and a presenter; Aisha at the head of the table.
+- **Flow**: brief (the ruler builds: baseline, two baseline trials, the NOISE band = baseline ± typical error, gold WORTH IT lines at ± the smallest worthwhile change) -> the 10-week block fills in -> forecast (LEFT/RIGHT move a pin; her earlier blocks show as ticks) -> the retest lands with error bars -> judge it (noise, real but too small, or real and worth acting on) -> judge VO2max, set aside in the Data Lab, the same way -> the prediction insight.
+- **Score**: forecast c1 = full marks within one typical error of the retest, falling to 0 at four; c2 = share of the two verdicts right; q = 0.6 c1 + 0.4 c2; stat = 0.32 + 0.64 q. Perfect 0.96; all wrong 0.32.
+
+---
+
+## Classic rooms (levels 1-3)
+
+The sections below describe the classic rooms, which levels 1-3 play (and level 4 with `?rooms=classic`).
 
 ## Room 1: Test Selection
 

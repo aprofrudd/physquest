@@ -21,6 +21,8 @@ Each level has 4 challenge rooms, taken in order (a gold arrow in the hub points
 3. **Training** (Training Prescription, raises Endurance): select correct training zones
 4. **Analysis** (Performance Prediction, raises Power): predict realistic training adaptations
 
+In **Distance Running** the four rooms are fully redesigned, each a different place with its own task: in the Testing Lab you watch each test being done, check the athlete is ready on test day and see the test run; in the Data Lab you clean glitches out of a lactate curve and sprint times, then pin the variables that matter; on the Training Floor you plan a hard-easy week while a legs gauge shows how fresh the athlete will be, then watch her live it; in the Analysis Room you forecast her retest on a ruler showing the test's noise and the smallest worthwhile change, then judge whether each result is real. The other sports keep the classic rooms for now.
+
 Answer options are shuffled every time, and a finished room can be replayed to raise your best score. Complete all rooms to open the arena and face the level's rival in a showdown minigame. Your showdown rating is 70% the level's focus stat and 30% your average across all four rooms, so every room counts: it is the most your bar can reach. A rules card before each bout explains the controls and the target to beat. Lose, and the game tells you why: which room to replay if your rating was too low, otherwise how to play the bout better; your room progress is kept.
 
 ## Controls
@@ -74,8 +76,11 @@ src/
 ├── systems/      Movement, Collision, Dialogue, BossMinigame, PauseMenu, SaveSystem
 ├── ui/           Handheld console (DOM, layout, touch input) and screen-reader announcer
 ├── audio/        Sfx
-├── data/         sprites, maps, sports, levels, dialogue
+├── data/         sprites, maps, sports, levels, dialogue; rooms/ holds the redesigned rooms' maps and tiles
+├── rooms/        Redesigned rooms: one instrument per room (testing, datalab, training, analysis) and their content
 └── state/        GameState
+tests/            Vitest unit tests (npm test)
+docs/             Room design document and the content open for team review
 public/           Web app manifest and icons
 ```
 
