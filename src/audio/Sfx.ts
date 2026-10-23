@@ -41,12 +41,9 @@ const MIN_GAP: Partial<Record<SfxName, number>> = { bump: 0.25, blip: 0.035, mas
 
 const MUTE_KEY = 'physquest_muted';
 const VOLUME = 0.12;
-// Automated test runs (a browser driven by a test tool, with the ?debug hook) keep the whole sound path but at zero
-// volume, so they don't beep through the computer's speakers. Players never open the game that way.
-const AUTOMATED =
-  typeof navigator !== 'undefined' &&
-  navigator.webdriver === true &&
-  new URLSearchParams(window.location.search).has('debug');
+// Automated test runs (a browser driven by a test tool sets navigator.webdriver; a player's browser never does) keep
+// the whole sound path but at zero volume, so they don't beep through the computer's speakers.
+const AUTOMATED = typeof navigator !== 'undefined' && navigator.webdriver === true;
 
 export interface Sfx {
   play(name: SfxName): void;
