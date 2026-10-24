@@ -351,7 +351,7 @@ export const createRoomChallengeScene = (
         ctx.fillRect(0, 0, GAME_W, GAME_H);
         // A redesigned room's wall art is busy: behind the plates it is darkened further, so no half-letters show
         if (instrument) {
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
           ctx.fillRect(0, 0, GAME_W, 38);
         }
       } else {

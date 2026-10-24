@@ -9,6 +9,7 @@ import { PALETTES } from '../render/Palettes';
 import { LEVEL_DATA } from '../data/sports';
 import { sfx } from '../audio/Sfx';
 import { announce } from '../ui/announce';
+import { prefersReducedMotion } from '../render/motion';
 
 // A and START are ignored for this long after entering, so a double-tap on the button that
 // brought us here can't pick a sport before the player has seen the list.
@@ -83,6 +84,8 @@ export const createLevelSelectScene = (
   onSelectLevel: (levelIndex: number) => void,
   /** True while a picked level waits for its rooms to load. */
   loading: () => boolean = () => false,
+  /** The cursor moved to another sport. */
+  onMove: () => void = () => {},
 ): Scene => {
   const levelCount = LEVEL_DATA.length;
   let selectedIndex = 0;
@@ -103,6 +106,7 @@ export const createLevelSelectScene = (
 
   const moveSelection = (step: number) => {
     selectedIndex = (selectedIndex + step + levelCount) % levelCount;
+    onMove();
     sfx.play('blip');
     announce(describe(selectedIndex));
   };
@@ -180,7 +184,7 @@ export const createLevelSelectScene = (
 
       // Sport cards
       const nameX = CARD_X + 24;
-      const bob = Math.floor(Date.now() / 300) % 2; // cosmetic: nudges the cursor left and right
+      const bob = prefersReducedMotion() ? 0 : Math.floor(Date.now() / 300) % 2; // cosmetic: nudges the cursor left and right
 
       for (let i = 0; i < levelCount; i++) {
         const sport = LEVEL_DATA[i];

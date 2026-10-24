@@ -35,6 +35,9 @@ export const loadRooms = (): Promise<boolean> => {
 /** Whether the chunk has loaded. */
 export const roomsLoaded = (): boolean => bundle !== null;
 
+/** Whether the chunk failed to load (it stays failed until the page is reloaded). */
+export const roomsFailed = (): boolean => failed;
+
 /** A visit to `level` is starting: it plays the redesigned rooms if they are ready now, else the classic ones. */
 export const commitLevel = (level: number): void => {
   if (bundle && levelHasNewRooms(level)) committed.add(level);

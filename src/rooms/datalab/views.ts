@@ -478,7 +478,7 @@ const drawList = (ctx: CanvasRenderingContext2D, f: PinFrame) => {
       const tone = mark === 'key' ? COLORS.good : mark === 'notkey' ? COLORS.bad : COLORS.gold;
       const x = 244 - (measureText(text) - 1);
       if (mark === 'notkey') drawCross(ctx, x - 9, y, tone);
-      else if (mark === 'missed') drawText(ctx, '!', x - 8, y, tone);
+      else if (mark === 'missed') drawText(ctx, '!', x - 8, y, '#8a6a00'); // a dark amber: readable on paper and the gold row
       else drawTick(ctx, x - 9, y, tone);
       drawText(ctx, text, x, y, mark === 'missed' ? COLORS.ink : tone);
     } else if (r.pinned) {

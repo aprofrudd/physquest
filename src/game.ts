@@ -22,7 +22,7 @@ import { createLevelClearScene } from './scenes/LevelClearScene';
 import { GAME_W, GAME_H } from './render/DialogueBox';
 import { mountConsole } from './ui/console';
 import { sfx } from './audio/Sfx';
-import { commitLevel, levelHasNewRooms, loadRooms, roomsLoaded } from './rooms/loader';
+import { commitLevel, levelHasNewRooms, loadRooms, roomsFailed, roomsLoaded } from './rooms/loader';
 import { announce } from './ui/announce';
 import { newRoomsOn } from './rooms/preview';
 import { LEVELS } from './data/levels';
@@ -39,12 +39,18 @@ export const startGame = (root: HTMLElement) => {
   ctx.imageSmoothingEnabled = false;
 
   const gameState = createInitialState();
-  // A level pick waiting for the redesigned rooms' chunk goes stale when a newer pick or any scene change comes first
+  // A level pick waiting for the redesigned rooms' chunk goes stale when a newer pick, a cursor move on the level
+  // select or any scene change comes first
   let pick = 0;
+  let loadingLevel: number | null = null; // the level select says LOADING while this level waits for the chunk
+  const dropPick = () => {
+    pick++;
+    loadingLevel = null;
+  };
   // A direction held from the previous screen must not scroll a menu that has just opened
   const sceneManager = createSceneManager(() => {
     input.blockRepeats();
-    pick++;
+    dropPick();
   });
   const dialogue = createDialogueSystem(() => input.blockRepeats(), button => input.label(button));
   const movement = createMovement();
@@ -77,8 +83,6 @@ export const startGame = (root: HTMLElement) => {
 
   sceneManager.register('intro', createIntroScene(input, sceneManager, gameState, dialogue));
 
-  let loadingLevel: number | null = null; // the level select says LOADING while this level waits for the chunk
-
   const enterLevel = (levelIndex: number) => {
     loadingLevel = null;
     commitLevel(levelIndex); // this visit plays the redesigned rooms only if they are ready now
@@ -93,22 +97,30 @@ export const startGame = (root: HTMLElement) => {
   // moved on from (another pick, or leaving the screen) is dropped.
   const LOAD_WAIT_MS = 3000;
   const playLevel = (levelIndex: number) => {
-    const mine = ++pick;
-    loadingLevel = null;
-    if (!levelHasNewRooms(levelIndex) || roomsLoaded()) {
+    if (loadingLevel === levelIndex) return; // already waiting for it: a second press does not restart the wait
+    dropPick();
+    const mine = pick;
+    if (!levelHasNewRooms(levelIndex) || roomsLoaded() || roomsFailed()) {
       enterLevel(levelIndex);
       return;
     }
     loadingLevel = levelIndex;
     announce('Loading the new rooms.');
-    const go = () => {
-      if (mine === pick) enterLevel(levelIndex);
+    const go = (note: string) => {
+      if (mine !== pick) return;
+      if (note) announce(note);
+      enterLevel(levelIndex);
     };
-    void loadRooms().then(go);
-    window.setTimeout(go, LOAD_WAIT_MS);
+    void loadRooms().then(ok => go(ok ? '' : 'The new rooms could not load, so this visit plays the classic rooms.'));
+    window.setTimeout(() => go('The new rooms are still loading, so this visit plays the classic rooms.'), LOAD_WAIT_MS);
   };
 
-  sceneManager.register('levelSelect', createLevelSelectScene(input, sceneManager, gameState, playLevel, () => loadingLevel !== null));
+  sceneManager.register(
+    'levelSelect',
+    createLevelSelectScene(input, sceneManager, gameState, playLevel, () => loadingLevel !== null, () => {
+      if (loadingLevel !== null) dropPick(); // moving the cursor is a change of mind
+    }),
+  );
 
   const overworldScene = createOverworldScene(
     input,

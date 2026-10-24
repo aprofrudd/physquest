@@ -98,7 +98,8 @@ export const createPauseMenu = (
     close();
     sfx.play('back');
     const s = dialogue.state;
-    const waiting = dialogue.isActive() ? (s.pages[s.page] ?? []).join(' ') : '';
+    // the whole text, as the dialogue first said it: a page on its own can start mid-sentence
+    const waiting = dialogue.isActive() ? s.pages.map(lines => lines.join(' ')).join(' ') : '';
     const options = dialogue.isActive() && s.choices && s.waitingForInput ? ` Options: ${s.choices.join('; ')}` : '';
     announce(`Resumed.${waiting ? ` ${waiting}` : ''}${options}`);
   };
@@ -125,10 +126,11 @@ export const createPauseMenu = (
         break;
       case 'save': {
         const ok = saveGame(gameState);
-        flashText = ok ? 'SAVED!' : 'CANNOT SAVE';
+        const inRoom = quitWarning() !== null; // a room being played is saved when it is finished, not now
+        flashText = !ok ? 'CANNOT SAVE' : inRoom ? 'FINISHED ROOMS SAVED' : 'SAVED!';
         flashTimer = 1.5;
         sfx.play(ok ? 'save' : 'wrong');
-        announce(ok ? 'Saved.' : 'Cannot save.');
+        announce(!ok ? 'Cannot save.' : inRoom ? 'Finished rooms saved. This one saves when you finish it.' : 'Saved.');
         break;
       }
       case 'sound':
@@ -268,10 +270,12 @@ export const createPauseMenu = (
 
       // Save confirmation, just under the box
       if (flashTimer > 0) {
-        const flashW = measureText(flashText, 2);
+        const scale = flashText.length > 12 ? 1 : 2; // a long note in small letters, so it stays on the screen
+        const flashW = measureText(flashText, scale);
+        const flashH = scale === 2 ? 22 : 15;
         ctx.fillStyle = '#080808';
-        ctx.fillRect((GAME_W - flashW) / 2 - 4, boxY + boxH + 4, flashW + 8, 22);
-        drawText(ctx, flashText, (GAME_W - flashW) / 2, boxY + boxH + 8, flashText === 'SAVED!' ? '#38a848' : '#e04040', 2);
+        ctx.fillRect((GAME_W - flashW) / 2 - 4, boxY + boxH + 4, flashW + 8, flashH);
+        drawText(ctx, flashText, (GAME_W - flashW) / 2, boxY + boxH + 8, flashText === 'CANNOT SAVE' ? '#e04040' : '#38a848', scale);
       }
     },
   };

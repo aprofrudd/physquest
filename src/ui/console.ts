@@ -41,6 +41,9 @@ export const mountConsole = (root: HTMLElement, input: Input, opts: ConsoleOptio
 
   const present = () => {
     if (backingK === 0) return;
+    // Every frame, not just on resize: a lost and restored context (seen on load) comes back smoothing, and the
+    // pixel art would stay blurry for the rest of the session
+    dctx.imageSmoothingEnabled = false;
     dctx.drawImage(canvas, 0, 0, gw * backingK, gh * backingK);
   };
 

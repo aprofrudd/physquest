@@ -38,7 +38,7 @@ import {
 import { ALL_MAPS, HUB_RETURN, HUB_START, ROOM_SPAWN, type MapData, type Spawn } from '../data/maps';
 import { mapFor } from '../data/rooms';
 import { LEVEL_DATA } from '../data/sports';
-import { ambientTime } from '../render/motion';
+import { ambientTime, prefersReducedMotion } from '../render/motion';
 import { DIALOGUES } from '../data/dialogue';
 import { getCoachSprite, NPC_SPRITE, SPRITE_COLORS } from '../data/sprites';
 import { checkInteraction, checkStandingOnDoor, findOpenNeighbour } from '../systems/Collision';
@@ -258,6 +258,7 @@ export const createOverworldScene = (
   const closePanel = () => {
     panelOpen = false;
     sfx.play('back');
+    announce('Objectives closed.');
   };
 
   const updateFade = (dt: number) => {
@@ -400,7 +401,7 @@ export const createOverworldScene = (
           : null;
 
       // NPCs breathe: 1px up for half a second, then back down
-      const bob = Math.floor(Date.now() / 500) % 2 === 1 ? 1 : 0;
+      const bob = !prefersReducedMotion() && Math.floor(Date.now() / 500) % 2 === 1 ? 1 : 0;
       for (const npc of currentMap.npcs) {
         drawSprite(ctx, NPC_SPRITE, npc.x * TILE_SIZE, npc.y * TILE_SIZE - bob, SPRITE_COLORS['npc_athlete']!);
       }

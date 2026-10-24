@@ -385,7 +385,9 @@ export const createTrainingInstrument = (host: RoomHost, rng: () => number = Mat
       promptColors = prompt.map(line => TONE_COLOR[line.tone]);
     }
     const hint = stage === 'run' ? HINT_RUN : planner.cursor === GO ? HINT_GO : HINT_PLAN;
-    drawPromptBox(ctx, promptTexts, stage === 'plan' || stage === 'run' ? filledHint(hint) : undefined, promptColors);
+    // No hint of its own while the leave question is up: the question's box and tag are drawn over this one
+    const ownHint = stage === 'plan' || (stage === 'run' && !leaving);
+    drawPromptBox(ctx, promptTexts, ownHint ? filledHint(hint) : undefined, promptColors);
   };
 
   /**
