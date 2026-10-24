@@ -52,7 +52,7 @@ export const dayPrompt = (
   const dayName = DAYS[day] ?? '';
   const card = cardOf(content, session);
   if (card) {
-    const head = lines(`${dayName}: ${zoneName(sport, card)} (${card.target})`, 'ink', fill);
+    const head = lines(`${dayName}: ${zoneName(sport, card)}, ${card.target}`, 'ink', fill);
     if (card.role === 'support') return [...head, ...lines(content.supportNote, 'ink', fill)];
     return [...head, ...lines(qualityLine(content, card, legs), TONE_BY_BAND[bandOf(content, legs)], fill)];
   }
@@ -91,8 +91,9 @@ export const goPrompt = (
 };
 
 /** The question when A is pressed on GO: any missing key session is named first. */
+// Sessions are named in full here: the box is also read aloud, and a screen reader cannot say SPRT or SUPR
 export const runQuestion = (missing: readonly WeekCard[]): string =>
-  [...missing.map(c => `No ${c.label} session yet.`), 'Run the week?'].join(' ');
+  [...missing.map(c => `No ${shortZone(c.zone)} session yet.`), 'Run the week?'].join(' ');
 
 /** The footer's three checks, as the board shows them. */
 export interface CheckLine {
@@ -208,7 +209,7 @@ export const runDayAnnouncement = (
 
 /** What a screen reader hears for the GO slot. */
 export const goAnnouncement = (analysis: WeekAnalysis, missing: readonly WeekCard[]): string => {
-  const gaps = missing.length > 0 ? ` Missing: ${missing.map(c => c.label).join(', ')}.` : '';
+  const gaps = missing.length > 0 ? ` Missing: ${missing.map(c => shortZone(c.zone)).join(', ')}.` : '';
   const { sessions, restDays, redMornings } = analysis;
   return `Run the week. ${plural(sessions, 'session', 'sessions')}. ${plural(restDays, 'rest day', 'rest days')}. ${plural(redMornings, 'red morning', 'red mornings')}.${gaps}`;
 };

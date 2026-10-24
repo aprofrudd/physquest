@@ -7,13 +7,13 @@ import { DL } from './datalab-tiles';
 import { WALL_SCREEN_AT, dataLabLife } from './datalab-life';
 
 const { FLOOR: F, SEAT: S, WALL_A: WA, WALL_B: WB, CONSOLE_L: CL, CONSOLE_R: CR, DESK_L: DL_, DESK_R: DR, RACK_TOP: RT, RACK_BOTTOM: RB } = DL;
-const { PRINTER: PR, CABLE: CB, CABLE_COVER: CC, PLANT: PL, RESULTS_L: RL, RESULTS_R: RR } = DL;
+const { PRINTER: PR, CABLE: CB, PLANT: PL, RESULTS_L: RL, RESULTS_R: RR } = DL;
 const { WALL_TOP: WT, WALL_LEFT: LW, WALL_RIGHT: RW, WALL_CORNER_TL: TL, WALL_CORNER_TR: TR, WALL_CORNER_BL: BL, WALL_CORNER_BR: BR, DOOR: D, NPC: N } = T;
 
 /**
  * 16 x 14. S = a seated analyst (solid floor, drawn by datalab-life.ts), N = the athlete (the overworld draws
- * her), CB = floor cable (walk-on) with a cover plate CC where the way in crosses it, the wall rows 1-2 are the
- * video wall's backing.
+ * her), CB = floor cable (walk-on), run from the racks to just east of the way in so the coach never starts on it,
+ * the wall rows 1-2 are the video wall's backing.
  */
 const TILES: number[][] = [
   [TL, WT, WT, WT, WT, WT, WT, WT, WT, WT, WT, WT, WT, WT, WT, TR],
@@ -26,7 +26,7 @@ const TILES: number[][] = [
   [LW, F, F, F, F, F, F, F, F, F, N, F, PR, RB, RB, RW],
   [LW, F, CL, CR, F, F, F, F, F, F, F, F, F, RT, RT, RW],
   [LW, F, DL_, DR, F, F, F, F, F, F, F, F, F, RB, RB, RW],
-  [LW, F, F, S, F, CB, CB, CC, CB, CB, CB, CB, CB, CB, CB, RW],
+  [LW, F, F, S, F, F, F, F, CB, CB, CB, CB, CB, CB, CB, RW],
   [LW, F, F, F, F, F, F, F, F, F, F, F, F, F, PL, RW],
   [LW, F, F, F, F, F, F, D, F, F, F, F, F, F, F, RW],
   [BL, WT, WT, WT, WT, WT, WT, WT, WT, WT, WT, WT, WT, WT, WT, BR],

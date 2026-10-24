@@ -1,5 +1,5 @@
-// FINDING (polish): the Data Lab's LOCK IN row has no lock when the cursor lands on it, so DOWN then A one step later
-// commits the pins (irreversible, goes straight to the reveal) before the row has been seen.
+// The Data Lab's LOCK IN row ignores A for 0.35 s after the cursor lands on it (locking in cannot be undone), and that
+// wait belongs to LOCK IN alone: the pin rows keep answering at once (both found by the verification reviews).
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 vi.mock('../../src/audio/Sfx', () => ({ sfx: { play: () => {}, isMuted: () => false, toggleMuted: () => {} } }));
 vi.mock('../../src/ui/announce', () => ({ announce: () => {} }));
@@ -43,5 +43,22 @@ describe('Data Lab LOCK IN row', () => {
     w.emu.tap('a', 1);
     w.step(2);
     expect(d().phase, 'locked in unseen').toBe('pin');
+    // Straight back up to a pinned row: an A there (well inside LOCK IN's wait) unpins it at once
+    for (let i = 0; i < 3; i++) {
+      w.emu.tap('up', 1);
+      w.step(1);
+    }
+    expect(d().cursor).toBe(2); // rows 0-2 hold the pins
+    w.emu.tap('a', 1);
+    w.step(2);
+    expect(d().pins.length, 'pin row ignored A').toBe(2);
+    // Pin it again (after the toggle's own short lock), then LOCK IN after its wait locks in
+    w.step(20);
+    tap('a', 30);
+    expect(d().pins.length).toBe(3);
+    for (let g = 0; g < 8 && d().cursor < 5; g++) tap('down', 30);
+    expect(d().cursor).toBe(5);
+    tap('a', 30);
+    expect(d().phase).toBe('reveal');
   });
 });

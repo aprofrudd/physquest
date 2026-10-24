@@ -22,7 +22,8 @@ import { createLevelClearScene } from './scenes/LevelClearScene';
 import { GAME_W, GAME_H } from './render/DialogueBox';
 import { mountConsole } from './ui/console';
 import { sfx } from './audio/Sfx';
-import { levelHasNewRooms, loadRooms, roomsLoaded } from './rooms/loader';
+import { commitLevel, levelHasNewRooms, loadRooms, roomsLoaded } from './rooms/loader';
+import { announce } from './ui/announce';
 import { newRoomsOn } from './rooms/preview';
 import { LEVELS } from './data/levels';
 
@@ -38,8 +39,13 @@ export const startGame = (root: HTMLElement) => {
   ctx.imageSmoothingEnabled = false;
 
   const gameState = createInitialState();
+  // A level pick waiting for the redesigned rooms' chunk goes stale when a newer pick or any scene change comes first
+  let pick = 0;
   // A direction held from the previous screen must not scroll a menu that has just opened
-  const sceneManager = createSceneManager(() => input.blockRepeats());
+  const sceneManager = createSceneManager(() => {
+    input.blockRepeats();
+    pick++;
+  });
   const dialogue = createDialogueSystem(() => input.blockRepeats(), button => input.label(button));
   const movement = createMovement();
   const pauseMenu = createPauseMenu(
@@ -49,7 +55,7 @@ export const startGame = (root: HTMLElement) => {
     () => input.blockRepeats(),
     button => input.label(button),
     // Finished rooms are saved, but a room still being played is not: quitting from one asks first
-    () => (sceneManager.getCurrentId() === 'roomChallenge' && roomChallengeScene.inProgress() ? "This room won't be saved." : null),
+    () => (sceneManager.getCurrentId() === 'roomChallenge' && roomChallengeScene.inProgress() ? "This attempt won't be saved." : null),
   );
 
   let lastResult: LevelResult | null = null;
@@ -71,31 +77,38 @@ export const startGame = (root: HTMLElement) => {
 
   sceneManager.register('intro', createIntroScene(input, sceneManager, gameState, dialogue));
 
+  let loadingLevel: number | null = null; // the level select says LOADING while this level waits for the chunk
+
   const enterLevel = (levelIndex: number) => {
+    loadingLevel = null;
+    commitLevel(levelIndex); // this visit plays the redesigned rooms only if they are ready now
     stashLevel(gameState); // keep any unfinished progress in the level we're leaving
     activateLevel(gameState, levelIndex);
     saveGame(gameState);
     sceneManager.switchTo('overworld');
   };
 
-  // A level with redesigned rooms first makes sure their chunk has loaded (it normally has, see the preload below);
-  // if the player moves on while it loads, the level is not started from under them
-  let starting = false;
+  // A level with redesigned rooms waits for their chunk (normally already loaded by the preload below), for a few
+  // seconds at most: then it starts with the classic rooms. Classic levels never wait, and a pick the player has
+  // moved on from (another pick, or leaving the screen) is dropped.
+  const LOAD_WAIT_MS = 3000;
   const playLevel = (levelIndex: number) => {
-    if (starting) return;
+    const mine = ++pick;
+    loadingLevel = null;
     if (!levelHasNewRooms(levelIndex) || roomsLoaded()) {
       enterLevel(levelIndex);
       return;
     }
-    starting = true;
-    const from = sceneManager.getCurrentId();
-    void loadRooms().then(() => {
-      starting = false;
-      if (sceneManager.getCurrentId() === from) enterLevel(levelIndex);
-    });
+    loadingLevel = levelIndex;
+    announce('Loading the new rooms.');
+    const go = () => {
+      if (mine === pick) enterLevel(levelIndex);
+    };
+    void loadRooms().then(go);
+    window.setTimeout(go, LOAD_WAIT_MS);
   };
 
-  sceneManager.register('levelSelect', createLevelSelectScene(input, sceneManager, gameState, playLevel));
+  sceneManager.register('levelSelect', createLevelSelectScene(input, sceneManager, gameState, playLevel, () => loadingLevel !== null));
 
   const overworldScene = createOverworldScene(
     input,
@@ -169,8 +182,8 @@ export const startGame = (root: HTMLElement) => {
   const anyNewRooms = LEVELS.some((_, level) => levelHasNewRooms(level));
   if (anyNewRooms) {
     const preload = () => void loadRooms();
-    if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(preload, { timeout: 3000 });
-    else window.setTimeout(preload, 1000);
+    if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(preload, { timeout: 500 });
+    else window.setTimeout(preload, 100); // Safari: no idle callback, so just after the first frames
   }
 
   // Phones background tabs constantly: pause mid-level and save so nothing is lost

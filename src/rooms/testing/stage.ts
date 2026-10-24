@@ -354,11 +354,13 @@ export const drawCheckStage = (ctx: CanvasRenderingContext2D, view: CheckView): 
     for (let k = 0; k < 3; k++) fill(ctx, C.dark, ax + 11 + k * 3, ground - 27, 2, 2);
   }
 
-  // the test she is here for, waiting on its kit
+  // the test she is here for, waiting on its kit: faded, so it reads as the plan and not as a second Aisha
   const kitX = vp.x + 94;
   const kitW = vp.w - 96;
   clipTo(ctx, kitX, vp.y, kitW, vp.h);
-  SCENES[card.kit](ctx, areaAt(kitX, vp.y - 2, kitW, 42), sceneClock(card, view.clock, 0, PREVIEW_SECONDS, false, true, view.stages, false));
+  ctx.globalAlpha = 0.45;
+  SCENES[card.kit](ctx, areaAt(kitX, vp.y, kitW, 42), sceneClock(card, view.clock, 0, PREVIEW_SECONDS, false, true, view.stages, false));
+  ctx.globalAlpha = 1;
   unclip(ctx);
   const labelW = measureText(view.plate) - 1;
   const labelX = kitX + Math.round((kitW - labelW) / 2);

@@ -5,6 +5,7 @@ import { drawText, CHAR_W } from './PixelFont';
 import { drawPokemonBox } from './SpriteSheet';
 import { GAME_W, GAME_H } from './DialogueBox';
 import { TILE_SIZE } from './TileMap';
+import { prefersReducedMotion } from './motion';
 import { HUB_SIGNS } from '../data/maps';
 import { LEVEL_DATA } from '../data/sports';
 import {
@@ -84,7 +85,7 @@ const textWidth = (text: string, scale = 1): number => text.length * CHAR_W * sc
 
 // Cosmetic motion only (never feeds game logic)
 const bobOffset = (periodMs: number, amplitude: number): number =>
-  Math.round(Math.sin(Date.now() / periodMs) * amplitude);
+  prefersReducedMotion() ? 0 : Math.round(Math.sin(Date.now() / periodMs) * amplitude);
 
 export const levelLine = (state: GameState): string => {
   const sport = LEVEL_DATA[state.currentLevel]?.sport ?? '';
@@ -139,7 +140,8 @@ const DOOR_ARROWS: Record<HubDoor, { x: number; edge: number; up: boolean }> = {
 /** Bobbing gold arrow in front of a hub door: the next room's, or the arena's once every room is done. */
 export const drawDoorArrow = (ctx: CanvasRenderingContext2D, door: HubDoor) => {
   const { x, edge, up } = DOOR_ARROWS[door];
-  const bob = Math.round((Math.sin(Date.now() / 220) + 1) * 2); // 0..4, towards the door and back
+  // 0..4, towards the door and back (still, at its nearest, for players who asked for reduced motion)
+  const bob = prefersReducedMotion() ? 4 : Math.round((Math.sin(Date.now() / 220) + 1) * 2);
   const left = Math.round(x * TILE_SIZE) - 3;
   // The tip comes within 4px of the door at the nearest point of the bob
   const top = up ? edge * TILE_SIZE + 9 - bob : edge * TILE_SIZE - 15 + bob;
@@ -186,7 +188,7 @@ export const drawTalkPrompt = (ctx: CanvasRenderingContext2D, tileX: number, til
 
 /** Bouncing "!" over a room athlete whose challenge is still open. */
 export const drawAlertBubble = (ctx: CanvasRenderingContext2D, tileX: number, tileY: number) => {
-  const hop = -Math.round(Math.abs(Math.sin(Date.now() / 190)) * 3);
+  const hop = prefersReducedMotion() ? 0 : -Math.round(Math.abs(Math.sin(Date.now() / 190)) * 3);
   drawBubble(ctx, tileX * TILE_SIZE + BUBBLE_DX, tileY * TILE_SIZE - BUBBLE_H + hop, '!', '#c82828');
 };
 

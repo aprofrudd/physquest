@@ -49,7 +49,7 @@ export const announce = (text: string): void => {
   // waiting, so typing a name reads the name so far rather than every letter
   if (queued && now - queuedAt < SAME_STEP_MS) {
     if (text.includes(queued)) queued = text;
-    else if (!queued.includes(text)) queued = `${queued} ${text}`;
+    else if (!queued.includes(text)) queued = `${queued}${/[.!?:]$/.test(queued) ? '' : '.'} ${text}`;
   } else {
     queued = text;
   }

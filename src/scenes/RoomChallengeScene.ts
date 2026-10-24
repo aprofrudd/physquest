@@ -349,6 +349,11 @@ export const createRoomChallengeScene = (
         // Dim overlay
         ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
         ctx.fillRect(0, 0, GAME_W, GAME_H);
+        // A redesigned room's wall art is busy: behind the plates it is darkened further, so no half-letters show
+        if (instrument) {
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+          ctx.fillRect(0, 0, GAME_W, 38);
+        }
       } else {
         ctx.fillStyle = pal.colors[4];
         ctx.fillRect(0, 0, GAME_W, GAME_H);

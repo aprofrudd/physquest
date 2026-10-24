@@ -207,7 +207,7 @@ export interface CleanupFrame {
 }
 
 const SPRINT = { x: 170, numberX: 182, titleY: 44, rowY: 56, pitch: 13, barX: 191, barW: 54 } as const;
-const TAGS_Y = 110;
+const TAGS_Y = 109; // the tags end on row 117, clear of the lens's IF REMOVED caption on row 118
 const METER_Y = 102;
 
 const drawSuspectTag = (ctx: CanvasRenderingContext2D, x: number, y: number, number: number, s: Suspect, current: boolean) => {
@@ -478,6 +478,7 @@ const drawList = (ctx: CanvasRenderingContext2D, f: PinFrame) => {
       const tone = mark === 'key' ? COLORS.good : mark === 'notkey' ? COLORS.bad : COLORS.gold;
       const x = 244 - (measureText(text) - 1);
       if (mark === 'notkey') drawCross(ctx, x - 9, y, tone);
+      else if (mark === 'missed') drawText(ctx, '!', x - 8, y, tone);
       else drawTick(ctx, x - 9, y, tone);
       drawText(ctx, text, x, y, mark === 'missed' ? COLORS.ink : tone);
     } else if (r.pinned) {
@@ -497,7 +498,7 @@ const drawLockRow = (ctx: CanvasRenderingContext2D, f: PinFrame) => {
     rect(ctx, 9, y - 1, 238, ROW_H, COLORS.inkSoft);
     drawText(ctx, '>', 12, y, COLORS.paper);
   }
-  const color = sel ? COLORS.paper : pins === limit ? COLORS.ink : COLORS.grey;
+  const color = sel ? COLORS.paper : pins === limit ? COLORS.ink : '#606060'; // still readable before it can be used
   drawText(ctx, 'LOCK IN', 34, y, color);
   for (let i = 0; i < limit; i++) {
     const cx = 100 + i * 11;

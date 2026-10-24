@@ -16,8 +16,9 @@ vi.mock('../../src/render/TileMap', async importOriginal => {
 });
 
 // The redesigned rooms' chunk (which the game loads after the title), loaded once the spy above is in place
-const { loadRooms } = await import('../../src/rooms/loader');
+const { commitLevel, loadRooms } = await import('../../src/rooms/loader');
 await loadRooms();
+commitLevel(3); // a Distance Running visit, as when the level starts
 
 const { T, isSolid, isDoor } = await import('../../src/render/TileMap');
 const { mapFor } = await import('../../src/data/rooms');

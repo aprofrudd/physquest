@@ -85,6 +85,8 @@ export const createTrainingInstrument = (host: RoomHost, rng: () => number = Mat
   let debriefAt = -1;
   let result: Score | null = null;
   let reportedDay = -1;
+  let runIntro = ''; // said ahead of the first day's line
+  let leaving = false; // the leave question is up during the run
   let announceIn = 0;
   let announcePending = false;
   let promptKey = '';
@@ -176,8 +178,8 @@ export const createTrainingInstrument = (host: RoomHost, rng: () => number = Mat
     stage = 'run';
     run = createRunClock();
     reportedDay = -1;
+    runIntro = 'Running the week. '; // said with Monday's line, which comes a step later and would replace it
     host.input.blockRepeats();
-    announce('Running the week.');
   };
 
   /** B in the plan: straight out if nothing is planned, else ask first. B again means stay. */
@@ -209,13 +211,16 @@ export const createTrainingInstrument = (host: RoomHost, rng: () => number = Mat
     );
   };
 
-  /** B while the week plays: ask before throwing it away. B again (or STAY) carries on where it stopped. */
+  /**
+   * B while the week plays: ask before throwing it away. The week stays on screen and waits (the open question
+   * keeps the run from moving); STAY, or B again, carries on where it stopped.
+   */
   const resumeRun = () => {
-    stage = 'run';
+    leaving = false;
     host.input.blockRepeats();
   };
   const leaveRun = () => {
-    stage = 'asking';
+    leaving = true;
     host.dialogue.show('Leave now? This week will be lost.', ['STAY', 'LEAVE'], choice => (choice === 1 ? host.quit() : resumeRun()), resumeRun, {
       exitLabel: 'STAY',
     });
@@ -329,7 +334,7 @@ export const createTrainingInstrument = (host: RoomHost, rng: () => number = Mat
   };
 
   const updateRun = (dt: number, inp: InputState, busy: boolean) => {
-    if (!run || busy) return; // the week waits while a line is up (and the press that closed it is used up)
+    if (!run || busy || leaving) return; // the week waits while a line or the leave question is up
     if (inp.bPressed) {
       leaveRun();
       return;
@@ -337,7 +342,8 @@ export const createTrainingInstrument = (host: RoomHost, rng: () => number = Mat
     run.update(dt, inp.a);
     if (run.day !== reportedDay && run.daysDone < DAY_COUNT) {
       reportedDay = run.day;
-      announce(describeRunDay(run.day));
+      announce(runIntro + describeRunDay(run.day));
+      runIntro = '';
       // A tick for each day; a key session answers with how it went
       const quality = planner.analysis.quality[run.day];
       sfx.play(quality === null || quality === undefined ? 'beat' : quality >= 1 ? 'correct' : 'wrong');
@@ -458,6 +464,7 @@ export const createTrainingInstrument = (host: RoomHost, rng: () => number = Mat
       const { plan, analysis, cursor, away, order } = planner;
       return {
         phase: stage,
+        leaving,
         away,
         cursor,
         order: order.map(i => content.cards[i]?.label ?? ''),

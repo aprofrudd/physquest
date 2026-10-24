@@ -18,6 +18,7 @@ All of the new content lives in `src/rooms/content/running.ts` (types in `src/ro
 | D2, D3 | Data Lab | Lactate at each stage; flying 30 m times | `data.stages`, `data.sprintTimes` |
 | D4, D12 | Data Lab | What each variable is on the file; speed reserve label | `data.features`, `data.reserveLabel` |
 | D5-D9 | Data Lab | Glitches (contaminated sample, failed sample, gate misfire) and real readings (steep rise, highest value) | `data.contaminated`, `failed`, `misfire`, `knee`, `peak` |
+| D8b | Data Lab | Plain description of the steep rise, used when a glitch the player kept means the file no longer rises most steeply into it ("At 18 km/h lactate reads 4.0 mmol/L. The stages either side read 6.2 and 6.3."). Added after the approval, during testing | `data.kneePlain` |
 | D10, D11 | Data Lab | The lens rule and how-to lines | `data.lensRule`, `data.rules`, `data.rulesShort` |
 | D13 | Data Lab | Data quality = how well the file was cleaned | instrument scoring |
 | W1, W2 | Training Floor | Easy running as a support session; the four session cards and targets | `training.cards`, `training.supportNote` |
@@ -28,6 +29,10 @@ All of the new content lives in `src/rooms/content/running.ts` (types in `src/ro
 | A6-A9 | Analysis Room | Noise band width, verdict wording, how-to, forecast scoring | `analysis.verdicts`, `noiseWhy`, `smallWhy`, `worthWhy`, `rules` |
 
 The biggest open questions: D1 (the running test file includes VO2max, vVO2max and a sprint, which the Testing Lab's lactate threshold test does not produce), A2 (typical error and smallest worthwhile change for the last 400 m are placeholders), W3 (whether sub-threshold sessions should cost less than intervals and sprints) and T1 (neither correct test measures speed reserve directly).
+
+## Presentation notes for the team
+
+- The Training Floor's debrief lines name the board codes (`SUB: full quality (legs 100%).`), as the content templates use `{label}`; a screen reader then says "supper" or spells SPRT. The planner and the run already speak the full zone names. If the team prefers, the templates could use the zone name instead.
 
 ## Design questions for Alan (current choice in brackets)
 

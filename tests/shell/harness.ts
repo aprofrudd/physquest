@@ -3,7 +3,7 @@
 // edge presses, holds and auto-repeat. Sound and screen-reader modules are replaced by recorders.
 import { vi } from 'vitest';
 import { consoleLabel, fillButtonNames, type Button, type InputState } from '../../src/engine/Input';
-import { loadRooms } from '../../src/rooms/loader';
+import { commitLevel, loadRooms } from '../../src/rooms/loader';
 
 // The redesigned rooms are a chunk the game loads after the title: load it before any test asks for a room
 await loadRooms();
@@ -172,6 +172,7 @@ export const makeWorld = async (level = 3, device: 'console' | 'keyboard' = 'con
   const gameState = createInitialState();
   gameState.playerName = 'TEST';
   activateLevel(gameState, level);
+  commitLevel(level); // as the game does when a level starts
 
   const log = { switches: [] as string[], completes: 0, blocks: 0 };
   let current = 'roomChallenge';
@@ -210,7 +211,7 @@ export const makeWorld = async (level = 3, device: 'console' | 'keyboard' = 'con
   // Wired like game.ts: quitting from a room still being played asks first
   let roomScene: { inProgress(): boolean } | null = null;
   const pauseMenu = createPauseMenu(sceneManager as never, gameState, dialogue, () => input.blockRepeats(), b => input.label(b), () =>
-    sceneManager.getCurrentId() === 'roomChallenge' && roomScene?.inProgress() ? "This room won't be saved." : null,
+    sceneManager.getCurrentId() === 'roomChallenge' && roomScene?.inProgress() ? "This attempt won't be saved." : null,
   );
   const scene = createRoomChallengeScene(
     input as never,

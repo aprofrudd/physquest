@@ -49,6 +49,7 @@ const BOX_H = NOTE_Y + 16;
 
 const HINT = '{A}: CHOOSE   {B}: BACK';
 const NOTE = 'PROGRESS SAVES AUTOMATICALLY';
+const NOTE_IN_ROOM = 'THIS ROOM SAVES WHEN FINISHED'; // while a room is being played (finished rooms are saved)
 
 export interface PauseMenu {
   isActive(): boolean;
@@ -92,6 +93,24 @@ export const createPauseMenu = (
     warning = null;
   };
 
+  /** Back to the game: say so, and say again what was waiting on screen (a question and its options). */
+  const resume = () => {
+    close();
+    sfx.play('back');
+    const s = dialogue.state;
+    const waiting = dialogue.isActive() ? (s.pages[s.page] ?? []).join(' ') : '';
+    const options = dialogue.isActive() && s.choices && s.waitingForInput ? ` Options: ${s.choices.join('; ')}` : '';
+    announce(`Resumed.${waiting ? ` ${waiting}` : ''}${options}`);
+  };
+
+  /** From the quit question back to the menu, on its QUIT TO TITLE line. */
+  const backToMenu = () => {
+    warning = null;
+    selectedIndex = OPTIONS.indexOf('quit');
+    sfx.play('back');
+    announce('Back to the pause menu. Quit to title.');
+  };
+
   const quit = () => {
     saveGame(gameState);
     close();
@@ -102,8 +121,7 @@ export const createPauseMenu = (
   const choose = (opt: Option) => {
     switch (opt) {
       case 'resume':
-        close();
-        sfx.play('back');
+        resume();
         break;
       case 'save': {
         const ok = saveGame(gameState);
@@ -134,9 +152,7 @@ export const createPauseMenu = (
   /** The second step before quitting: STAY goes back to the menu, QUIT TO TITLE quits. */
   const handleConfirm = (inp: InputState) => {
     if (inp.startPressed || inp.bPressed) {
-      warning = null;
-      selectedIndex = OPTIONS.indexOf('quit');
-      sfx.play('back');
+      backToMenu();
       return;
     }
     if (inp.upPressed || inp.downPressed) {
@@ -145,13 +161,8 @@ export const createPauseMenu = (
       announce(CONFIRM_OPTIONS[selectedIndex] === 'stay' ? 'Stay' : 'Quit to title');
     }
     if (inp.aPressed) {
-      if (CONFIRM_OPTIONS[selectedIndex] === 'quit') {
-        quit();
-      } else {
-        warning = null;
-        selectedIndex = OPTIONS.indexOf('quit');
-        sfx.play('back');
-      }
+      if (CONFIRM_OPTIONS[selectedIndex] === 'quit') quit();
+      else backToMenu();
     }
   };
 
@@ -177,8 +188,7 @@ export const createPauseMenu = (
       }
 
       if (inp.startPressed || inp.bPressed) {
-        close();
-        sfx.play('back');
+        resume();
         return true;
       }
       if (inp.upPressed) {
@@ -253,7 +263,8 @@ export const createPauseMenu = (
       ctx.fillRect(boxX + 12, boxY + RULE_Y, boxW - 24, 1);
       const hint = fillButtonNames(HINT, name);
       drawText(ctx, hint, (GAME_W - measureText(hint)) / 2, boxY + HINT_Y, '#303030');
-      drawText(ctx, NOTE, (GAME_W - measureText(NOTE)) / 2, boxY + NOTE_Y, '#606060');
+      const note = quitWarning() ? NOTE_IN_ROOM : NOTE;
+      drawText(ctx, note, (GAME_W - measureText(note)) / 2, boxY + NOTE_Y, '#606060');
 
       // Save confirmation, just under the box
       if (flashTimer > 0) {

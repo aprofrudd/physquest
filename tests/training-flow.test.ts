@@ -95,6 +95,7 @@ const makeHost = (firstVisit = true) => {
 /** What the instrument reports through debug(). */
 interface DebugState {
   phase: string;
+  leaving: boolean;
   away: number | null;
   cursor: number;
   order: string[];
@@ -345,7 +346,7 @@ describe('running the week', () => {
     tap(rig, 'leftPressed', 'leftRepeat');
     tap(rig, 'aPressed');
     const q = rig.last();
-    expect(q.text).toBe('No SUB session yet. No SUPR session yet. No SPRT session yet. Run the week?');
+    expect(q.text).toBe('No Sub-threshold session yet. No Supra-threshold Intervals session yet. No Sprint Training session yet. Run the week?');
     expect(q.choices).toEqual(['NO', 'YES']); // NO first, so mashing A cannot run an unfinished week
     expect(q.options?.exitLabel).toBe('NO');
     rig.answer(0);
@@ -424,9 +425,12 @@ describe('running the week', () => {
     expect(rig.last().text).toBe('Leave now? This week will be lost.');
     expect(rig.last().choices).toEqual(['STAY', 'LEAVE']);
     expect(rig.last().options?.exitLabel).toBe('STAY');
-    expect(rig.state().phase).toBe('asking');
+    // the week stays on screen behind the question (it does not flip back to the planning board)
+    expect(rig.state().phase).toBe('run');
+    expect(rig.state().leaving).toBe(true);
     rig.answer(0); // STAY
     expect(rig.state().phase).toBe('run');
+    expect(rig.state().leaving).toBe(false);
     expect(rig.state().daysDone).toBe(done);
     tap(rig, 'bPressed');
     rig.cancel(); // B again: stay
@@ -588,7 +592,7 @@ describe('what screen readers hear', () => {
     vi.mocked(announce).mockClear();
     tap(rig, 'leftPressed', 'leftRepeat');
     step(rig, 0.4);
-    expect(spoken().pop()).toBe('Run the week. 0 sessions. 7 rest days. 0 red mornings. Missing: SUB, SUPR, SPRT.');
+    expect(spoken().pop()).toBe('Run the week. 0 sessions. 7 rest days. 0 red mornings. Missing: Sub-threshold, Supra-threshold Intervals, Sprint Training.');
   });
 
   it('reads each day of the run, support days as support sessions', () => {
@@ -600,10 +604,10 @@ describe('what screen readers hear', () => {
     vi.mocked(announce).mockClear();
     step(rig, 8.6);
     const lines = spoken();
-    expect(lines[0]).toBe('Monday. Sub-threshold. Full quality.');
+    expect(lines[0]).toBe('Running the week. Monday. Sub-threshold. Full quality.'); // the start is said with Monday's line
     expect(lines.some(l => /Easy Running\. Support session\.$/.test(l))).toBe(true);
     expect(lines.some(l => /AWAY\.$/.test(l))).toBe(true);
-    expect(lines.filter(l => /^\w+day\./.test(l))).toHaveLength(DAY_COUNT);
+    expect(lines.filter(l => /^(Running the week\. )?\w+day\./.test(l))).toHaveLength(DAY_COUNT);
   });
 
   it('reads an empty day of the run as nothing planned, never as dashes', () => {

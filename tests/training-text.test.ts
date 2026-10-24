@@ -57,7 +57,7 @@ describe('the prompt box', () => {
   it('wraps the zone line exactly as the dialogue box would', () => {
     const card = content.cards.find(c => c.label === 'SUPR')!;
     const lines = dayPrompt(content, sport, 3, sessionFromChip(content, 'SUPR'), 100);
-    const expected = wrapText(`THU: ${card.zone} (${card.target})`);
+    const expected = wrapText(`THU: ${card.zone}, ${card.target}`); // one parenthesis is the zone's own
     expect(lines.slice(0, expected.length).map(l => l.text)).toEqual(expected);
   });
 
@@ -129,8 +129,11 @@ describe('the prompt box', () => {
 
   it('puts any missing key session before the question', () => {
     expect(runQuestion([])).toBe('Run the week?');
-    expect(runQuestion([content.cards[3]!])).toBe('No SPRT session yet. Run the week?');
-    expect(runQuestion([content.cards[0]!, content.cards[3]!])).toBe('No SUB session yet. No SPRT session yet. Run the week?');
+    // full names: the box is read aloud too, and a screen reader cannot say SPRT
+    expect(runQuestion([content.cards[3]!])).toBe('No Sprint Training session yet. Run the week?');
+    expect(runQuestion([content.cards[0]!, content.cards[3]!])).toBe('No Sub-threshold session yet. No Sprint Training session yet. Run the week?');
+    // all three missing still fits the box with the YES / NO list on the same page
+    expect(wrapText(runQuestion([content.cards[0]!, content.cards[1]!, content.cards[3]!])).length).toBeLessThanOrEqual(4);
   });
 });
 
@@ -270,7 +273,7 @@ describe('what screen readers hear', () => {
   });
 
   it('reads the GO slot with the week\'s numbers and what is missing', () => {
-    expect(goAnnouncement(analysis, [content.cards[3]!])).toBe('Run the week. 3 sessions. 4 rest days. 1 red morning. Missing: SPRT.');
+    expect(goAnnouncement(analysis, [content.cards[3]!])).toBe('Run the week. 3 sessions. 4 rest days. 1 red morning. Missing: Sprint Training.');
     expect(goAnnouncement(analysis, [])).toBe('Run the week. 3 sessions. 4 rest days. 1 red morning.');
     const calm = analyse(content, week('SUB', 'EASY', 'SUPR', 'EASY', 'SPRT', 'EASY', 'REST'));
     expect(goAnnouncement(calm, [])).toBe('Run the week. 6 sessions. 1 rest day. 0 red mornings.');

@@ -34,8 +34,8 @@ const RACK_ROWS = [4, 6, 8] as const;
 
 const PRINTER = { tx: 12, ty: 7 } as const;
 const CABLE_ROW = 10;
-/** Pixel columns of the cover plate where the way in crosses the cable (tile 7). */
-const COVER = { from: 108, to: 128 } as const;
+/** Where the floor cable starts (tile 8: just east of the way in, so the coach never starts on it). */
+const CABLE_FROM = 8 * 16 + 3;
 
 /** Analysts: tile, colours and typing frames. They stand behind a desk and are not interactive. */
 const ANALYSTS: ReadonlyArray<{ tx: number; ty: number; colors: number; phase: number }> = [
@@ -213,8 +213,7 @@ const drawLeds = (ctx: CanvasRenderingContext2D, t: number) => {
 
 const drawCablePulses = (ctx: CanvasRenderingContext2D, t: number) => {
   for (let i = 0; i < 3; i++) {
-    const x = 80 + ((t * 40 + i * 52) % 160);
-    if (x > COVER.from && x < COVER.to) continue; // the light goes under the cover plate
+    const x = CABLE_FROM + ((t * 40 + i * 40) % (240 - CABLE_FROM)); // along the cable, from its start to the racks
     rect(ctx, x, CABLE_ROW * 16 + 7, 3, 2, ACCENT);
     rect(ctx, x - 3, CABLE_ROW * 16 + 7, 3, 2, LIGHT);
   }

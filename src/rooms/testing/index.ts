@@ -203,7 +203,9 @@ export const createTestingRoomWith = (host: RoomHost, rng: Rng): RoomInstrument 
     model.startPick();
     host.input.blockRepeats();
     refreshPrompt();
-    announce(`${QUESTION} ${describeHighlighted()}`);
+    // What the athlete needs is drawn on every stage, so a listener hears it once, with the question
+    const first = (sport.athleteProfile.split(' ')[0] ?? '').replace(/,$/, '');
+    announce(`${QUESTION} ${first} needs ${spoken(content.needs)}. ${describeHighlighted()}`);
   };
 
   const feedback = () => {

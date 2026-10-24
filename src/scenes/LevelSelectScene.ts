@@ -81,6 +81,8 @@ export const createLevelSelectScene = (
   sceneManager: SceneManager,
   gameState: GameState,
   onSelectLevel: (levelIndex: number) => void,
+  /** True while a picked level waits for its rooms to load. */
+  loading: () => boolean = () => false,
 ): Scene => {
   const levelCount = LEVEL_DATA.length;
   let selectedIndex = 0;
@@ -217,7 +219,9 @@ export const createLevelSelectScene = (
       }
 
       // Footer prompt, in the player's button names; a cleared sport is replayed rather than played
-      const footer = input.fill(gameState.bossDefeated[selectedIndex] ? '{A}: REPLAY   {B}: BACK' : '{A}: PLAY   {B}: BACK');
+      const footer = loading()
+        ? 'LOADING THE NEW ROOMS...'
+        : input.fill(gameState.bossDefeated[selectedIndex] ? '{A}: REPLAY   {B}: BACK' : '{A}: PLAY   {B}: BACK');
       drawText(ctx, footer, (GAME_W - measureText(footer)) / 2, FOOTER_Y, pal.colors[2]);
     },
   };

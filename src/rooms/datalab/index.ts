@@ -33,6 +33,9 @@ type Phase = 'brief' | 'cleanup' | 'pin' | 'reveal';
 const DECISION_LOCK = 0.35;
 /** The cursor must rest this long before the row it is on is read out. */
 const REST_TIME = 0.3;
+
+/** A pin row's name for a screen reader: the odd-number '?' is dropped (the line after it says the number looks odd). */
+const spokenName = (shown: string): string => shown.replace(/\?$/, '');
 /** How long a refusal or a hint stays in the box. */
 const NOTICE_TIME = 2.4;
 const EASE_Y = 9; // per second: how fast the chart re-scales
@@ -68,6 +71,7 @@ export const createDataRoom = (host: RoomHost, rng: Rng = Math.random): RoomInst
   let notice = '';
   let noticeLeft = 0;
   let rest = 0; // seconds the pin cursor has been still
+  let lockInWait = 0; // seconds LOCK IN still ignores A after the cursor arrived on it
   let spoken = -1; // the cursor row last read out
   let explaining = -1; // the variable the reveal is on
   const marks: (RevealMark | undefined)[] = desk.order.map(() => undefined);
@@ -194,7 +198,7 @@ export const createDataRoom = (host: RoomHost, rng: Rng = Math.random): RoomInst
     refreshCleanup();
     if (fresh) {
       lock = DECISION_LOCK;
-      announce(desk.seen(view));
+      announce(`Suspect ${view + 1} of ${total}. ${desk.seen(view)}`);
     } else {
       const v = desk.verdict(view);
       announce(`Suspect ${view + 1} of ${total}. ${v ? `${v.result} ${v.why}` : desk.seen(view)}`);
@@ -213,10 +217,10 @@ export const createDataRoom = (host: RoomHost, rng: Rng = Math.random): RoomInst
       host.say(content.lensRule, undefined, () => {
         host.rulesRead(); // the brief and the lens rule have both been read
         lock = DECISION_LOCK;
-        announce(desk.seen(view));
+        announce(`Suspect 1 of ${total}. ${desk.seen(view)}`);
       });
     } else {
-      announce(desk.seen(view));
+      announce(`Suspect 1 of ${total}. ${desk.seen(view)}`);
     }
   };
 
@@ -321,8 +325,9 @@ export const createDataRoom = (host: RoomHost, rng: Rng = Math.random): RoomInst
     notice = '';
     noticeLeft = 0;
     rest = 0;
-    // Locking in cannot be undone: arriving on the row starts the decision lock, so a quick A cannot commit unseen
-    if (cursor === desk.rows().length) lock = Math.max(lock, DECISION_LOCK);
+    // Locking in cannot be undone: arriving on the row starts its own wait, so a quick A cannot commit unseen
+    // (the pin rows above keep answering at once)
+    lockInWait = cursor === desk.rows().length ? DECISION_LOCK : 0;
     sfx.play('blip');
     refreshPin();
   };
@@ -347,9 +352,12 @@ export const createDataRoom = (host: RoomHost, rng: Rng = Math.random): RoomInst
     }
     announce(
       allPlaced
-        ? `Pinned: ${row.shown}. ${notice}`
-        : `${result === 'pinned' ? 'Pinned' : 'Unpinned'}: ${row.shown}. ${desk.pins().length} of ${desk.pinLimit} pins used.`,
+        ? `Pinned: ${spokenName(row.shown)}. ${notice}`
+        : `${result === 'pinned' ? 'Pinned' : 'Unpinned'}: ${spokenName(row.shown)}. ${desk.pins().length} of ${desk.pinLimit} pins used.`,
     );
+    // This row has been spoken: the cursor-rest line must not replace the toggle's a step later
+    rest = 0;
+    spoken = cursor;
     lock = 0.12;
   };
 
@@ -363,8 +371,8 @@ export const createDataRoom = (host: RoomHost, rng: Rng = Math.random): RoomInst
     else if (inp.downRepeat) moveCursor(1);
     if (lock > 0) return;
     if (inp.aPressed) {
-      if (cursor === desk.rows().length) lockIn();
-      else togglePin();
+      if (cursor !== desk.rows().length) togglePin();
+      else if (lockInWait <= 0) lockIn();
     }
   };
 
@@ -431,13 +439,14 @@ export const createDataRoom = (host: RoomHost, rng: Rng = Math.random): RoomInst
         if (rest >= REST_TIME && spoken !== cursor) {
           spoken = cursor;
           const row = desk.rows()[cursor];
-          if (row) announce(`${row.shown}. ${row.pinned ? 'Pinned. ' : ''}${row.about}${row.odd ? ` ${ODD_NUMBER}` : ''}`);
+          if (row) announce(`${spokenName(row.shown)}. ${row.pinned ? 'Pinned. ' : ''}${row.about}${row.odd ? ` ${ODD_NUMBER}` : ''}`);
           else announce(`Lock in your ${desk.pinLimit} pins.`);
         }
       }
 
       if (dialogueBusy) return;
       if (lock > 0) lock = Math.max(0, lock - dt);
+      if (lockInWait > 0) lockInWait = Math.max(0, lockInWait - dt);
       if (phase === 'cleanup') cleanupInput(inp);
       else if (phase === 'pin') pinInput(inp);
     },

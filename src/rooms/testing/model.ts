@@ -106,10 +106,13 @@ export interface PrintoutLines {
 }
 
 /** Capitals read badly aloud: lower-case the words, but keep ones with digits (LT1, VO2MAX) as written. */
+// Abbreviations a screen reader should say letter by letter, as written
+const ACRONYMS: ReadonlySet<string> = new Set(['CS', 'D', 'CP', 'MAP', 'RSA', 'FTP', 'HR']);
+
 export const spoken = (text: string): string =>
   text
     .split(' ')
-    .map(word => (/\d/.test(word) ? word : word.toLowerCase()))
+    .map(word => (/\d/.test(word) || ACRONYMS.has(word.replace(/[^A-Z]/g, '')) ? word : word.toLowerCase()))
     .join(' ');
 
 /** The athlete's first name in capitals: the first word of the profile, minus its comma. */
