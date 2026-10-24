@@ -210,7 +210,7 @@ export const makeWorld = async (level = 3, device: 'console' | 'keyboard' = 'con
   // Wired like game.ts: quitting from a room still being played asks first
   let roomScene: { inProgress(): boolean } | null = null;
   const pauseMenu = createPauseMenu(sceneManager as never, gameState, dialogue, () => input.blockRepeats(), b => input.label(b), () =>
-    sceneManager.getCurrentId() === 'roomChallenge' && roomScene?.inProgress() ? "THIS ROOM WON'T BE SAVED." : null,
+    sceneManager.getCurrentId() === 'roomChallenge' && roomScene?.inProgress() ? "This room won't be saved." : null,
   );
   const scene = createRoomChallengeScene(
     input as never,

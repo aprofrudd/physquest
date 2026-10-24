@@ -23,5 +23,8 @@ export const loadRooms = (): Promise<boolean> =>
     },
   ));
 
+/** Whether the chunk has loaded. */
+export const roomsLoaded = (): boolean => bundle !== null;
+
 /** The loaded chunk, if `level` uses it; null for the classic rooms. */
 export const newRoomsFor = (level: number): typeof Bundle | null => (levelHasNewRooms(level) ? bundle : null);

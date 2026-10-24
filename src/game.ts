@@ -22,7 +22,7 @@ import { createLevelClearScene } from './scenes/LevelClearScene';
 import { GAME_W, GAME_H } from './render/DialogueBox';
 import { mountConsole } from './ui/console';
 import { sfx } from './audio/Sfx';
-import { levelHasNewRooms, loadRooms } from './rooms/loader';
+import { levelHasNewRooms, loadRooms, roomsLoaded } from './rooms/loader';
 import { newRoomsOn } from './rooms/preview';
 import { LEVELS } from './data/levels';
 
@@ -49,7 +49,7 @@ export const startGame = (root: HTMLElement) => {
     () => input.blockRepeats(),
     button => input.label(button),
     // Finished rooms are saved, but a room still being played is not: quitting from one asks first
-    () => (sceneManager.getCurrentId() === 'roomChallenge' && roomChallengeScene.inProgress() ? "THIS ROOM WON'T BE SAVED." : null),
+    () => (sceneManager.getCurrentId() === 'roomChallenge' && roomChallengeScene.inProgress() ? "This room won't be saved." : null),
   );
 
   let lastResult: LevelResult | null = null;
@@ -83,7 +83,7 @@ export const startGame = (root: HTMLElement) => {
   let starting = false;
   const playLevel = (levelIndex: number) => {
     if (starting) return;
-    if (!levelHasNewRooms(levelIndex)) {
+    if (!levelHasNewRooms(levelIndex) || roomsLoaded()) {
       enterLevel(levelIndex);
       return;
     }
