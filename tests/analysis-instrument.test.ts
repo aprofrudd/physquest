@@ -490,21 +490,36 @@ describe('for a screen reader', () => {
   const heard = (): string[] => vi.mocked(announce).mock.calls.map(call => call[0]);
   const lastHeard = (): string | undefined => heard()[heard().length - 1];
 
+  // The stamp is announced, then the box announces the explanation itself in the same step (read together, once)
+  const lastTwo = (): string[] => heard().slice(-2);
+
   it('reads the board\'s stamp ahead of the explanation: what was said, and what was true when it was wrong', () => {
     const t = setup();
     t.toForecast();
     t.forecast(0);
     t.lockAndRead();
     t.pickByText('NOISE');
-    expect(lastHeard()).toBe(
-      'You said noise. It is real and worth acting on. Not quite. It moved 2.0 s: beyond the typical error (0.6) and the smallest worthwhile change (0.8).',
-    );
+    expect(lastTwo()).toEqual([
+      'You said noise. It is real and worth acting on.',
+      'Not quite. It moved 2.0 s: beyond the typical error (0.6) and the smallest worthwhile change (0.8).',
+    ]);
     t.advance();
     t.untilStep('asking');
     t.pickByText('REAL AND WORTH ACTING ON');
-    expect(lastHeard()).toBe(
-      'You said real and worth acting on. It is real but too small to matter. Not quite. It moved 2.0 ml/kg/min: beyond the typical error (1.5) but short of the smallest worthwhile change (3.0).',
-    );
+    expect(lastTwo()).toEqual([
+      'You said real and worth acting on. It is real but too small to matter.',
+      'Not quite. It moved 2.0 ml/kg/min: beyond the typical error (1.5) but short of the smallest worthwhile change (3.0).',
+    ]);
+  });
+
+  it('never announces the explanation twice', () => {
+    const t = setup();
+    t.toForecast();
+    t.forecast(0);
+    t.lockAndRead();
+    t.pickByText('NOISE');
+    const why = 'Not quite. It moved 2.0 s: beyond the typical error (0.6) and the smallest worthwhile change (0.8).';
+    expect(heard().filter(line => line.includes(why)).length).toBe(1);
   });
 
   it('keeps it short when the verdict was right', () => {
@@ -513,9 +528,10 @@ describe('for a screen reader', () => {
     t.forecast(10);
     t.lockAndRead();
     t.pickByText('REAL AND WORTH ACTING ON');
-    expect(lastHeard()).toBe(
-      'You said real and worth acting on. Right. It moved 2.0 s: beyond the typical error (0.6) and the smallest worthwhile change (0.8).',
-    );
+    expect(lastTwo()).toEqual([
+      'You said real and worth acting on.',
+      'Right. It moved 2.0 s: beyond the typical error (0.6) and the smallest worthwhile change (0.8).',
+    ]);
   });
 
   it('says the stamp again, with the explanation, when the player stays after asking to leave', () => {
@@ -530,7 +546,8 @@ describe('for a screen reader', () => {
     t.read();
     t.wait(0.4);
     t.tap('b'); // stay
-    expect(lastHeard()).toMatch(/^You said noise\. It is real and worth acting on\. Not quite\. It moved 2\.0 s/);
+    expect(lastTwo()[0]).toBe('You said noise. It is real and worth acting on.');
+    expect(lastTwo()[1]).toMatch(/^Not quite\. It moved 2\.0 s/);
   });
 
   it('reads the forecast once the pin has rested, and not while it is moving', () => {

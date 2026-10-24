@@ -302,12 +302,24 @@ export const createTraceDesk = (content: DataLabContent, sport: SportData, rng: 
     return undefined;
   };
 
+  /** Whether the file, as the player has left it, rises into stage `at` more steeply than anywhere before it. */
+  const steepestRiseSoFar = (at: number): boolean => {
+    const present = stages.slice(0, at + 1).filter(s => s.present);
+    const rise = (i: number) => present[i]!.mmol - present[i - 1]!.mmol;
+    const last = present.length - 1;
+    if (last < 1 || rise(last) <= 0) return false;
+    for (let i = 1; i < last; i++) if (rise(i) >= rise(last)) return false;
+    return true;
+  };
+
   const stageSeen = (suspect: Suspect): string => {
     const at = suspect.place.index;
     const stage = stages[at]!;
     const before = stageNeighbour(at, -1);
     const after = stageNeighbour(at, 1);
-    return fillSlots(textFor(suspect.kind).seen, {
+    // A kept glitch before the knee can leave it as a fall in the player's file: then say only what it reads
+    const template = suspect.kind === 'knee' && !steepestRiseSoFar(at) ? content.kneePlain : textFor(suspect.kind).seen;
+    return fillSlots(template, {
       kmh: String(stage.kmh),
       value: fmt1(stage.mmol),
       before: before ? fmt1(before.mmol) : '',

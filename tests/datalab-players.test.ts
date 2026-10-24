@@ -16,6 +16,7 @@ const RUNS = Number(process.env.DATALAB_RUNS ?? 150);
 const moveTo = (rig: Rig, row: number) => {
   for (let guard = 0; guard < 12 && rig.debug().cursor !== row; guard++) rig.press('down', 0.2);
   expect(rig.debug().cursor).toBe(row);
+  rig.wait(0.4); // a look at the row: LOCK IN, which cannot be undone, ignores A for 0.35 s after the cursor arrives
 };
 
 /** Clean the file, then pin and lock in, the way a player with these habits would. Returns the stat that was recorded. */

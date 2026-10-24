@@ -6,7 +6,6 @@ import { drawText } from '../../render/PixelFont';
 import { drawSprite } from '../../render/SpriteSheet';
 import { prefersReducedMotion } from '../../render/motion';
 import { COACH_LEFT, COACH_UP, NPC_SPRITE } from '../sprites';
-import { RUNNING } from '../../rooms/content/running';
 import { C, PEOPLE_COLORS, ROOM_COLORS, patch, seated, type Sprite } from './analysis-art';
 
 const K = ROOM_COLORS;
@@ -39,11 +38,10 @@ const CURVE_Y: readonly number[] = Array.from({ length: CHART.columns }, (_, i) 
 const DRAW_TIME = 7;
 const HOLD_TIME = 5;
 
-const WEEKS = RUNNING.analysis.weeks;
 
 // ---- the wall pictures (static: drawn once into their own canvas) ---------------------------------------------------
 
-const paintProjector = (ctx: CanvasRenderingContext2D) => {
+const paintProjector = (ctx: CanvasRenderingContext2D, weeks: number) => {
   rect(ctx, 48, 16, 80, 2, dark); // the housing the screen rolls down from
   rect(ctx, SCR.x - 2, SCR.y - 2, SCR.w + 4, SCR.h + 3, ink);
   rect(ctx, SCR.x, SCR.y, SCR.w, SCR.h, cream);
@@ -51,7 +49,7 @@ const paintProjector = (ctx: CanvasRenderingContext2D) => {
   rect(ctx, CHART.x - 1, SCR.y + 16, SCR.w - 12, 1, dark); // the x axis
   for (let g = 0; g < 3; g++) rect(ctx, CHART.x, SCR.y + 4 + g * 4, SCR.w - 14, 1, light);
   drawText(ctx, 'NOW', SCR.x + 3, SCR.y + 18, dark);
-  const label = `WEEK ${WEEKS}`;
+  const label = `WEEK ${weeks}`;
   drawText(ctx, label, SCR.x + SCR.w - 3 - (label.length * 6 - 1), SCR.y + 18, dark);
 };
 
@@ -98,19 +96,20 @@ const paintPlanner = (ctx: CanvasRenderingContext2D) => {
   rect(ctx, rx + 2, ry - 5, 3, 2, red);
 };
 
-let wallLayer: HTMLCanvasElement | null = null;
+const wallLayers = new Map<number, HTMLCanvasElement>();
 
-/** The three wall pictures on one canvas the size of the room, made the first time the room is drawn. */
-const wallPictures = (): HTMLCanvasElement => {
-  if (wallLayer) return wallLayer;
+/** The three wall pictures on one canvas the size of the room (the projector shows the block's length), made once. */
+const wallPictures = (weeks: number): HTMLCanvasElement => {
+  const made = wallLayers.get(weeks);
+  if (made) return made;
   const canvas = document.createElement('canvas');
   canvas.width = 256;
   canvas.height = 48;
   const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
-  paintProjector(ctx);
+  paintProjector(ctx, weeks);
   paintWhiteboard(ctx);
   paintPlanner(ctx);
-  wallLayer = canvas;
+  wallLayers.set(weeks, canvas);
   return canvas;
 };
 
@@ -135,8 +134,9 @@ export const PEOPLE = {
 } as const;
 
 /** Everything animated in the room, drawn over the baked map. */
-export const drawBriefingLife = (ctx: CanvasRenderingContext2D, t: number): void => {
-  ctx.drawImage(wallPictures(), 0, 0);
+/** `weeks` is the level's training block, for the projector's WEEK label. */
+export const drawBriefingLife = (ctx: CanvasRenderingContext2D, t: number, weeks: number): void => {
+  ctx.drawImage(wallPictures(weeks), 0, 0);
 
   // the projector chart draws its line, holds, then starts over; reduced motion shows it finished
   const still = prefersReducedMotion();

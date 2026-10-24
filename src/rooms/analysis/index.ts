@@ -300,13 +300,15 @@ export const createAnalysisInstrument = (
         sfx.play('bump'); // the end of the ruler
       }
     }
+    // A decision first, so a lock-in never shares a step with the resting pin's announcement
+    if (lock <= 0) {
+      if (inp.bPressed) return host.quit(); // nothing is decided yet
+      if (inp.aPressed) return lockIn();
+    }
     if (rest > 0) {
       rest -= dt;
       if (rest <= 0) announce(forecastSentence());
     }
-    if (lock > 0) return;
-    if (inp.bPressed) return host.quit(); // nothing is decided yet
-    if (inp.aPressed) lockIn();
   };
 
   const lockIn = () => {
@@ -368,9 +370,10 @@ export const createAnalysisInstrument = (
     const made = review.picks.find(p => p.row === row);
     if (!made) return;
     const text = (made.right ? 'Right. ' : 'Not quite. ') + whyFor(content, rows[row]);
+    // The stamp is only drawn, so a screen reader hears it first; the box then announces the explanation itself
+    // (lines said in the same step are read together)
+    announce(stampWords(made));
     speak(text, undefined, () => afterVerdict(row), () => explain(row));
-    // the box announced the explanation alone: a screen reader needs the stamp too (it is only drawn), so it goes first
-    announce(`${stampWords(made)} ${text}`);
   };
 
   const afterVerdict = (row: Row) => {

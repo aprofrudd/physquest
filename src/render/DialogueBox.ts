@@ -228,7 +228,8 @@ export const startDialogue = (
   state.nextLabel = options?.nextLabel ?? 'NEXT';
   state.inputLock = options?.lock ?? 0;
   state.waitingForInput = false;
-  announce(pageLines(state).join(' '));
+  // Screen readers get the whole text at once, so a sentence that runs over to the next page is read in one piece
+  announce(state.pages.map(lines => lines.join(' ')).join(' '));
 };
 
 const finishPage = (state: DialogueState) => {
@@ -340,7 +341,6 @@ export const updateDialogue = (state: DialogueState, dt: number, rawInp: InputSt
     state.charIndex = 0;
     state.progress = 0;
     state.waitingForInput = false;
-    announce(pageLines(state).join(' '));
   } else {
     finishDialogue(state);
   }

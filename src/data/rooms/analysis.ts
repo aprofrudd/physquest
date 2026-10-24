@@ -8,6 +8,8 @@ import { T } from '../../render/TileMap';
 import type { MapData } from '../maps';
 import { AT } from './analysis-tiles';
 import { drawBriefingLife } from './analysis-life';
+import { LEVEL_DATA } from '../sports';
+import { contentFor } from '../../rooms/content';
 
 const TL = T.WALL_CORNER_TL;
 const TR = T.WALL_CORNER_TR;
@@ -59,7 +61,7 @@ export const BRIEFING_ROOM: MapData = {
     ...[11, 12].map(x => ({ x, y: 2, dialogueKey: 'room4_screen4' })), // the season planner
   ],
   doors: [{ x: 7, y: 12, target: 'hub' }],
-  life: (ctx, t) => drawBriefingLife(ctx, t),
+  life: (ctx, t, sport) => drawBriefingLife(ctx, t, contentFor(LEVEL_DATA.indexOf(sport))?.analysis.weeks ?? 0),
   // The room's own lines for each thing: the existing prediction-model text, then the athlete's data where it fits
   talk: {
     room4_screen1: sport => ['Prediction model: Physiological adaptation curves.', sport.predictionScenario],

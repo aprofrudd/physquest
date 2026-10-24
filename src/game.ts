@@ -22,11 +22,15 @@ import { createLevelClearScene } from './scenes/LevelClearScene';
 import { GAME_W, GAME_H } from './render/DialogueBox';
 import { mountConsole } from './ui/console';
 import { sfx } from './audio/Sfx';
+import { levelHasNewRooms, loadRooms } from './rooms/loader';
+import { newRoomsOn } from './rooms/preview';
+import { LEVELS } from './data/levels';
 
 // Scenes where the player is mid-level: auto-pause and auto-save when the app is backgrounded
 const IN_LEVEL: readonly SceneId[] = ['overworld', 'roomChallenge', 'bossBattle'];
 
 export const startGame = (root: HTMLElement) => {
+  newRoomsOn(); // a ?rooms= choice in the address is remembered from the first page load
   const input = createInput();
   const ui = mountConsole(root, input, { gameWidth: GAME_W, gameHeight: GAME_H, sfx });
   const ctx = ui.canvas.getContext('2d', { alpha: false });
@@ -44,6 +48,8 @@ export const startGame = (root: HTMLElement) => {
     dialogue,
     () => input.blockRepeats(),
     button => input.label(button),
+    // Finished rooms are saved, but a room still being played is not: quitting from one asks first
+    () => (sceneManager.getCurrentId() === 'roomChallenge' && roomChallengeScene.inProgress() ? "THIS ROOM WON'T BE SAVED." : null),
   );
 
   let lastResult: LevelResult | null = null;
@@ -65,11 +71,28 @@ export const startGame = (root: HTMLElement) => {
 
   sceneManager.register('intro', createIntroScene(input, sceneManager, gameState, dialogue));
 
-  const playLevel = (levelIndex: number) => {
+  const enterLevel = (levelIndex: number) => {
     stashLevel(gameState); // keep any unfinished progress in the level we're leaving
     activateLevel(gameState, levelIndex);
     saveGame(gameState);
     sceneManager.switchTo('overworld');
+  };
+
+  // A level with redesigned rooms first makes sure their chunk has loaded (it normally has, see the preload below);
+  // if the player moves on while it loads, the level is not started from under them
+  let starting = false;
+  const playLevel = (levelIndex: number) => {
+    if (starting) return;
+    if (!levelHasNewRooms(levelIndex)) {
+      enterLevel(levelIndex);
+      return;
+    }
+    starting = true;
+    const from = sceneManager.getCurrentId();
+    void loadRooms().then(() => {
+      starting = false;
+      if (sceneManager.getCurrentId() === from) enterLevel(levelIndex);
+    });
   };
 
   sceneManager.register('levelSelect', createLevelSelectScene(input, sceneManager, gameState, playLevel));
@@ -141,6 +164,15 @@ export const startGame = (root: HTMLElement) => {
   const loop = createGameLoop(ctx, () => sceneManager.getCurrent(), ui.present);
   loop.start();
 
+  // The redesigned rooms' chunk loads in the background once the title is up, so it is ready before anyone
+  // reaches a redesigned level without slowing the first screen
+  const anyNewRooms = LEVELS.some((_, level) => levelHasNewRooms(level));
+  if (anyNewRooms) {
+    const preload = () => void loadRooms();
+    if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(preload, { timeout: 3000 });
+    else window.setTimeout(preload, 1000);
+  }
+
   // Phones background tabs constantly: pause mid-level and save so nothing is lost
   const onHidden = () => {
     if (document.visibilityState !== 'hidden') return;
@@ -157,9 +189,10 @@ export const startGame = (root: HTMLElement) => {
   document.addEventListener('visibilitychange', onHidden);
   window.addEventListener('pagehide', onPageHide);
 
-  // Test hook for automated playthroughs (dev server, or ?debug on a build)
+  // Test hook for automated playthroughs (dev server, or ?debug on a build). Tests start levels and rooms
+  // straight away, so the hook appears once the redesigned rooms' chunk is ready.
   if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
-    (window as unknown as Record<string, unknown>).__pq = {
+    const hook = {
       state: gameState,
       scene: () => sceneManager.getCurrentId(),
       go: (id: SceneId) => sceneManager.switchTo(id),
@@ -178,6 +211,9 @@ export const startGame = (root: HTMLElement) => {
       pauseMenu,
       sfx,
     };
+    void (anyNewRooms ? loadRooms() : Promise.resolve(true)).then(() => {
+      (window as unknown as Record<string, unknown>).__pq = hook;
+    });
   }
 
   return () => {

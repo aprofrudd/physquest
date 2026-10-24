@@ -194,8 +194,22 @@ describe('what the player is shown', () => {
 
   it('describes the real readings from the content', () => {
     const desk = deskFor(5);
-    expect(desk.seen(at(desk, 'knee'))).toBe("At 18 km/h lactate jumps to 4.0 mmol/L, its steepest rise so far.");
+    // The player meets the readings left to right: with the glitches before the knee taken out, it is a steep rise
+    const knee = at(desk, 'knee');
+    desk.suspects.forEach((s, i) => {
+      if (!s.real && s.place.type === 'stage' && s.place.index < desk.suspects[knee]!.place.index) desk.decide(i, true);
+    });
+    expect(desk.seen(knee)).toBe("At 18 km/h lactate jumps to 4.0 mmol/L, its steepest rise so far.");
     expect(desk.seen(at(desk, 'peak'))).toBe('The last stage reads 9.1 mmol/L, the highest reading of the test.');
+  });
+
+  it('only calls the knee the steepest rise when the file as the player left it rises that way', () => {
+    // A contaminated reading kept at 17 km/h (6.2) leaves 18 km/h (4.0) as a fall: the lens then just says what it reads
+    const desk = findDesk(d => d.suspects.some(s => s.kind === 'contaminated' && s.place.index === 3));
+    const c = at(desk, 'contaminated');
+    desk.decide(c, false); // kept: the glitch stays in the file
+    expect(desk.seen(at(desk, 'knee'))).toBe('At 18 km/h lactate reads 4.0 mmol/L. The stages either side read 6.2 and 6.3.');
+    expect(content.kneePlain).toBe('At {kmh} km/h lactate reads {value} mmol/L. The stages either side read {before} and {after}.');
   });
 
   it('shows the lens as the suspect plus the readings around it, with an IF REMOVED line that skips the suspect', () => {

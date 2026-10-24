@@ -22,8 +22,8 @@ export interface RoomHost {
   input: Input;
   dialogue: DialogueSystem;
   /**
-   * A coach line in the dialogue box. B quits the room (nothing recorded) unless options give the line an
-   * exitLabel of '' and the room handles it; the hint says QUIT by default.
+   * A coach line in the dialogue box. B on it quits the room (nothing recorded); the hint says QUIT by default.
+   * For a question where B must not quit (a LEAVE? / STAY question), use dialogue.show with its own onCancel.
    */
   say(text: string, choices?: string[], onDone?: (choice?: number) => void, options?: DialogueOptions): void;
   /** Several lines in a row (B on any of them quits the room). options.nextLabel names A on the last one. */

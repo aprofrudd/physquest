@@ -7,9 +7,26 @@ import { saveGame } from './SaveSystem';
 import type { GameState } from '../state/GameState';
 import type { DialogueSystem } from './Dialogue';
 import { sfx } from '../audio/Sfx';
+import { announce } from '../ui/announce';
 
 type Option = 'resume' | 'save' | 'sound' | 'quit';
 const OPTIONS: readonly Option[] = ['resume', 'save', 'sound', 'quit'];
+
+/** What a screen reader hears for an option. */
+const spokenOption = (opt: Option): string => {
+  switch (opt) {
+    case 'resume': return 'Resume';
+    case 'save': return 'Save game';
+    case 'sound': return sfx.isMuted() ? 'Sound off' : 'Sound on';
+    case 'quit': return 'Quit to title';
+  }
+};
+
+// The second step when quitting would lose work: STAY is first, so a hasty A changes nothing
+type ConfirmOption = 'stay' | 'quit';
+const CONFIRM_OPTIONS: readonly ConfirmOption[] = ['stay', 'quit'];
+const CONFIRM_LABEL: Record<ConfirmOption, string> = { stay: 'STAY', quit: 'QUIT TO TITLE' };
+const CONFIRM_HINT = '{A}: CHOOSE   {B}: STAY';
 
 const optionLabel = (opt: Option): string => {
   switch (opt) {
@@ -51,22 +68,35 @@ export const createPauseMenu = (
   dialogue: DialogueSystem,
   onOpen?: () => void,
   name: ButtonLabel = consoleLabel, // button names for prompts (see Input.label)
+  /** A warning when quitting now would lose work (e.g. a room half done), or null to quit straight away. */
+  quitWarning: () => string | null = () => null,
 ): PauseMenu => {
   let active = false;
   let selectedIndex = 0;
   let flashText = '';
   let flashTimer = 0;
+  let warning: string | null = null; // set while the menu asks before quitting
 
   const open = () => {
     active = true;
     selectedIndex = 0;
     flashTimer = 0;
+    warning = null;
     onOpen?.();
     sfx.play('pause');
+    announce(`Paused. ${OPTIONS.map(spokenOption).join(', ')}.`);
   };
 
   const close = () => {
     active = false;
+    warning = null;
+  };
+
+  const quit = () => {
+    saveGame(gameState);
+    close();
+    dialogue.reset();
+    sceneManager.switchTo('title');
   };
 
   const choose = (opt: Option) => {
@@ -80,18 +110,48 @@ export const createPauseMenu = (
         flashText = ok ? 'SAVED!' : 'CANNOT SAVE';
         flashTimer = 1.5;
         sfx.play(ok ? 'save' : 'wrong');
+        announce(ok ? 'Saved.' : 'Cannot save.');
         break;
       }
       case 'sound':
         sfx.toggleMuted();
         sfx.play('select'); // silent when just muted, audible when just unmuted
+        announce(spokenOption('sound'));
         break;
       case 'quit':
-        saveGame(gameState);
-        close();
-        dialogue.reset();
-        sceneManager.switchTo('title');
+        warning = quitWarning();
+        if (!warning) {
+          quit();
+          break;
+        }
+        selectedIndex = 0; // STAY
+        sfx.play('wrong');
+        announce(`Quit to title? ${warning} Stay, or quit to title.`);
         break;
+    }
+  };
+
+  /** The second step before quitting: STAY goes back to the menu, QUIT TO TITLE quits. */
+  const handleConfirm = (inp: InputState) => {
+    if (inp.startPressed || inp.bPressed) {
+      warning = null;
+      selectedIndex = OPTIONS.indexOf('quit');
+      sfx.play('back');
+      return;
+    }
+    if (inp.upPressed || inp.downPressed) {
+      selectedIndex = 1 - selectedIndex;
+      sfx.play('blip');
+      announce(CONFIRM_OPTIONS[selectedIndex] === 'stay' ? 'Stay' : 'Quit to title');
+    }
+    if (inp.aPressed) {
+      if (CONFIRM_OPTIONS[selectedIndex] === 'quit') {
+        quit();
+      } else {
+        warning = null;
+        selectedIndex = OPTIONS.indexOf('quit');
+        sfx.play('back');
+      }
     }
   };
 
@@ -111,6 +171,11 @@ export const createPauseMenu = (
 
       if (flashTimer > 0) flashTimer -= dt;
 
+      if (warning) {
+        handleConfirm(inp);
+        return true;
+      }
+
       if (inp.startPressed || inp.bPressed) {
         close();
         sfx.play('back');
@@ -119,10 +184,12 @@ export const createPauseMenu = (
       if (inp.upPressed) {
         selectedIndex = (selectedIndex - 1 + OPTIONS.length) % OPTIONS.length;
         sfx.play('blip');
+        announce(spokenOption(OPTIONS[selectedIndex]!));
       }
       if (inp.downPressed) {
         selectedIndex = (selectedIndex + 1) % OPTIONS.length;
         sfx.play('blip');
+        announce(spokenOption(OPTIONS[selectedIndex]!));
       }
       if (inp.aPressed) {
         const opt = OPTIONS[selectedIndex];
@@ -146,9 +213,28 @@ export const createPauseMenu = (
       drawPokemonBox(ctx, boxX, boxY, boxW, boxH);
 
       // Header
-      const header = 'PAUSED';
+      const header = warning ? 'QUIT?' : 'PAUSED';
       const headerW = measureText(header, 2);
       drawText(ctx, header, (GAME_W - headerW) / 2, boxY + 8, '#080808', 2);
+
+      // Asking before quitting: the warning, then STAY / QUIT TO TITLE in the options' place
+      if (warning) {
+        drawText(ctx, warning, (GAME_W - measureText(warning)) / 2, boxY + OPTIONS_Y, '#303030');
+        const labels = CONFIRM_OPTIONS.map(o => CONFIRM_LABEL[o]);
+        const labelsW = Math.max(...labels.map(l => measureText(l)));
+        const cursorX = Math.floor(boxX + (boxW - (CHAR_W + 4 + labelsW)) / 2);
+        for (let i = 0; i < labels.length; i++) {
+          const isSelected = i === selectedIndex;
+          const y = boxY + OPTIONS_Y + (i + 1.5) * OPTION_PITCH;
+          if (isSelected) drawText(ctx, '>', cursorX, y, '#080808');
+          drawText(ctx, labels[i]!, cursorX + CHAR_W + 4, y, isSelected ? '#080808' : '#606060');
+        }
+        ctx.fillStyle = '#a0a0a0';
+        ctx.fillRect(boxX + 12, boxY + RULE_Y, boxW - 24, 1);
+        const hint = fillButtonNames(CONFIRM_HINT, name);
+        drawText(ctx, hint, (GAME_W - measureText(hint)) / 2, boxY + HINT_Y, '#303030');
+        return;
+      }
 
       // Options: a cursor column with a gap, the block centred in the box
       const labels = OPTIONS.map(optionLabel);

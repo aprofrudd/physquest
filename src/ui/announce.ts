@@ -6,6 +6,9 @@ let lastText = '';
 let lastAt = -Infinity;
 let pending = 0;
 let queued = ''; // lines waiting to be read together
+let queuedAt = -Infinity;
+// Calls this close together come from one game step (a step is 16.7 ms): a dialogue line and a room's own note
+const SAME_STEP_MS = 8;
 
 const getRegion = (): HTMLElement | null => {
   if (region) return region;
@@ -31,7 +34,8 @@ const getRegion = (): HTMLElement | null => {
 
 /**
  * Announce a line of game text to screen readers. An identical line within 250ms is skipped (one event
- * reported twice), but a prompt that genuinely appears again is read again.
+ * reported twice), but a prompt that genuinely appears again is read again. Lines from the same game step are
+ * read together.
  */
 export const announce = (text: string): void => {
   if (!text) return;
@@ -41,8 +45,15 @@ export const announce = (text: string): void => {
   lastAt = now;
   const el = getRegion();
   if (!el) return;
-  // Lines said at the same moment (a dialogue line and a room's own note) are read together, never dropped
-  queued = queued ? `${queued} ${text}` : text;
+  // Lines said in the same step are read together, never dropped (and never twice); a later line replaces one still
+  // waiting, so typing a name reads the name so far rather than every letter
+  if (queued && now - queuedAt < SAME_STEP_MS) {
+    if (text.includes(queued)) queued = text;
+    else if (!queued.includes(text)) queued = `${queued} ${text}`;
+  } else {
+    queued = text;
+  }
+  queuedAt = now;
   // Clearing first makes screen readers treat a repeat of the previous line as new content
   el.textContent = '';
   window.clearTimeout(pending);

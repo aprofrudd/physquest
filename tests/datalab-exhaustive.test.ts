@@ -40,7 +40,14 @@ const fill = (template: string, values: Record<string, string>): string => templ
 /** What the software should say about suspect `i` of `desk`, rebuilt from the file as it stands. */
 const expectedSeen = (desk: TraceDesk, i: number): string => {
   const s = desk.suspects[i]!;
-  const template = content[s.kind].seen;
+  let template = content[s.kind].seen;
+  if (s.kind === 'knee') {
+    // the content's knee line claims the steepest rise so far: true only if the readings still in the file rise that way
+    const upTo = desk.stages.filter((st, k) => st.present && k <= s.place.index).map(st => st.mmol);
+    const rises = upTo.slice(1).map((v, j) => v - upTo[j]!);
+    const last = rises[rises.length - 1];
+    if (last === undefined || last <= 0 || rises.slice(0, -1).some(r => r >= last)) template = content.kneePlain;
+  }
   if (s.place.type === 'sprint') {
     const run = desk.sprints[s.place.index]!;
     const others = desk.sprints.filter((x, k) => k !== s.place.index && x.present).map(x => x.time.toFixed(2));

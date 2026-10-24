@@ -285,7 +285,9 @@ export const objectivesSummary = (state: GameState, closeName = 'SELECT'): strin
       : roomUnlocked(state, k) ? 'not done' : 'locked';
     return `${ROOM_LABEL[k]} raises ${STAT_NAME[ROOM_STAT[k]].toLowerCase()}, ${status}`;
   }).join('. ');
-  return `Objectives. Coach ${state.playerName}. ${levelLine(state)}. ${rooms}. ${objectivesHint(state)}. ${closeName} closes.`;
+  const hint = objectivesHint(state);
+  const hintEnd = /[.!?]$/.test(hint) ? '' : '.';
+  return `Objectives. Coach ${state.playerName}. ${levelLine(state)}. ${rooms}. ${hint}${hintEnd} ${closeName} closes.`;
 };
 
 /** `footer` is the close hint in the player's button names, e.g. "SELECT: CLOSE". */

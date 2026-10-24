@@ -51,7 +51,7 @@ export const createRoomChallengeScene = (
   dialogue: DialogueSystem,
   onComplete: () => void,
   pauseMenu: PauseMenu,
-): Scene & { setRoom(room: string): void; debug(): unknown } => {
+): Scene & { setRoom(room: string): void; debug(): unknown; inProgress(): boolean } => {
   let phase: ChallengePhase = 'intro';
   let roomType: RoomType = 'room1';
   let roomKey: RoomKey = 'testSelection';
@@ -62,7 +62,7 @@ export const createRoomChallengeScene = (
   let headerText = '';
   let instrument: RoomInstrument | null = null; // a redesigned room runs the challenge instead of the lists below
   let clock = 0; // seconds since the room opened, for the background's animation
-  const rulesRead = new Set<RoomType>(); // rooms whose full rules have been read this session (short rules after)
+  const rulesRead = new Set<string>(); // `${level}:${room}` whose full rules have been read this session (short rules after)
 
   /** The room is finished: back to the hub outside this room's door. */
   const finish = () => {
@@ -140,7 +140,7 @@ export const createRoomChallengeScene = (
   /** What a redesigned room is given to run the challenge (see rooms/types.ts). */
   const makeHost = (): RoomHost => {
     let done = false;
-    const room = roomType;
+    const seenKey = `${gameState.currentLevel}:${roomType}`;
     return {
       sport,
       level: gameState.currentLevel,
@@ -157,9 +157,9 @@ export const createRoomChallengeScene = (
         variableAccuracy = result.variableAccuracy;
         completeRoom();
       },
-      firstVisit: !rulesRead.has(room),
+      firstVisit: !rulesRead.has(seenKey),
       rulesRead: () => {
-        rulesRead.add(room);
+        rulesRead.add(seenKey);
       },
       replay: wasComplete,
     };
@@ -388,6 +388,11 @@ export const createRoomChallengeScene = (
 
     debug() {
       return instrument?.debug?.() ?? null;
+    },
+
+    /** The room is not finished yet: leaving now would lose what was done in it. */
+    inProgress() {
+      return phase !== 'complete';
     },
   };
 };

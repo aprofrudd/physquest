@@ -51,7 +51,9 @@ const TONE_COLOR: Readonly<Record<Tone, string>> = {
 
 const HINT_PLAN = '{DPAD}: PLAN   {A}: NEXT   {B}: QUIT';
 const HINT_GO = '{DPAD}: PLAN   {A}: RUN   {B}: QUIT';
-const HINT_RUN = 'HOLD {A}: FAST-FORWARD';
+const HINT_RUN = 'HOLD {A}: FAST-FORWARD   {B}: QUIT';
+// Said once when the board first appears: the board itself only shows how to use it
+const BOARD_HELP = '{LEFT} and {RIGHT} choose a day, {UP} and {DOWN} its session, {A} goes to the next day.';
 
 interface Score {
   dataQuality: number;
@@ -155,7 +157,8 @@ export const createTrainingInstrument = (host: RoomHost, rng: () => number = Mat
     host.input.blockRepeats();
     if (first) {
       const away = planner.away;
-      announce(away === null ? 'Plan the week.' : `Plan the week. ${DAY_NAMES[away]} is an away day.`);
+      const opening = away === null ? 'Plan the week.' : `Plan the week. ${DAY_NAMES[away]} is an away day.`;
+      announce(`${opening} ${host.input.fill(BOARD_HELP)}`);
     }
     changed();
   };
@@ -195,13 +198,27 @@ export const createTrainingInstrument = (host: RoomHost, rng: () => number = Mat
 
   const askToRun = () => {
     stage = 'asking';
+    // With a key session missing NO comes first, so mashing A cannot run an unfinished week
+    const options = planner.missing().length > 0 ? ['NO', 'YES'] : ['YES', 'NO'];
     host.dialogue.show(
       runQuestion(planner.missing()),
-      ['YES', 'NO'],
-      choice => (choice === 0 ? startRun() : beginPlan()),
+      options,
+      choice => (options[choice ?? 0] === 'YES' ? startRun() : beginPlan()),
       beginPlan,
       { exitLabel: 'NO' },
     );
+  };
+
+  /** B while the week plays: ask before throwing it away. B again (or STAY) carries on where it stopped. */
+  const resumeRun = () => {
+    stage = 'run';
+    host.input.blockRepeats();
+  };
+  const leaveRun = () => {
+    stage = 'asking';
+    host.dialogue.show('Leave now? This week will be lost.', ['STAY', 'LEAVE'], choice => (choice === 1 ? host.quit() : resumeRun()), resumeRun, {
+      exitLabel: 'STAY',
+    });
   };
 
   const finish = () => {
@@ -311,8 +328,12 @@ export const createTrainingInstrument = (host: RoomHost, rng: () => number = Mat
     }
   };
 
-  const updateRun = (dt: number, inp: InputState) => {
-    if (!run) return;
+  const updateRun = (dt: number, inp: InputState, busy: boolean) => {
+    if (!run || busy) return; // the week waits while a line is up (and the press that closed it is used up)
+    if (inp.bPressed) {
+      leaveRun();
+      return;
+    }
     run.update(dt, inp.a);
     if (run.day !== reportedDay && run.daysDone < DAY_COUNT) {
       reportedDay = run.day;
@@ -427,7 +448,7 @@ export const createTrainingInstrument = (host: RoomHost, rng: () => number = Mat
       clock += dt;
       lock = Math.max(0, lock - dt);
       if (stage === 'plan') updatePlan(dt, inp, busy);
-      else if (stage === 'run') updateRun(dt, inp);
+      else if (stage === 'run') updateRun(dt, inp, busy);
       refreshFocus();
       // The track slides past at the pace of what the athlete is doing (and holds still under reduced motion)
       if (!prefersReducedMotion()) trackScroll = (trackScroll + gaitFor(focus.style, focus.phase).scroll * dt) % TRACK_SPACING;

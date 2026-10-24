@@ -81,6 +81,7 @@ export const RUNNING: RoomsContent = {
       seen: 'At {kmh} km/h lactate jumps to {value} mmol/L, its steepest rise so far.',
       why: 'Real: above her second threshold lactate climbs faster and faster, and the next stages keep rising.',
     },
+    kneePlain: 'At {kmh} km/h lactate reads {value} mmol/L. The stages either side read {before} and {after}.',
     peak: {
       seen: 'The last stage reads {value} mmol/L, the highest reading of the test.',
       why: 'Real: lactate is highest at the end of a maximal test, and the stages before it were already climbing.',

@@ -142,12 +142,15 @@ const planWeek = (rig: Rig, chips: string[]) => {
   }
 };
 
+/** Answer YES to "Run the week?" (NO comes first while a key session is missing). */
+const answerYes = (rig: Rig) => rig.answer(rig.last().choices!.indexOf('YES'));
+
 /** Plan, answer YES and play the week through to the first debrief line. */
 const playWeek = (rig: Rig, chips: string[]) => {
   planWeek(rig, chips);
   tap(rig, 'aPressed'); // on GO
   expect(rig.last().text).toMatch(/Run the week\?$/);
-  rig.answer(0);
+  answerYes(rig);
   step(rig, 12);
 };
 
@@ -343,8 +346,10 @@ describe('running the week', () => {
     tap(rig, 'aPressed');
     const q = rig.last();
     expect(q.text).toBe('No SUB session yet. No SUPR session yet. No SPRT session yet. Run the week?');
-    expect(q.choices).toEqual(['YES', 'NO']);
+    expect(q.choices).toEqual(['NO', 'YES']); // NO first, so mashing A cannot run an unfinished week
     expect(q.options?.exitLabel).toBe('NO');
+    rig.answer(0);
+    expect(rig.state().phase).toBe('plan');
   });
 
   it('asks the plain question when every key session has a day', () => {
@@ -352,6 +357,7 @@ describe('running the week', () => {
     planWeek(rig, PERFECT[rig.state().away]!);
     tap(rig, 'aPressed');
     expect(rig.last().text).toBe('Run the week?');
+    expect(rig.last().choices).toEqual(['YES', 'NO']);
   });
 
   it('goes back to the board on NO, and on B', () => {
@@ -407,14 +413,40 @@ describe('running the week', () => {
     expect(rig.state().daysDone).toBe(0);
   });
 
-  it('does nothing on B during the run', () => {
+  it('asks before B leaves during the run; STAY (or B again) carries on where the week stopped', () => {
     const rig = openPlan();
     planWeek(rig, PERFECT[rig.state().away]!);
     tap(rig, 'aPressed');
     rig.answer(0);
-    step(rig, 0.8, keys('bPressed'));
-    expect(rig.quits()).toBe(0);
+    step(rig, 1.3);
+    const done = rig.state().daysDone;
+    tap(rig, 'bPressed');
+    expect(rig.last().text).toBe('Leave now? This week will be lost.');
+    expect(rig.last().choices).toEqual(['STAY', 'LEAVE']);
+    expect(rig.last().options?.exitLabel).toBe('STAY');
+    expect(rig.state().phase).toBe('asking');
+    rig.answer(0); // STAY
     expect(rig.state().phase).toBe('run');
+    expect(rig.state().daysDone).toBe(done);
+    tap(rig, 'bPressed');
+    rig.cancel(); // B again: stay
+    expect(rig.state().phase).toBe('run');
+    expect(rig.quits()).toBe(0);
+    tap(rig, 'bPressed');
+    rig.answer(1); // LEAVE
+    expect(rig.quits()).toBe(1);
+    expect(rig.completed).toHaveLength(0);
+  });
+
+  it('stops the week while the leave question is up', () => {
+    const rig = openPlan();
+    planWeek(rig, PERFECT[rig.state().away]!);
+    tap(rig, 'aPressed');
+    rig.answer(0);
+    tap(rig, 'bPressed');
+    const before = rig.state().runProgress;
+    step(rig, 3);
+    expect(rig.state().runProgress).toBe(before);
   });
 });
 
@@ -524,7 +556,9 @@ describe('what screen readers hear', () => {
   it('says who is away when the board opens', () => {
     const rig = openPlan();
     const away = rig.state().away as number;
-    expect(spoken()).toContain(`Plan the week. ${['Monday', 'Tuesday', 'Wednesday', 'Thursday'][away]} is an away day.`);
+    const opening = `Plan the week. ${['Monday', 'Tuesday', 'Wednesday', 'Thursday'][away]} is an away day.`;
+    // then how to use the board, which is otherwise only visible (this host leaves the button tokens unfilled)
+    expect(spoken()).toContain(`${opening} {LEFT} and {RIGHT} choose a day, {UP} and {DOWN} its session, {A} goes to the next day.`);
   });
 
   it('reads the day under the cursor once it has rested for a moment', () => {
@@ -578,7 +612,7 @@ describe('what screen readers hear', () => {
     // One session on Monday and every other free day left empty
     planWeek(rig, ['SUB', '--', '--', '--', '--', '--', '--'].map((chip, d) => (d === away ? 'AWAY' : chip)));
     tap(rig, 'aPressed');
-    rig.answer(0);
+    answerYes(rig);
     vi.mocked(announce).mockClear();
     step(rig, 8.6);
     const lines = spoken();
@@ -588,7 +622,8 @@ describe('what screen readers hear', () => {
 });
 
 describe('random play', () => {
-  const BUTTONS: (keyof InputState)[] = ['upRepeat', 'downRepeat', 'leftRepeat', 'rightRepeat', 'aPressed', 'bPressed', 'a', 'startPressed'];
+  // B is pressed rarely: it now asks to leave even during the week, and a mashed B would never let a week finish
+  const BUTTONS: (keyof InputState)[] = ['upRepeat', 'downRepeat', 'leftRepeat', 'rightRepeat', 'aPressed', 'a', 'startPressed'];
   const PHASES = ['brief', 'plan', 'asking', 'run', 'debrief', 'done'];
 
   it('never throws, never records twice and keeps the cursor on the board, whatever is pressed and answered', () => {
@@ -608,6 +643,7 @@ describe('random play', () => {
           else top.onComplete?.(top.choices ? Math.floor(rng() * top.choices.length) : undefined);
         }
         const pressed = BUTTONS.filter(() => rng() < 0.08);
+        if (rng() < 0.004) pressed.push('bPressed');
         room.update(1 / 60, rng() < 0.2 ? keys(...pressed, 'a') : keys(...pressed), h.shown.length > answered);
         // The invariants are collected, not asserted a million times (expect is slow in a loop this long)
         if (step % 10 === 0) {

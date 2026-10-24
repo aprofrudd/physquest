@@ -87,6 +87,8 @@ export interface DataLabContent {
   misfire: SuspectText;
   /** Real readings the software flags too. */
   knee: SuspectText; // the steepest rise so far, at the second threshold
+  /** What the lens says at the knee when the player's own file no longer rises most steeply into it (a kept glitch). */
+  kneePlain: string;
   peak: SuspectText; // the last stage, the highest reading
   /** How-to pages for the first visit, and the one line after. */
   rules: readonly string[];

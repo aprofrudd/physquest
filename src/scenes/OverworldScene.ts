@@ -126,7 +126,8 @@ export const createOverworldScene = (
       showBanner(lines, mapId === 'hub' ? 'bottom' : 'top', toDo ? BANNER_TIME_LONG : BANNER_TIME);
     }
     const described = map.describe ? `${map.name}. ${map.describe}` : map.name;
-    announce(withBanner && toDo ? `${described} ${input.fill(TALK_HINT)}` : described);
+    const ended = /[.!?]$/.test(described) ? described : `${described}.`;
+    announce(withBanner && toDo ? `${ended} ${input.fill(TALK_HINT)}` : described);
   };
 
   const hubSpawn = (door: HubDoor | null): Spawn => (door ? HUB_RETURN[door] : HUB_START);

@@ -321,6 +321,8 @@ export const createDataRoom = (host: RoomHost, rng: Rng = Math.random): RoomInst
     notice = '';
     noticeLeft = 0;
     rest = 0;
+    // Locking in cannot be undone: arriving on the row starts the decision lock, so a quick A cannot commit unseen
+    if (cursor === desk.rows().length) lock = Math.max(lock, DECISION_LOCK);
     sfx.play('blip');
     refreshPin();
   };
@@ -336,13 +338,18 @@ export const createDataRoom = (host: RoomHost, rng: Rng = Math.random): RoomInst
       return;
     }
     sfx.play(result === 'pinned' ? 'select' : 'back');
-    if (result === 'pinned' && desk.canLock()) showNotice(host.input.fill(pinsPlacedLine(desk.pinLimit)));
+    const allPlaced = result === 'pinned' && desk.canLock();
+    if (allPlaced) showNotice(host.input.fill(pinsPlacedLine(desk.pinLimit)));
     else {
       notice = '';
       noticeLeft = 0;
       refreshPin();
     }
-    announce(`${result === 'pinned' ? 'Pinned' : 'Unpinned'}: ${row.shown}. ${desk.pins().length} of ${desk.pinLimit} pins used.`);
+    announce(
+      allPlaced
+        ? `Pinned: ${row.shown}. ${notice}`
+        : `${result === 'pinned' ? 'Pinned' : 'Unpinned'}: ${row.shown}. ${desk.pins().length} of ${desk.pinLimit} pins used.`,
+    );
     lock = 0.12;
   };
 

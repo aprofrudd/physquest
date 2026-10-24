@@ -143,6 +143,7 @@ const cleanPerfectly = (rig: Rig) => {
 const moveTo = (rig: Rig, row: number) => {
   for (let guard = 0; guard < 12 && rig.debug().cursor !== row; guard++) rig.press('down', 0.05);
   expect(rig.debug().cursor).toBe(row);
+  rig.wait(0.4); // a look at the row: LOCK IN, which cannot be undone, ignores A for 0.35 s after the cursor arrives
 };
 
 const toPin = (rig: Rig) => {
