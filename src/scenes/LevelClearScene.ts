@@ -176,7 +176,7 @@ export const createLevelClearScene = (
       CLOSING_LINES.forEach((line, i) => centred(ctx, line, 146 + i * 12, i === 0 ? pal.colors[0] : pal.colors[1]));
     } else {
       // Reached from the level select with no bout to report: no stats to show
-      centred(ctx, 'ALL 4 SPORTS CLEARED!', 60, pal.colors[1]);
+      centred(ctx, 'EVERY SPORT CLEARED!', 60, pal.colors[1]);
       CLOSING_LINES.forEach((line, i) => centred(ctx, line, 90 + i * 12, i === 0 ? pal.colors[0] : pal.colors[1]));
     }
   };

@@ -25,7 +25,7 @@ import { sfx } from './audio/Sfx';
 import { commitLevel, levelHasNewRooms, loadRooms, roomsFailed, roomsLoaded } from './rooms/loader';
 import { announce } from './ui/announce';
 import { newRoomsOn } from './rooms/preview';
-import { LEVELS } from './data/levels';
+import { LEVELS, allPlayableCleared } from './data/levels';
 
 // Scenes where the player is mid-level: auto-pause and auto-save when the app is backgrounded
 const IN_LEVEL: readonly SceneId[] = ['overworld', 'roomChallenge', 'bossBattle'];
@@ -152,7 +152,7 @@ export const startGame = (root: HTMLElement) => {
       if (result.won) {
         const wasComplete = gameState.gameComplete;
         gameState.bossDefeated[level] = true;
-        gameState.gameComplete = gameState.bossDefeated.every(Boolean);
+        gameState.gameComplete = allPlayableCleared(gameState.bossDefeated);
         clearActiveLevel(gameState); // a won level replays from scratch
         lastResult = { ...result, level, stats, outcome: gameState.gameComplete && !wasComplete ? 'complete' : 'win' };
       } else {

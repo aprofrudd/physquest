@@ -7,6 +7,7 @@ import {
   type GameState,
   type LevelProgress,
 } from '../state/GameState';
+import { allPlayableCleared } from '../data/levels';
 
 interface SaveDataV1 {
   version: 1;
@@ -88,7 +89,7 @@ export const loadSave = (): SaveData | null => {
         version: 2,
         playerName: cleanName(data.playerName),
         bossDefeated,
-        gameComplete: bossDefeated.every(Boolean),
+        gameComplete: allPlayableCleared(bossDefeated),
         currentLevel: 0,
         levelProgress: [null, null, null, null],
       };
@@ -100,7 +101,7 @@ export const loadSave = (): SaveData | null => {
       version: 2,
       playerName: cleanName(data.playerName),
       bossDefeated,
-      gameComplete: bossDefeated.every(Boolean),
+      gameComplete: allPlayableCleared(bossDefeated),
       currentLevel: level >= 0 && level < LEVEL_COUNT ? level : 0,
       levelProgress: padLevels(Array.isArray(v2.levelProgress) ? v2.levelProgress.map(sanitizeProgress) : [], null),
     };

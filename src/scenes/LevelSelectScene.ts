@@ -7,6 +7,7 @@ import { drawPokemonBox } from '../render/SpriteSheet';
 import { GAME_W, GAME_H } from '../render/DialogueBox';
 import { PALETTES } from '../render/Palettes';
 import { LEVEL_DATA } from '../data/sports';
+import { levelPlayable } from '../data/levels';
 import { sfx } from '../audio/Sfx';
 import { announce } from '../ui/announce';
 import { prefersReducedMotion } from '../render/motion';
@@ -30,6 +31,12 @@ const CLEAR_PLATE = '#1f7a30';
 const CLEAR_TEXT = '#f8f8f0';
 const ROOMS_PLATE = '#d0a830';
 const ROOMS_TEXT = '#080808';
+// Locked sports: a grey card (dark grey ink on it 5.6:1) with a dark plate (light text on it 9.7:1)
+const LOCKED_FILL = '#c8c8c0';
+const LOCKED_INK = '#454545';
+const LOCKED_PLATE = '#404040';
+const LOCKED_TEXT = '#f8f8f0';
+const LOCKED_LABEL = 'COMING SOON';
 
 const STAR = [
   '...#...',
@@ -99,13 +106,24 @@ export const createLevelSelectScene = (
   // What a screen reader hears for a card (the canvas itself is invisible to it)
   const describe = (level: number): string => {
     const sport = LEVEL_DATA[level]?.sport ?? `Level ${level + 1}`;
+    if (!levelPlayable(level)) return `${sport}, coming soon`;
     if (gameState.bossDefeated[level]) return `${sport}, cleared`;
     const done = roomsDone(level);
     return done === null ? `${sport}, not started` : `${sport}, ${done} of ${ROOM_KEYS.length} rooms done`;
   };
 
+  // The cursor only lands on playable sports; with nowhere else to go it stays put
   const moveSelection = (step: number) => {
-    selectedIndex = (selectedIndex + step + levelCount) % levelCount;
+    let next = selectedIndex;
+    for (let tries = 0; tries < levelCount; tries++) {
+      next = (next + step + levelCount) % levelCount;
+      if (levelPlayable(next)) break;
+    }
+    if (next === selectedIndex || !levelPlayable(next)) {
+      sfx.play('bump');
+      return;
+    }
+    selectedIndex = next;
     onMove();
     sfx.play('blip');
     announce(describe(selectedIndex));
@@ -118,13 +136,15 @@ export const createLevelSelectScene = (
       const current = Math.min(Math.max(gameState.currentLevel, 0), levelCount - 1);
       let first = -1;
       for (let i = 0; i < levelCount; i++) {
-        if (!gameState.bossDefeated[i]) {
+        if (levelPlayable(i) && !gameState.bossDefeated[i]) {
           first = i;
           break;
         }
       }
-      const inProgress = !!gameState.levelProgress[current] && !gameState.bossDefeated[current];
-      selectedIndex = inProgress ? current : first >= 0 ? first : current;
+      const inProgress = levelPlayable(current) && !!gameState.levelProgress[current] && !gameState.bossDefeated[current];
+      let fallback = current;
+      for (let i = 0; !levelPlayable(fallback) && i < levelCount; i++) fallback = i;
+      selectedIndex = inProgress ? current : first >= 0 ? first : fallback;
       enterTimer = 0;
       announce(`Select a sport. ${describe(selectedIndex)}`);
     },
@@ -136,7 +156,7 @@ export const createLevelSelectScene = (
       if (inp.upRepeat) moveSelection(-1);
       if (inp.downRepeat) moveSelection(1);
 
-      if ((inp.aPressed || inp.startPressed) && enterTimer >= ENTER_LOCK) {
+      if ((inp.aPressed || inp.startPressed) && enterTimer >= ENTER_LOCK && levelPlayable(selectedIndex)) {
         sfx.play('select');
         onSelectLevel(selectedIndex);
         return;
@@ -194,9 +214,14 @@ export const createLevelSelectScene = (
         const isSelected = i === selectedIndex;
         const isComplete = gameState.bossDefeated[i] ?? false;
         const done = roomsDone(i);
+        const locked = !levelPlayable(i);
 
         // Card box: selected gets a gold frame, a pale-gold fill and a dark cursor
-        drawPokemonBox(ctx, CARD_X, y, CARD_W, CARD_H, isSelected ? pal.colors[5] : pal.colors[1]);
+        drawPokemonBox(ctx, CARD_X, y, CARD_W, CARD_H, isSelected ? pal.colors[5] : locked ? LOCKED_INK : pal.colors[1]);
+        if (locked) {
+          ctx.fillStyle = LOCKED_FILL;
+          ctx.fillRect(CARD_X + 4, y + 4, CARD_W - 8, CARD_H - 8);
+        }
         if (isSelected) {
           ctx.fillStyle = '#fff1c2';
           ctx.fillRect(CARD_X + 4, y + 4, CARD_W - 8, CARD_H - 8);
@@ -204,22 +229,22 @@ export const createLevelSelectScene = (
         }
 
         // Sport name
-        drawText(ctx, sport.sport, nameX, y + 7, '#080808', 2);
+        drawText(ctx, sport.sport, nameX, y + 7, locked ? LOCKED_INK : '#080808', 2);
 
         // Badge: bottom-right, on the athlete line, so it can never sit over the sport name
         let badgeX = CARD_X + CARD_W - 8;
-        if (isComplete || done !== null) {
-          const label = isComplete ? 'CLEAR' : `ROOMS ${done}/${ROOM_KEYS.length}`;
+        if (locked || isComplete || done !== null) {
+          const label = locked ? LOCKED_LABEL : isComplete ? 'CLEAR' : `ROOMS ${done}/${ROOM_KEYS.length}`;
           const plateW = measureText(label) - 1 + 6;
           badgeX = CARD_X + CARD_W - 8 - plateW;
-          ctx.fillStyle = isComplete ? CLEAR_PLATE : ROOMS_PLATE;
+          ctx.fillStyle = locked ? LOCKED_PLATE : isComplete ? CLEAR_PLATE : ROOMS_PLATE;
           ctx.fillRect(badgeX, y + 24, plateW, 9);
-          drawText(ctx, label, badgeX + 3, y + 25, isComplete ? CLEAR_TEXT : ROOMS_TEXT);
+          drawText(ctx, label, badgeX + 3, y + 25, locked ? LOCKED_TEXT : isComplete ? CLEAR_TEXT : ROOMS_TEXT);
         }
 
         // Athlete line, shortened if it would run into the badge
         const athlete = fitText(athleteLabel(sport.athleteProfile), badgeX - 6 - nameX);
-        drawText(ctx, athlete, nameX, y + 25, pal.colors[1]);
+        drawText(ctx, athlete, nameX, y + 25, locked ? LOCKED_INK : pal.colors[1]);
       }
 
       // Footer prompt, in the player's button names; a cleared sport is replayed rather than played

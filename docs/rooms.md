@@ -8,6 +8,8 @@ Each room awards a **player stat** (0 to 100%) based on performance. The stats c
 
 **Distance Running** (level 4) plays the **redesigned rooms**: four different places, each with its own task (see "Redesigned rooms" below). The other levels play the **classic rooms** (a question and a choice list over the dimmed room). A browser can switch level 4 back to the classic rooms with `?rooms=classic` (remembered on that device; `?rooms=new` undoes it).
 
+For now **only Distance Running can be played** (`PLAYABLE_LEVELS` in `src/data/levels.ts`): the level select shows Rugby League, Cycling and Boxing greyed out as COMING SOON, the cursor skips them, and clearing Distance Running completes the game. Their classic rooms are still in the code, so a sport can be reopened by adding its index to `PLAYABLE_LEVELS`.
+
 Controls are console buttons (keyboard equivalents in brackets): D-pad (arrows/WASD) to move, A (Z/Space/Enter) to talk and confirm, B (X/Backspace) to go back and to run while held, START (Esc/P) for the pause menu, SELECT (Shift) for the objectives panel. Prompts name the buttons the player is using: console names after a touch or click on the console, key names (SPACE, X, ESC, SHIFT, ARROWS) after a key press; desktops start on key names. The title screen lists every control.
 
 Progress saves automatically after name entry, after every room and after every showdown (and from the pause menu, which says so). Unfinished levels keep their room progress, even when the player switches to another level.
