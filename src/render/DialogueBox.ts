@@ -17,6 +17,11 @@ const TEXT_Y = BOX_Y + 7;
 const ARROW_X = BOX_X + BOX_W - 16;
 const ARROW_Y = BOX_Y + BOX_H - 11; // the arrow bobs over rows 209..214: 1px clear of the 4th line and of the border
 const MAX_CHARS_PER_LINE = Math.floor((BOX_W - 20) / CHAR_W);
+// Speaker name tab: on the box's top edge at the left, TAB_RISE px above the box and the rest on its border
+// (the text starts below the border, so the tab never covers it). A choice list rises by TAB_RISE to clear it.
+const TAB_X = BOX_X + 8;
+const TAB_H = 11;
+const TAB_RISE = 6;
 const PAGE_LINES = 4;
 const FAST_TYPING = 3; // typing speed multiplier while A is held
 
@@ -39,19 +44,20 @@ const INK = '#080808';
 const INK_SOFT = '#303030';
 const PAPER = '#f8f8f0';
 
-// Pokemon-style double-line bordered box
+// Pokemon-style double-line bordered box; `ring` colours the inner border (a speaker's colour)
 const drawPokemonBox = (
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   w: number,
-  h: number
+  h: number,
+  ring: string = INK_SOFT,
 ) => {
   // Outer border (black)
   ctx.fillStyle = INK;
   ctx.fillRect(x, y, w, h);
-  // Inner border (dark)
-  ctx.fillStyle = INK_SOFT;
+  // Inner border (dark, or the speaker's colour)
+  ctx.fillStyle = ring;
   ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
   // White interior
   ctx.fillStyle = PAPER;
@@ -74,8 +80,22 @@ const drawBouncingArrow = (
   ctx.fillRect(x + 3, ay + 3, 1, 1);
 };
 
+/**
+ * Who is talking. A line with a speaker gets a name tab on the box's top edge and a frame in the speaker's
+ * colour, and screen readers hear "Name: text". A line without one is the game itself (narration, rules,
+ * prompts, results): a plain box with no tab.
+ */
+export interface Speaker {
+  /** As spoken, e.g. 'Aisha', 'Dr Ellis'. The tab shows it in capitals. */
+  name: string;
+  /** Tab and frame colour; the name is drawn in white on it, so keep it dark enough (4.5:1 or more). */
+  color: string;
+}
+
 export interface DialogueState {
   active: boolean;
+  speaker: Speaker | null;
+  speakerLabel: string; // the speaker's name in capitals, for the tab ('' with no speaker)
   pages: string[][]; // wrapped lines, PAGE_LINES per page
   page: number;
   charIndex: number; // characters visible on the current page
@@ -101,10 +121,14 @@ export interface DialogueOptions {
   nextLabel?: string;
   /** Ignore A and B for this long after the dialogue opens. */
   lock?: number;
+  /** Who is talking (see Speaker); leave it out for narration and game text. */
+  speaker?: Speaker;
 }
 
 export const createDialogueState = (): DialogueState => ({
   active: false,
+  speaker: null,
+  speakerLabel: '',
   pages: [],
   page: 0,
   charIndex: 0,
@@ -125,6 +149,8 @@ export const createDialogueState = (): DialogueState => ({
 /** Close the dialogue and drop its pending callback. */
 export const clearDialogue = (state: DialogueState) => {
   state.active = false;
+  state.speaker = null;
+  state.speakerLabel = '';
   state.onComplete = null;
   state.onCancel = null;
   state.inputLock = 0;
@@ -228,8 +254,11 @@ export const startDialogue = (
   state.nextLabel = options?.nextLabel ?? 'NEXT';
   state.inputLock = options?.lock ?? 0;
   state.waitingForInput = false;
+  state.speaker = options?.speaker ?? null;
+  state.speakerLabel = state.speaker ? state.speaker.name.toUpperCase() : '';
   // Screen readers get the whole text at once, so a sentence that runs over to the next page is read in one piece
-  announce(state.pages.map(lines => lines.join(' ')).join(' '));
+  const said = state.pages.map(lines => lines.join(' ')).join(' ');
+  announce(state.speaker ? `${state.speaker.name}: ${said}` : said);
 };
 
 const finishPage = (state: DialogueState) => {
@@ -394,7 +423,8 @@ const drawChoicePanel = (ctx: CanvasRenderingContext2D, state: DialogueState) =>
   while (gap > 0 && tooTall(gap, boxGap)) gap--;
   if (tooTall(gap, boxGap)) boxGap = 0;
   const panelH = listHeight(rows, gap);
-  const panelY = BOX_Y - boxGap - panelH;
+  const rise = state.speaker ? TAB_RISE : 0;
+  const panelY = Math.max(CHOICE_MIN_Y, BOX_Y - boxGap - rise - panelH);
   drawPokemonBox(ctx, CHOICE_X, panelY, CHOICE_W, panelH);
   drawOptionRows(ctx, CHOICE_X, CHOICE_W, panelY, rows, state.selectedChoice, gap);
 };
@@ -461,6 +491,17 @@ export const drawPromptBox = (
   if (hint) drawBoxHint(ctx, hint);
 };
 
+/** The speaker's name tab on the dialogue box's top edge (1px black rim, the speaker's colour, white name). */
+export const drawSpeakerTab = (ctx: CanvasRenderingContext2D, label: string, color: string) => {
+  const w = measureText(label) - 1 + 8;
+  const y = BOX_Y - TAB_RISE;
+  ctx.fillStyle = INK;
+  ctx.fillRect(TAB_X, y, w, TAB_H);
+  ctx.fillStyle = color;
+  ctx.fillRect(TAB_X + 1, y + 1, w - 2, TAB_H - 2);
+  drawText(ctx, label, TAB_X + 4, y + 2, PAPER);
+};
+
 // A small tag hanging off the box's bottom edge naming what A and B do here. It sits below the 4th text
 // line and left of the advance arrow, half on the frame and half on the margin under the box.
 const drawHintTag = (ctx: CanvasRenderingContext2D, state: DialogueState, name: ButtonLabel) => {
@@ -479,8 +520,9 @@ export const renderDialogue = (
   const showChoices = choicesVisible(state);
   if (showChoices) drawChoicePanel(ctx, state);
 
-  // Main dialogue box
-  drawPokemonBox(ctx, BOX_X, BOX_Y, BOX_W, BOX_H);
+  // Main dialogue box: a speaker's line has their colour in the frame and their name on a tab
+  drawPokemonBox(ctx, BOX_X, BOX_Y, BOX_W, BOX_H, state.speaker?.color ?? INK_SOFT);
+  if (state.speaker) drawSpeakerTab(ctx, state.speakerLabel, state.speaker.color);
 
   // Draw text with typewriter effect — dark text on light background
   const lines = pageLines(state);

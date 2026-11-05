@@ -145,14 +145,20 @@ const setup = (options: { firstVisit?: boolean; seed?: number; content?: typeof 
 };
 
 describe('the brief', () => {
-  it('says the rules in two texts the first time, and the short rule on a repeat visit', () => {
+  it('walks through the board one element at a time the first time, and says the short rule on a repeat visit', () => {
     const first = setup({ firstVisit: true });
-    expect(first.said()).toBe(content.rules[0]!.replace(/\s+/g, ' '));
-    first.read();
-    first.tap('a');
-    expect(first.said()).toBe(content.rules[1]!);
-    expect(first.state().step).toBe('brief');
-    first.closeText();
+    // one page per element, in order: BEFORE, the noise band, the worthwhile change, then YOUR GUESS
+    expect(content.tour).toEqual(['before', 'noise', 'worth', 'guess']);
+    expect(content.rules).toHaveLength(content.tour.length);
+    const seen: (string | null)[] = [];
+    for (let i = 0; i < content.rules.length; i++) {
+      expect(first.said()).toBe(content.rules[i]!.replace(/\s+/g, ' '));
+      expect(first.state().step).toBe('brief');
+      seen.push((first.state() as unknown as { tour: string | null }).tour);
+      first.read();
+      first.tap('a');
+    }
+    expect(seen).toEqual(['before', 'noise', 'worth', 'guess']);
     expect(first.state().step).toBe('block');
 
     const again = setup({ firstVisit: false });
@@ -246,15 +252,15 @@ describe('the forecast', () => {
     const t = setup();
     t.toForecast();
     expect(t.log.blocked).toBeGreaterThan(0);
-    expect(t.state()).toMatchObject({ pin: 62, pinSteps: 0 });
+    expect(t.state()).toMatchObject({ pin: 72, pinSteps: 0, guess: 'YOUR GUESS 72.0 S' });
     t.forecast(8);
-    expect(t.state().pin).toBe(60.4);
+    expect(t.state()).toMatchObject({ pin: 70.4, guess: 'YOUR GUESS 70.4 S' });
     t.tap('left');
-    expect(t.state().pin).toBe(60.6);
+    expect(t.state()).toMatchObject({ pin: 70.6, guess: 'YOUR GUESS 70.6 S' });
     for (let i = 0; i < 40; i++) t.tap('right');
-    expect(t.state()).toMatchObject({ pin: 57, pinSteps: 25 });
+    expect(t.state()).toMatchObject({ pin: 67, pinSteps: 25 });
     for (let i = 0; i < 60; i++) t.tap('left');
-    expect(t.state()).toMatchObject({ pin: 65, pinSteps: -15 });
+    expect(t.state()).toMatchObject({ pin: 75, pinSteps: -15 });
   });
 
   it('speeds up while a direction is held', () => {
@@ -330,15 +336,30 @@ describe('after the forecast is locked', () => {
     expect(t.state()).toMatchObject({ phase: 'retest', forecastImprovement: 1.6, c1: 1 });
     t.untilStep('retest');
     for (let i = 0; i < 6 * 60 && !t.dialogue.state.active; i++) t.tick();
-    expect(t.said()).toBe('Retest: 60 s. You forecast 60.4 s. Off by 0.4: inside the error bars.');
+    expect(t.said()).toBe('Retest: 70 s. You forecast 70.4 s. Off by 0.4: inside the error bars.');
     t.read();
     t.tap('a');
     expect(t.state()).toMatchObject({ phase: 'verdict1', step: 'asking' });
     t.read();
-    expect(t.said()).toBe('Judge the result: 62 → 60 s.');
+    expect(t.said()).toBe('Her last 400 m retest: 72 → 70 s. Is that change noise, real but too small, or worth acting on?');
     expect(t.choices().sort()).toEqual([...content.verdicts].sort());
     // the list is the model's shuffle for this attempt
     expect(t.choices()).toEqual(t.state().options.trained.map(v => content.verdicts[VERDICTS.indexOf(v)]));
+  });
+
+  it('shows the verdicts as a normal choice list that ignores A for a moment', () => {
+    const t = setup();
+    t.toForecast();
+    t.forecast(8);
+    t.lockAndRead();
+    t.read();
+    expect(t.choices()).toHaveLength(3);
+    t.tap('a'); // straight away: ignored
+    expect(t.state().verdicts).toEqual([]);
+    expect(t.state().step).toBe('asking');
+    t.wait(0.4);
+    t.tap('a');
+    expect(t.state().verdicts).toHaveLength(1);
   });
 
   it('can skip the retest picture with A once its lock is over', () => {
@@ -393,7 +414,7 @@ describe('after the forecast is locked', () => {
     t.wait(0.4);
     t.tap('a'); // STAY
     t.read();
-    expect(t.said()).toBe('Judge the result: 62 → 60 s.');
+    expect(t.said()).toBe('Her last 400 m retest: 72 → 70 s. Is that change noise, real but too small, or worth acting on?');
     expect(t.choices()).toEqual(list);
   });
 
@@ -409,7 +430,7 @@ describe('after the forecast is locked', () => {
     t.tap('a');
     t.read();
     expect(t.dialogue.state.active).toBe(true);
-    expect(t.said()).toBe('Judge the result: 62 → 60 s.');
+    expect(t.said()).toBe('Her last 400 m retest: 72 → 70 s. Is that change noise, real but too small, or worth acting on?');
     expect(t.choices()).toEqual(list);
     expect(t.state().verdicts).toEqual([]);
     expect(t.state().step).toBe('asking');
@@ -427,7 +448,7 @@ describe('after the forecast is locked', () => {
       t.advance();
       t.untilStep('asking');
       t.read();
-      expect(t.said()).toBe('Judge the result: 65 → 67 ml/kg/min.');
+      expect(t.said()).toBe('Her VO2max retest: 58 → 60 ml/kg/min. Is that change noise, real but too small, or worth acting on?');
       t.pickByText('REAL BUT TOO SMALL TO MATTER');
       t.read();
       expect(t.said()).toBe('Right. It moved 2.0 ml/kg/min: beyond the typical error (1.5) but short of the smallest worthwhile change (3.0).');
@@ -550,7 +571,15 @@ describe('for a screen reader', () => {
     expect(lastTwo()[1]).toMatch(/^Not quite\. It moved 2\.0 s/);
   });
 
-  it('reads the forecast once the pin has rested, and not while it is moving', () => {
+  it('says the forecast question with the current value as the forecast starts', () => {
+    const t = setup();
+    vi.mocked(announce).mockClear();
+    t.toForecast();
+    const ask = content.forecastAsk.replace('{LEFT}', 'LEFT').replace('{RIGHT}', 'RIGHT').replace('{A}', 'A');
+    expect(heard()).toContain(`${ask} Your guess: 72.0 s, no change.`);
+  });
+
+  it('reads YOUR GUESS once it has rested, and not while it is moving', () => {
     const t = setup();
     t.toForecast();
     vi.mocked(announce).mockClear();
@@ -558,9 +587,9 @@ describe('for a screen reader', () => {
     t.wait(0.2);
     t.tap('right');
     t.wait(0.2);
-    expect(heard().filter(text => text.startsWith('Forecast'))).toEqual([]); // still moving
+    expect(heard().filter(text => text.startsWith('Your guess'))).toEqual([]); // still moving
     t.wait(0.5);
-    expect(heard().filter(text => text.startsWith('Forecast'))).toEqual(['Forecast 61.6 s, 0.4 better. Inside the noise band.']);
+    expect(heard().filter(text => text.startsWith('Your guess'))).toEqual(['Your guess: 71.6 s, 0.4 faster. Inside the noise band.']);
   });
 });
 

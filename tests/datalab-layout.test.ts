@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RUNNING } from '../src/rooms/content/running';
 import { createTraceDesk } from '../src/rooms/datalab/model';
-import { makeRig as makeRigBase, seeded, sport } from './datalab-rig';
+import { decideNow, makeRig as makeRigBase, moveTo, onward, seeded, sport, toReading } from './datalab-rig';
 
 interface Ink {
   text: string;
@@ -39,10 +39,11 @@ vi.mock('../src/audio/Sfx', () => ({ sfx: { play: () => {} } }));
 vi.mock('../src/ui/announce', () => ({ announce: () => {} }));
 
 const { LENS_BOX, lensPad, lensStaggers } = await import('../src/rooms/datalab/lens');
-const { PANEL } = await import('../src/rooms/datalab/views');
+const { CS_PENDING, LACTATE_AXIS, OPTIONS_TOP, PANEL, SPEED_AXIS, TRIAL_HEADS, TRIAL_UNITS, slotText } = await import('../src/rooms/datalab/views');
 
 const content = RUNNING.data;
 const GLYPH_H = 7;
+const BOTH_TESTS = ['Lactate Profile', 'Critical Speed Test'];
 
 const ctx = {
   get fillStyle() {
@@ -66,13 +67,13 @@ afterEach(() => vi.unstubAllGlobals());
 
 /** A room on seed `seed` (a short-rules replay), with a `look()` that draws it into the recorders. */
 const makeRig = (seed: number) => {
-  const rig = makeRigBase(seed);
+  const rig = makeRigBase(seed, { tests: BOTH_TESTS });
   /** What the panel shows right now. */
   const look = () => {
     inks.length = 0;
     shapes.length = 0;
     rig.render(ctx);
-    return { inks: inks.filter(i => i.y < 160), all: [...inks], shapes: [...shapes] };
+    return { inks: inks.filter(i => i.y < 162), all: [...inks], shapes: [...shapes] };
   };
   return { ...rig, look };
 };
@@ -124,11 +125,13 @@ const lint = (view: Look, where: string, withLens = false): string[] => {
 
 // ---- Every attempt, every state ----------------------------------------------------------------------------------
 
-/** One seed for each of the 20 distinct attempts (kinds x places x which sprint). */
+const BOTH = ['Lactate Profile', 'Critical Speed Test'];
+
+/** One seed for each distinct attempt (glitch kinds and places in the lactate file x which trial is mistimed). */
 const attemptSeeds = (): number[] => {
   const bySignature = new Map<string, number>();
-  for (let seed = 1; seed <= 400 && bySignature.size < 20; seed++) {
-    const desk = createTraceDesk(content, sport, seeded(seed));
+  for (let seed = 1; seed <= 400; seed++) {
+    const desk = createTraceDesk(content, sport, { tests: BOTH, rng: seeded(seed) });
     const signature = desk.suspects.map(s => `${s.kind}@${s.place.type}${s.place.index}`).join(' ');
     if (!bySignature.has(signature)) bySignature.set(signature, seed);
   }
@@ -139,107 +142,162 @@ type Strategy = 'perfect' | 'wrong' | 'remove' | 'keep';
 const removes = (strategy: Strategy, real: boolean): boolean =>
   strategy === 'perfect' ? !real : strategy === 'wrong' ? real : strategy === 'remove';
 
-/** Plays the clean-up to the pin list, linting every arrival and every verdict. Returns the pin-list rig and the problems found. */
+/** While a reading waits, the KEEP / REMOVE list covers the panel from OPTIONS_TOP down: nothing else may sit there. */
+const OPTION_WORDS = new Set<string>([...content.options, '>']);
+const lintDeciding = (view: Look, where: string): string[] => {
+  const panel = { ...view, inks: view.inks.filter(i => !OPTION_WORDS.has(i.text)) };
+  const problems = lint(panel, where, view.all.some(i => i.text === LACTATE_AXIS));
+  for (const ink of panel.inks) if (ink.y + GLYPH_H > OPTIONS_TOP) problems.push(`${where}: '${ink.text}' sits under the KEEP / REMOVE list (y ${ink.y})`);
+  for (const word of content.options) if (!view.all.some(i => i.text === word)) problems.push(`${where}: the option '${word}' is not drawn`);
+  return problems;
+};
+
+/** Plays the clean-up to the key-variable list, linting every arrival and every verdict. */
 const playCleanup = (seed: number, strategy: Strategy): { rig: Rig; problems: string[] } => {
   const rig = makeRig(seed);
   const problems: string[] = [];
-  rig.closeDialogue();
-  rig.wait(0.6);
+  toReading(rig);
   const { suspects } = rig.debug();
   suspects.forEach((s, i) => {
-    problems.push(...lint(rig.look(), `seed ${seed} ${strategy} suspect ${i + 1} (${s.kind}) arrives`, true));
-    rig.press(removes(strategy, s.real) ? 'a' : 'right', 0.9);
-    problems.push(...lint(rig.look(), `seed ${seed} ${strategy} suspect ${i + 1} (${s.kind}) decided`, true));
-    if (i < suspects.length - 1) rig.press('a', 0.5);
+    problems.push(...lintDeciding(rig.look(), `seed ${seed} ${strategy} reading ${i + 1} (${s.kind}) arrives`));
+    decideNow(rig, removes(strategy, s.real));
+    problems.push(...lint(rig.look(), `seed ${seed} ${strategy} reading ${i + 1} (${s.kind}) decided`, s.file === 'lactate'));
+    onward(rig);
   });
-  rig.press('a', 0.5); // on to the pin list
-  rig.closeDialogue();
-  rig.wait(0.6);
   return { rig, problems };
 };
 
 describe('the clean-up screen', () => {
   for (const strategy of ['perfect', 'wrong', 'remove', 'keep'] as const) {
-    it(`keeps every string clear of the border, of the others and of the lens's dots (${strategy} play, all 20 attempts)`, () => {
+    it(`keeps every string clear of the border, of the others, of the lens's dots and of the list (${strategy} play, every attempt)`, () => {
       const seeds = attemptSeeds();
-      expect(seeds.length).toBe(20);
+      expect(seeds.length).toBe(12);
       const problems: string[] = [];
       for (const seed of seeds) problems.push(...playCleanup(seed, strategy).problems);
       expect(problems.slice(0, 8)).toEqual([]);
     });
   }
 
-  it('looks back at decided suspects without breaking the layout', () => {
+  it('labels each file: its header plate, the chart axes with units, the table columns with units', () => {
+    const rig = makeRig(attemptSeeds()[0]!);
+    toReading(rig);
+    let words = rig.look().all.map(i => i.text);
+    expect(words).toContain('FILE 1/2: LACTATE PROFILE (TREADMILL)');
+    expect(words).toContain(LACTATE_AXIS);
+    expect(words).toContain(SPEED_AXIS);
+    expect(words.filter(w => /^\d+$/.test(w)).length).toBeGreaterThanOrEqual(7); // the stage speeds on their axis
+    const lactate = rig.debug().suspects.filter(s => s.file === 'lactate').length;
+    for (let i = 0; i < lactate; i++) {
+      decideNow(rig, false);
+      onward(rig);
+    }
+    words = rig.look().all.map(i => i.text);
+    expect(words).toContain('FILE 2/2: CRITICAL SPEED (TRACK TRIALS)');
+    for (const w of [...TRIAL_HEADS, ...TRIAL_UNITS, '1200 M', '2400 M', '3600 M', CS_PENDING]) expect(words, w).toContain(w);
+    expect(words).not.toContain(LACTATE_AXIS);
+    expect(words.some(w => /\/KM$/.test(w))).toBe(true);
+    // every number on the trials table carries its unit, or sits under a column that names it
+    for (const w of rig.look().inks.map(i => i.text).filter(x => /\d/.test(x))) expect(w, w).toMatch(/M$|\/KM|^\d+:\d\d$|FILE|KM\/H|MIN:S/);
+  });
+
+  it('marks the reading in question with a ?, and a decided one with KEPT or REMOVED (word and symbol)', () => {
+    const rig = makeRig(attemptSeeds()[0]!);
+    toReading(rig);
+    expect(rig.look().all.some(i => i.text === '?')).toBe(true);
+    decideNow(rig, true);
+    let words = rig.look().all.map(i => i.text);
+    expect(words).toContain('REMOVED');
+    expect(words).toContain('X');
+    onward(rig);
+    decideNow(rig, false);
+    words = rig.look().all.map(i => i.text);
+    expect(words).toContain('KEPT');
+    expect(words).toContain('✓');
+  });
+
+  it('looks back at decided readings without breaking the layout', () => {
     const problems: string[] = [];
     for (const seed of attemptSeeds()) {
       const rig = makeRig(seed);
-      rig.closeDialogue();
-      rig.wait(0.6);
-      const { suspects } = rig.debug();
-      suspects.forEach((s, i) => {
-        rig.press(s.real ? 'right' : 'a', 0.5);
-        if (i < suspects.length - 1) rig.press('a', 0.5);
+      toReading(rig);
+      const n = rig.debug().suspects.length;
+      rig.debug().suspects.forEach((s, i) => {
+        decideNow(rig, !s.real);
+        if (i < n - 1) onward(rig);
       });
-      for (let back = 1; back < suspects.length; back++) {
+      for (let back = 1; back < n; back++) {
         rig.press('left', 0.2);
-        problems.push(...lint(rig.look(), `seed ${seed} looking back ${back}`, true));
+        problems.push(...lint(rig.look(), `seed ${seed} looking back ${back}`, rig.debug().file === 'lactate'));
       }
     }
     expect(problems.slice(0, 8)).toEqual([]);
   });
 });
 
-describe('the pin screen', () => {
+describe('the key-variable screen', () => {
   for (const strategy of ['perfect', 'wrong', 'remove', 'keep'] as const) {
-    it(`keeps every string clear of the border and of the others on every row, pinned or not (${strategy} clean-up, all 20 attempts)`, () => {
+    it(`keeps every string clear of the border and of the others, chosen or not (${strategy} clean-up, every attempt)`, () => {
       const problems: string[] = [];
       for (const seed of attemptSeeds()) {
         const { rig, problems: found } = playCleanup(seed, strategy);
         problems.push(...found);
-        const rows = rig.debug().list.length;
-        for (let row = 0; row < rows; row++) {
-          problems.push(...lint(rig.look(), `seed ${seed} ${strategy} pin cursor on row ${row + 1}`));
+        const { list, pinLimit } = rig.debug();
+        const first = rig.look().all.map(i => i.text);
+        if (!first.includes(`KEY VARIABLES 0/${pinLimit}`)) problems.push(`seed ${seed}: no KEY VARIABLES 0/${pinLimit}`);
+        for (const head of [content.lactate.group, content.trials.group]) if (!first.includes(head)) problems.push(`seed ${seed}: no heading ${head}`);
+        for (let row = 0; row < list.length; row++) {
+          problems.push(...lint(rig.look(), `seed ${seed} ${strategy} cursor on row ${row + 1}`));
           rig.press('down', 0.5);
         }
-        // pin three (the first three rows), look at the pinned list, then the LOCK IN row
-        for (let row = 0; row < 3; row++) {
+        // choose as many as it takes (the first rows), look, then the LOCK IN row
+        for (let row = 0; row < pinLimit; row++) {
+          moveTo(rig, row);
           rig.press('a', 0.3);
-          rig.press('down', 0.5);
         }
-        problems.push(...lint(rig.look(), `seed ${seed} ${strategy} three pinned`));
-        rig.press('down', 0.5);
-        rig.press('down', 0.5);
+        const full = rig.look();
+        problems.push(...lint(full, `seed ${seed} ${strategy} all chosen`));
+        if (!full.all.some(i => i.text === `KEY VARIABLES ${pinLimit}/${pinLimit}`)) problems.push(`seed ${seed}: the count did not fill`);
+        moveTo(rig, list.length);
         problems.push(...lint(rig.look(), `seed ${seed} ${strategy} on LOCK IN`));
-        rig.press('a', 0.3); // lock in: the reveal lights each variable in turn
-        for (let line = 0; line < 8 && rig.talking(); line++) {
+        rig.press('a', 0.1);
+        rig.pick(1); // LOCK IN: the reveal lights each variable in turn
+        for (let line = 0; line < 10 && rig.talking(); line++) {
           problems.push(...lint(rig.look(), `seed ${seed} ${strategy} reveal line ${line + 1}`));
-          rig.press('a', 0.1); // finish the typing
-          rig.press('a', 0.3); // next line
+          rig.press('a', 0.1);
+          rig.press('a', 0.3);
         }
       }
       expect(problems.slice(0, 8)).toEqual([]);
     });
   }
+
+  it('fills a slot with the short name and the value with its unit', () => {
+    expect(slotText('LT2 Pace (3:34/km)')).toBe('LT2 3:34/KM');
+    expect(slotText('VO2max (58 ml/kg/min)')).toBe('VO2MAX 58 ML/KG/MIN');
+    expect(slotText('D Prime (140 m)')).toBe('DPRIME 140 M');
+    expect(slotText('HR at LT2 (176 bpm)')).toBe('HR LT2 176 BPM');
+    expect(slotText('Critical Speed (3:30/km)?')).toBe('CS 3:30/KM');
+  });
 });
 
 describe('the hint tag under the box', () => {
   it('names LEFT only where there is something to look back at, and the buttons that work', () => {
     const rig = makeRig(1);
-    rig.closeDialogue();
-    rig.wait(0.6);
-    const hint = () => rig.look().all.map(i => i.text).find(t => /^A: (REMOVE|NEXT|CONTINUE)/.test(t));
-    const { suspects } = rig.debug();
-    expect(hint()).toBe('A: REMOVE   RIGHT: KEEP   B: QUIT');
-    rig.press(suspects[0]!.real ? 'right' : 'a', 0.5);
+    toReading(rig);
+    const hint = () => rig.look().all.map(i => i.text).find(t => /^A: (CONFIRM|NEXT|CONTINUE)/.test(t));
+    const n = rig.debug().suspects.length;
+    expect(hint()).toBe('A: CONFIRM   B: QUIT');
+    decideNow(rig, false);
     expect(hint()).toBe('A: NEXT   B: QUIT'); // the first verdict: LEFT would do nothing
-    rig.press('a', 0.5);
-    rig.press(suspects[1]!.real ? 'right' : 'a', 0.5);
+    onward(rig);
+    expect(hint()).toBe('A: CONFIRM   LEFT: BACK   B: QUIT');
+    decideNow(rig, false);
     expect(hint()).toBe('A: NEXT   LEFT: BACK   B: QUIT');
-    for (let i = 2; i < suspects.length; i++) {
-      rig.press('a', 0.5);
-      rig.press(suspects[i]!.real ? 'right' : 'a', 0.5);
+    for (let i = 2; i < n; i++) {
+      onward(rig);
+      decideNow(rig, false);
     }
-    expect(hint()).toBe('A: CONTINUE   LEFT: BACK   B: QUIT'); // the last verdict leads on to the pin list
+    expect(hint()).toBe('A: CONTINUE   LEFT: BACK   B: QUIT'); // the last verdict leads on to the key variables
   });
 });
 
@@ -252,8 +310,8 @@ describe('the lens spread', () => {
   });
 
   it('keeps three or four values on one row, and a lone value too', () => {
-    expect(lensStaggers(3, FOUR)).toBe(false); // the sprint lens
-    expect(lensStaggers(4, THREE)).toBe(false);
+    expect(lensStaggers(3, FOUR)).toBe(false);
+    expect(lensStaggers(3, THREE)).toBe(false);
     expect(lensStaggers(1, THREE)).toBe(false);
   });
 

@@ -275,6 +275,15 @@ body {
   pointer-events: none;
 }
 
+/* On phones and tablets the glow holds still: an endless animation keeps the compositor drawing 60 frames a second
+   even while the game screen is unchanged (see the game loop's frame skipping) */
+@media (pointer: coarse) {
+  .pq-led i::after {
+    animation: none;
+    opacity: 0.85;
+  }
+}
+
 @keyframes pq-pulse {
   0%,
   100% {

@@ -2,21 +2,42 @@
 // metric gets longer, this fails before a word runs into a border on a phone.
 import { describe, expect, it } from 'vitest';
 import { measureText } from '../src/render/PixelFont';
-import { DIALOGUE_BOX, optionListHeight } from '../src/render/DialogueBox';
+import { DIALOGUE_BOX, optionListHeight, wrapText } from '../src/render/DialogueBox';
 import { STAGE } from '../src/rooms/frame';
 import { RUNNING } from '../src/rooms/content/running';
 import {
   VERDICTS,
+  beforeLabel,
+  betterLabel,
+  guessLabel,
   improvementOf,
+  noiseLabel,
+  worthLabel,
   pinImprovement,
   plain,
   readoutFor,
   scaleFor,
   summaryOf,
   ticksFor,
+  judgeText,
   titleOf,
 } from '../src/rooms/analysis/model';
-import { BESIDE_ICON, FALL, FALL_2, FIRST_ROW, GEOMETRY, GEOMETRY_2, ICON_X, LEFT, PANEL_H, REPORT_ROW, RIGHT, SECOND_ROW } from '../src/rooms/analysis/board';
+import {
+  BESIDE_ICON,
+  FALL,
+  FALL_2,
+  FIRST_ROW,
+  GEOMETRY,
+  GEOMETRY_2,
+  ICON_X,
+  LEFT,
+  PANEL_H,
+  REPORT_ROW,
+  RIGHT,
+  SECOND_ROW,
+  guessPlateX,
+  guessSpan,
+} from '../src/rooms/analysis/board';
 import { LEGEND_X, xOf } from '../src/rooms/analysis/ruler';
 
 const { trained, decoy, verdicts, step } = RUNNING.analysis;
@@ -39,12 +60,12 @@ describe('the board\'s words fit the panel', () => {
     expect(BESIDE_ICON).toBeGreaterThan(ICON_X + 5 + 2); // a tick is 5px wide, and a gap before the text
   });
 
-  it('fits both headings with BETTER → beside them, and the finished row\'s summary with its tick', () => {
+  it('fits both headings with which way is better beside them, and the finished row\'s summary with its tick', () => {
     fits('trained title', LEFT, titleOf(trained));
-    expect(LEFT + width(titleOf(trained))).toBeLessThan(RIGHT - width('BETTER →') - 6);
+    expect(LEFT + width(titleOf(trained))).toBeLessThan(RIGHT - width(betterLabel(trained)) - 6);
     const decoyTitle = `${titleOf(decoy)} ${plain(decoy.baseline)} → ${plain(decoy.retest)}`;
     fits('decoy title', LEFT, decoyTitle);
-    expect(LEFT + width(decoyTitle)).toBeLessThan(RIGHT - width('BETTER →') - 6);
+    expect(LEFT + width(decoyTitle)).toBeLessThan(RIGHT - width(betterLabel(decoy)) - 6);
     fits('summary + tick', LEFT, `${summaryOf(trained)}  ✓`);
     fits('summary + tick', LEFT, `${summaryOf(decoy)}  ✓`);
   });
@@ -63,12 +84,37 @@ describe('the board\'s words fit the panel', () => {
     const scale = scaleFor(trained);
     const range = { worse: Math.round(scale.worse / step), better: Math.round(scale.better / step) };
     for (const steps of [range.worse, 0, range.better]) {
-      const readout = readoutFor(trained, steps, step).replace('FORECAST', 'YOUR FORECAST');
-      fits('forecast head', BESIDE_ICON, readout);
-      fits('readout', LEFT, readoutFor(trained, steps, step));
+      fits('forecast head', BESIDE_ICON, readoutFor(trained, steps, step));
     }
     fits('off by', BESIDE_ICON, 'OFF BY 99.9: OUTSIDE THE ERROR BARS');
     fits('caption', LEFT, 'OUTSIDE THE ERROR BARS');
+  });
+
+  it('fits the first row\'s keys and BEFORE, with the noise and worthwhile words in full', () => {
+    fits('noise key', LEFT + 13, noiseLabel(trained));
+    fits('worth key', LEFT + 10, worthLabel(trained));
+    const pole = xOf(GEOMETRY, scaleFor(trained), 0);
+    const before = beforeLabel(trained);
+    fits('before', Math.round(pole - width(before) / 2), before);
+    // BEFORE ends left of LAST BLOCKS (the earlier blocks' label on the same row)
+    const lastBlocks = Math.max(...RUNNING.analysis.history.map(h => xOf(GEOMETRY, scaleFor(trained), h))) - 6;
+    expect(Math.round(pole + width(before) / 2) + 4).toBeLessThan(lastBlocks);
+    fits('last blocks', lastBlocks, 'LAST BLOCKS');
+  });
+
+  it('keeps YOUR GUESS\'s label and arrows inside the panel wherever it goes, and between the numbers and the chips', () => {
+    const scale = scaleFor(trained);
+    const range = { worse: Math.round(scale.worse / step), better: Math.round(scale.better / step) };
+    for (let k = range.worse; k <= range.better; k++) {
+      const text = guessLabel(trained, k, step);
+      const x = xOf(GEOMETRY, scale, pinImprovement(k, step));
+      const left = guessPlateX(x, text) - 7; // the left arrow
+      expect(left, text).toBeGreaterThanOrEqual(LEFT);
+      expect(left + guessSpan(text), text).toBeLessThanOrEqual(RIGHT);
+    }
+    const numbersBottom = GEOMETRY.axisY + GEOMETRY.half + 6 + GLYPH - 1;
+    expect(FIRST_ROW.guess - 2 - numbersBottom).toBeGreaterThanOrEqual(2); // the plate's border starts 2px above the words
+    expect(128 - (FIRST_ROW.guess + 8)).toBeGreaterThanOrEqual(2); // the chips start at y 128
   });
 
   it('fits the two chips side by side', () => {
@@ -77,8 +123,25 @@ describe('the board\'s words fit the panel', () => {
   });
 });
 
+describe('the room\'s sentences fit the dialogue box', () => {
+  // the longest name each button can have (SPACE for {A}, the rest as written)
+  const longest = (text: string) => text.replace(/\{A\}/g, 'SPACE').replace(/\{LEFT\}/g, 'LEFT').replace(/\{RIGHT\}/g, 'RIGHT');
+
+  it('fits the forecast prompt in the four lines of the box, and each walk-through page on one page', () => {
+    expect(wrapText(longest(RUNNING.analysis.forecastAsk)).length).toBeLessThanOrEqual(DIALOGUE_BOX.lines);
+    for (const page of RUNNING.analysis.rules) expect(wrapText(page).length, page).toBeLessThanOrEqual(DIALOGUE_BOX.lines);
+    expect(wrapText(RUNNING.analysis.rulesShort).length).toBeLessThanOrEqual(DIALOGUE_BOX.lines);
+    expect(RUNNING.analysis.forecastAsk).toContain('YOUR GUESS');
+    expect(RUNNING.analysis.rules.join(' ') + RUNNING.analysis.rulesShort + RUNNING.analysis.forecastAsk).not.toMatch(/\bpin\b/i);
+  });
+
+  it('fits the verdict question in one page', () => {
+    for (const row of [trained, decoy]) expect(wrapText(judgeText(RUNNING.analysis, row)).length).toBeLessThanOrEqual(DIALOGUE_BOX.lines);
+  });
+});
+
 describe('the ruler fits the panel', () => {
-  it('keeps every tick label, the pin and the ends of the axis inside the panel, for both rows', () => {
+  it('keeps every tick label, the guess and the ends of the axis inside the panel, for both rows', () => {
     for (const row of [trained, decoy]) {
       const scale = scaleFor(row);
       for (const tick of ticksFor(row, scale)) {
@@ -91,7 +154,7 @@ describe('the ruler fits the panel', () => {
       expect(xOf(GEOMETRY, scale, scale.better)).toBe(GEOMETRY.x1);
       expect(GEOMETRY.x0 - 8).toBeGreaterThanOrEqual(INNER_LEFT); // the axis starts inside
       expect(GEOMETRY.x1 + 8).toBeLessThanOrEqual(INNER_RIGHT); // and ends inside, arrowhead included
-      expect(GEOMETRY.x0 - 6).toBeGreaterThanOrEqual(INNER_LEFT); // a pin at the far end is 13px wide
+      expect(GEOMETRY.x0 - 6).toBeGreaterThanOrEqual(INNER_LEFT); // the guess's triangle at the far end is 13px wide
       expect(GEOMETRY.x1 + 6).toBeLessThanOrEqual(INNER_RIGHT);
     }
   });
@@ -108,7 +171,7 @@ describe('the ruler fits the panel', () => {
     }
   });
 
-  it('moves the pin about 5px a step, never skipping a pixel column by more than 6', () => {
+  it('moves YOUR GUESS about 5px a step, never skipping a pixel column by more than 6', () => {
     const scale = scaleFor(trained);
     let last = xOf(GEOMETRY, scale, scale.worse);
     for (let k = -14; k <= 25; k++) {
@@ -148,12 +211,15 @@ describe('the second row\'s board', () => {
   });
 
   it('leaves the legend clear of the gold lines that start above the band', () => {
-    const goldTop = GEOMETRY_2.axisY - GEOMETRY_2.half - 4;
+    const goldTop = GEOMETRY_2.axisY - GEOMETRY_2.half - 2;
     expect(goldTop - (SECOND_ROW.legend + LEGEND_BOTTOM) - 1, 'rows between the legend and the gold lines').toBeGreaterThanOrEqual(2);
-    // and on the first row the legend is far above them
-    expect(GEOMETRY.axisY - GEOMETRY.half - 4).toBeGreaterThan(FIRST_ROW.legend + LEGEND_BOTTOM + 2);
+    // on the first row the keys sit above BEFORE, which ends above the gold lines
+    const goldTop1 = GEOMETRY.axisY - GEOMETRY.half - 2;
+    expect(goldTop1 - (FIRST_ROW.before + GLYPH - 1) - 1, 'rows between BEFORE and the gold lines').toBeGreaterThanOrEqual(0);
+    expect(FIRST_ROW.before - (FIRST_ROW.worthKey + LEGEND_BOTTOM) - 1).toBeGreaterThanOrEqual(1);
     // the first row's lines are apart too
-    expect(FIRST_ROW.legend + LEGEND_TOP - (FIRST_ROW.title + GLYPH) - 1, 'rows between the first heading and its legend').toBeGreaterThanOrEqual(2);
+    expect(FIRST_ROW.noiseKey + LEGEND_TOP - (FIRST_ROW.title + GLYPH) - 1, 'rows between the first heading and its key').toBeGreaterThanOrEqual(2);
+    expect(FIRST_ROW.worthKey + LEGEND_TOP - (FIRST_ROW.noiseKey + LEGEND_BOTTOM) - 1, 'rows between the two keys').toBeGreaterThanOrEqual(1);
   });
 
   it('keeps the retest legend away from every gold line, so it never looks attached to one', () => {
@@ -195,21 +261,20 @@ describe('the second row\'s board', () => {
 
 describe('the retest dot\'s fall', () => {
   /** Where the legend's marks and words are, left to right, for the entries that show with this row. */
-  const spans = (entries: Array<'noise' | 'worth' | 'you' | 'retest'>): Array<[number, number]> =>
+  const spans = (entries: Array<'noise' | 'worth' | 'retest'>): Array<[number, number]> =>
     entries.map((entry): [number, number] => {
       const x = LEGEND_X[entry];
       if (entry === 'noise') return [x, x + 13 + width('NOISE')];
-      if (entry === 'worth') return [x, x + 10 + width('WORTH IT')];
-      if (entry === 'you') return [x, x + 16 + width('YOU')];
+      if (entry === 'worth') return [x, x + 10 + width('WORTHWHILE')];
       return [x, x + 13 + width('RETEST')];
     });
 
-  it('starts under the legend on the first row, so it crosses no words on the way down', () => {
+  it('starts under the keys on the first row, so it crosses no words on the way down', () => {
     const top = GEOMETRY.axisY - FALL - MARK;
-    expect(top).toBeGreaterThan(FIRST_ROW.legend + LEGEND_BOTTOM); // under the legend's lowest mark
-    // BASELINE sits at axisY - 22 over the pole; the dot lands to the right of it (the retest is better than the baseline)
+    expect(top).toBeGreaterThan(FIRST_ROW.worthKey + LEGEND_BOTTOM); // under the lower key's lowest mark
+    // BEFORE sits over the pole; the dot lands to the right of it (the retest is better than the baseline)
     const x = xOf(GEOMETRY, scaleFor(trained), improvementOf(trained));
-    expect(x - MARK).toBeGreaterThan(xOf(GEOMETRY, scaleFor(trained), 0) + 'BASELINE'.length * 3);
+    expect(x - MARK).toBeGreaterThan(xOf(GEOMETRY, scaleFor(trained), 0) + width(beforeLabel(trained)) / 2);
   });
 
   it('starts under the heading on the second row, and falls where the legend has no words', () => {

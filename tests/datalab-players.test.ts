@@ -1,7 +1,7 @@
 // Scripted players pressing the buttons of the real instrument (not the model): what stat does the room record for a
 // perfect player, a careless one, a random one and the worst one? The shell's own calcStat turns the result into the stat.
 import { describe, expect, it, vi } from 'vitest';
-import { makeRig, seeded, statOf, type Rig } from './datalab-rig';
+import { chooseAndLock, cleanAll, makeRig, seeded, statOf, type Rig } from './datalab-rig';
 
 vi.mock('../src/audio/Sfx', () => ({ sfx: { play: () => {} } }));
 vi.mock('../src/ui/announce', () => ({ announce: () => {} }));
@@ -12,49 +12,26 @@ type Pinner = 'key' | 'typical' | 'wrong' | 'random';
 // 1000 attempts each is the table in the notes; the default keeps the suite quick (DATALAB_RUNS=1000 for the full table)
 const RUNS = Number(process.env.DATALAB_RUNS ?? 150);
 
-/** Move the pin cursor down to `row`: a bounded loop, so a test that cannot get there fails instead of hanging the run. */
-const moveTo = (rig: Rig, row: number) => {
-  for (let guard = 0; guard < 12 && rig.debug().cursor !== row; guard++) rig.press('down', 0.2);
-  expect(rig.debug().cursor).toBe(row);
-  rig.wait(0.4); // a look at the row: LOCK IN, which cannot be undone, ignores A for 0.35 s after the cursor arrives
-};
-
-/** Clean the file, then pin and lock in, the way a player with these habits would. Returns the stat that was recorded. */
+/** Clean the files, then choose the key variables and lock in, the way a player with these habits would. Returns the stat. */
 const play = (seed: number, cleaner: Cleaner, pinner: Pinner): number => {
-  const rig: Rig = makeRig(seed);
+  const rig: Rig = makeRig(seed, { tests: ['Lactate Profile', 'Critical Speed Test'] });
   const rng = seeded(seed * 104729 + 3);
-  rig.closeDialogue();
-  rig.wait(0.6);
-  const { suspects } = rig.debug();
-  suspects.forEach((s, i) => {
-    const remove =
-      cleaner === 'perfect' ? !s.real : cleaner === 'worst' ? s.real : cleaner === 'remove' ? true : cleaner === 'keep' ? false : cleaner === 'typical' ? (rng() < 0.8 ? !s.real : s.real) : rng() < 0.5;
-    rig.press(remove ? 'a' : 'right', 0.5);
-    if (i < suspects.length - 1) rig.press('a', 0.5);
-  });
-  rig.press('a', 0.5); // on to the pin list
-  rig.closeDialogue();
-  rig.wait(0.6);
-  const list = rig.debug().list;
+  cleanAll(rig, s =>
+    cleaner === 'perfect' ? !s.real : cleaner === 'worst' ? s.real : cleaner === 'remove' ? true : cleaner === 'keep' ? false : cleaner === 'typical' ? (rng() < 0.8 ? !s.real : s.real) : rng() < 0.5,
+  );
+  const { list, pinLimit } = rig.debug();
   const rows = [...list.keys()];
+  const keys = rows.filter(r => list[r]!.key);
+  const others = rows.filter(r => !list[r]!.key);
   const chosen =
     pinner === 'key'
-      ? rows.filter(r => list[r]!.key)
+      ? keys
       : pinner === 'typical'
-        ? [...rows.filter(r => list[r]!.key).slice(0, 2), ...rows.filter(r => !list[r]!.key).slice(0, 1)] // two right, one wrong
+        ? [...keys.slice(0, pinLimit - 1), ...others.slice(0, 1)] // all right but one
         : pinner === 'wrong'
-        ? [...rows.filter(r => !list[r]!.key), ...rows.filter(r => list[r]!.key)].slice(0, 3)
-        : [...rows].sort(() => rng() - 0.5).slice(0, 3);
-  for (const row of chosen) {
-    moveTo(rig, row);
-    rig.press('a', 0.3);
-  }
-  moveTo(rig, list.length); // the LOCK IN row, which only exists with every pin placed
-  rig.press('a', 0.3);
-  for (let guard = 0; guard < 40 && rig.talking(); guard++) {
-    rig.press('a', 0.1);
-    rig.press('a', 0.3);
-  }
+          ? [...others, ...keys].slice(0, pinLimit)
+          : [...rows].sort(() => rng() - 0.5).slice(0, pinLimit);
+  chooseAndLock(rig, [...chosen].sort((a, b) => a - b));
   expect(rig.results.length).toBe(1); // recorded once, and only after the reveal
   expect(rig.quits()).toBe(0);
   return statOf(rig.results[0]!);
@@ -71,7 +48,7 @@ describe('the stat the room records, pressing the real buttons', () => {
   it('prints the table', () => {
     const table: ReadonlyArray<readonly [string, Cleaner, Pinner]> = [
       ['perfect (clean-up right, pins right)', 'perfect', 'key'],
-      ['typical mistakes (4 in 5 decisions right, 2 of 3 pins)', 'typical', 'typical'],
+      ['typical mistakes (4 in 5 decisions right, 3 of 4 key variables)', 'typical', 'typical'],
       ['random everything', 'random', 'random'],
       ['always KEEP, random pins', 'keep', 'random'],
       ['always REMOVE, random pins', 'remove', 'random'],
@@ -92,10 +69,10 @@ describe('the stat the room records, pressing the real buttons', () => {
     expect(r.max).toBeCloseTo(0.92, 10);
   });
 
-  it('records 40% for the worst player: every call wrong, wrong pins first', () => {
+  it('records 20% for the worst player: every call wrong, no key variable chosen', () => {
     const r = mean('worst', 'wrong');
-    expect(r.min).toBeCloseTo(0.4, 10);
-    expect(r.max).toBeCloseTo(0.4, 10);
+    expect(r.min).toBeCloseTo(0.2, 10);
+    expect(r.max).toBeCloseTo(0.2, 10);
   });
 
   it('keeps a random player, an always-KEEP and an always-REMOVE player near 62% and well under perfect', () => {

@@ -159,18 +159,18 @@ describe('equipment and what it says', () => {
     for (const k of ['room2_screen1', 'room2_screen2', 'room2_screen3', 'room2_screen4']) expect(keys.has(k)).toBe(true);
   });
 
-  it("prints the level's data line verbatim at the printer and the results desk", () => {
+  it('names the results desk at the printer and the desk, with no numbers (the files depend on the tests run)', () => {
     const keys = ['datalab_data'];
     for (const [x, y] of [[12, 7], [10, 6], [11, 6]] as const) {
       const e = map.equipment.find(q => q.x === x && q.y === y)!;
       expect(keys).toContain(e.dialogueKey);
     }
-    expect(map.talk!['datalab_data']!(sport)).toEqual([`Test data: ${sport.dataOutput}`]);
+    expect(map.talk!['datalab_data']!(sport)).toEqual(['Results desk: the files from your tests load here.']);
   });
 
-  it("makes each wall screen name its variable exactly as sports.ts writes it", () => {
+  it("makes each wall screen name its variable as sports.ts writes it, without its number", () => {
     for (let slot = 0; slot < WALL_SLOTS; slot++) {
-      expect(map.talk![`datalab_wall${slot}`]!(sport)).toEqual([`Data screen: ${sport.variables[slot]!.name}.`]);
+      expect(map.talk![`datalab_wall${slot}`]!(sport)).toEqual([`Data screen: ${sport.variables[slot]!.name.split(' (')[0]}.`]);
       const tiles = map.equipment.filter(e => e.dialogueKey === `datalab_wall${slot}`);
       expect(tiles.length).toBeGreaterThan(0);
       for (const t of tiles) expect(t.y).toBe(2);
@@ -187,9 +187,10 @@ describe('equipment and what it says', () => {
 });
 
 describe('the video wall', () => {
-  it("shows each variable as a short label and the value exactly as written in its name", () => {
+  it('shows each variable as a short label and no value (a number there could come from a test not run)', () => {
     const screens = screensFor(sport);
-    expect(screens.map(s => `${s.label} ${s.value}`)).toEqual(['LT1 3:45', 'LT2 3:20', 'VO2MAX 65', 'VVO2 2:55', 'SPRINT 28']);
+    expect(screens.map(s => s.label)).toEqual(['LT1', 'LT2', 'HR LT2', 'VO2MAX', 'VVO2']);
+    for (const s of screens) expect(s.value).toBe('');
     for (const s of screens) expect(s.label.length).toBeLessThanOrEqual(6);
   });
 

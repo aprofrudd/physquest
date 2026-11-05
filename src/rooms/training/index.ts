@@ -61,11 +61,24 @@ interface Score {
 }
 
 /**
+ * The cards' targets for the battery that was run: a target whose numbers come from a test that was not run is
+ * shown in words (its `plain`), so no number from an untested file appears. An empty battery keeps every number.
+ */
+export const targetsFor = (content: TrainingContent | undefined, tests: readonly string[] = []): TrainingContent | undefined => {
+  if (!content || tests.length === 0) return content;
+  if (content.cards.every(c => !c.uses || c.uses.every(t => tests.includes(t)))) return content;
+  return {
+    ...content,
+    cards: content.cards.map(c => (c.uses && !c.uses.every(t => tests.includes(t)) ? { ...c, target: c.plain ?? c.target } : c)),
+  };
+};
+
+/**
  * The room. `rng` decides the attempt's away day and the order UP and DOWN cycle the sessions in: the game uses
  * Math.random, tests pass a seeded one.
  */
 export const createTrainingInstrument = (host: RoomHost, rng: () => number = Math.random): RoomInstrument => {
-  const content: TrainingContent | undefined = contentFor(host.level)?.training;
+  const content: TrainingContent | undefined = targetsFor(contentFor(host.level)?.training, host.tests);
   if (!content) {
     host.say('This room is being rebuilt. Come back soon!', undefined, () => host.quit());
     return { update() {}, render() {} };

@@ -7,7 +7,7 @@ import { createTraceDesk } from '../../src/rooms/datalab/model';
 import { seeded } from './harness';
 
 describe('Data Lab: what the knee reading is said to do', () => {
-  it('does not say "jumps ... steepest rise" when the file shows a fall into it', () => {
+  it('does not say "jumps ... steepest rise" when the file does not rise most steeply into it', () => {
     const sport = LEVEL_DATA[3]!;
     let checked = 0;
     for (let seed = 1; seed <= 300; seed++) {
@@ -15,9 +15,11 @@ describe('Data Lab: what the knee reading is said to do', () => {
       const knee = desk.suspects.findIndex(s => s.kind === 'knee');
       for (let j = 0; j < knee; j++) desk.decide(j, false); // a player who keeps what came before
       const at = desk.suspects[knee]!.place.index;
-      const before = desk.stages.slice(0, at).reverse().find(s => s.present);
-      const here = desk.stages[at]!;
-      if (!before || here.mmol >= before.mmol) continue; // only the files where the reading FALLS into the knee
+      // the player's file up to the knee: does any earlier rise match or beat the rise into it?
+      const shown = desk.stages.slice(0, at + 1).filter(s => s.present);
+      const rises = shown.slice(1).map((s, i) => s.mmol - shown[i]!.mmol);
+      const into = rises.at(-1)!;
+      if (into > 0 && rises.slice(0, -1).every(r => r < into)) continue; // it really is the steepest rise so far
       checked++;
       const text = desk.seen(knee);
       expect(text, `seed ${seed}: file ${desk.stages.map(s => `${s.kmh}:${s.mmol}`).join(' ')}`).not.toMatch(/jumps|steepest rise/);

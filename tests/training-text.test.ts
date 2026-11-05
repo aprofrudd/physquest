@@ -55,15 +55,15 @@ describe('the prompt box', () => {
   });
 
   it('wraps the zone line exactly as the dialogue box would', () => {
-    const card = content.cards.find(c => c.label === 'SUPR')!;
-    const lines = dayPrompt(content, sport, 3, sessionFromChip(content, 'SUPR'), 100);
+    const card = content.cards.find(c => c.label === 'SEV')!;
+    const lines = dayPrompt(content, sport, 3, sessionFromChip(content, 'SEV'), 100);
     const expected = wrapText(`THU: ${card.zone}, ${card.target}`); // one parenthesis is the zone's own
     expect(lines.slice(0, expected.length).map(l => l.text)).toEqual(expected);
   });
 
   it('says the key session\'s quality with the content\'s own words and the day\'s legs', () => {
-    const card = content.cards.find(c => c.label === 'SPRT')!;
-    const say = (legs: number) => textOf(dayPrompt(content, sport, 0, sessionFromChip(content, 'SPRT'), legs)).replace(/\s+/g, ' ');
+    const card = content.cards.find(c => c.label === 'FAST')!;
+    const say = (legs: number) => textOf(dayPrompt(content, sport, 0, sessionFromChip(content, 'FAST'), legs)).replace(/\s+/g, ' ');
     const compact = (text: string) => wrapText(text).join(' ');
     expect(say(100)).toContain(compact(`${card.label}: full quality (legs 100%).`));
     expect(say(75)).toContain(compact(`${card.label}: full quality (legs 75%).`));
@@ -73,12 +73,12 @@ describe('the prompt box', () => {
   });
 
   it('colours the verdict by band, and words carry it as well', () => {
-    const tone = (legs: number) => dayPrompt(content, sport, 0, sessionFromChip(content, 'SUB'), legs).slice(-1)[0]!.tone;
+    const tone = (legs: number) => dayPrompt(content, sport, 0, sessionFromChip(content, 'THR'), legs).slice(-1)[0]!.tone;
     expect(tone(100)).toBe('good');
     expect(tone(60)).toBe('warn');
     expect(tone(30)).toBe('bad');
     // The head of the prompt is always plain ink
-    expect(dayPrompt(content, sport, 0, sessionFromChip(content, 'SUB'), 30)[0]!.tone).toBe('ink');
+    expect(dayPrompt(content, sport, 0, sessionFromChip(content, 'THR'), 30)[0]!.tone).toBe('ink');
   });
 
   it('shows the support note for a support session, and no quality line', () => {
@@ -118,20 +118,20 @@ describe('the prompt box', () => {
   });
 
   it('asks about the week on the GO slot, naming the key sessions still missing', () => {
-    const a = analyse(content, week('SUB'));
+    const a = analyse(content, week('THR'));
     const missing = [content.cards[1]!, content.cards[3]!];
-    expect(textOf(goPrompt(a, missing))).toContain('No SUPR session yet. No SPRT session yet.');
-    const full = analyse(content, week('SUB', 'EASY', 'SUPR', 'EASY', 'SPRT', 'EASY', 'REST'));
+    expect(textOf(goPrompt(a, missing))).toContain('No SEV session yet. No FAST session yet.');
+    const full = analyse(content, week('THR', 'EASY', 'SEV', 'EASY', 'FAST', 'EASY', 'REST'));
     expect(textOf(goPrompt(full, []))).toContain('6 sessions, 1 rest day.');
-    const rested = analyse(content, week('SUB', 'EASY', 'SUPR', 'EASY', 'SPRT', 'REST', 'REST'));
+    const rested = analyse(content, week('THR', 'EASY', 'SEV', 'EASY', 'FAST', 'REST', 'REST'));
     expect(textOf(goPrompt(rested, []))).toContain('5 sessions, 2 rest days.');
   });
 
   it('puts any missing key session before the question', () => {
     expect(runQuestion([])).toBe('Run the week?');
-    // full names: the box is read aloud too, and a screen reader cannot say SPRT
-    expect(runQuestion([content.cards[3]!])).toBe('No Sprint Training session yet. Run the week?');
-    expect(runQuestion([content.cards[0]!, content.cards[3]!])).toBe('No Sub-threshold session yet. No Sprint Training session yet. Run the week?');
+    // full names: the box is read aloud too, and a screen reader cannot say FAST
+    expect(runQuestion([content.cards[3]!])).toBe('No Fast Reps session yet. Run the week?');
+    expect(runQuestion([content.cards[0]!, content.cards[3]!])).toBe('No Threshold Running session yet. No Fast Reps session yet. Run the week?');
     // all three missing still fits the box with the YES / NO list on the same page
     expect(wrapText(runQuestion([content.cards[0]!, content.cards[1]!, content.cards[3]!])).length).toBeLessThanOrEqual(4);
   });
@@ -139,24 +139,24 @@ describe('the prompt box', () => {
 
 describe('the footer checks', () => {
   it('shows each count with its tick or cross', () => {
-    const good = checkLines(content, analyse(content, week('SUB', 'EASY', 'SUPR', 'EASY', 'SPRT', 'EASY', 'REST')));
+    const good = checkLines(content, analyse(content, week('THR', 'EASY', 'SEV', 'EASY', 'FAST', 'EASY', 'REST')));
     expect(good.map(c => c.text)).toEqual(['SESSIONS 6/5', 'REST 1', 'RED 0']);
     expect(good.map(c => c.ok)).toEqual([true, true, true]);
-    const bad = checkLines(content, analyse(content, week('SUB', 'SUPR', 'SPRT')));
+    const bad = checkLines(content, analyse(content, week('THR', 'SEV', 'FAST')));
     expect(bad.map(c => c.text)).toEqual(['SESSIONS 3/5', 'REST 4', 'RED 2']);
     expect(bad.map(c => c.ok)).toEqual([false, false, false]);
   });
 });
 
 describe('the debrief', () => {
-  const perfect = week('SUB', 'EASY', 'SUPR', 'EASY', 'SPRT', 'EASY', 'REST');
+  const perfect = week('THR', 'EASY', 'SEV', 'EASY', 'FAST', 'EASY', 'REST');
 
   it('goes through each key card, then the checks in words, then the insight from sports.ts', () => {
     const lines = debriefLines(content, sport, analyse(content, perfect));
     expect(lines.map(l => l.text)).toEqual([
-      'SUB: full quality (legs 100%).',
-      'SUPR: full quality (legs 75%).',
-      'SPRT: full quality (legs 75%).',
+      'THR: full quality (legs 100%).',
+      'SEV: full quality (legs 75%).',
+      'FAST: full quality (legs 75%).',
       '6 sessions: good. 1 rest day: good. No red mornings: good.',
       sport.zoneInsight,
     ]);
@@ -165,36 +165,36 @@ describe('the debrief', () => {
   });
 
   it('follows the order the sessions fall on the board, not the card order', () => {
-    const lines = debriefLines(content, sport, analyse(content, week('SPRT', 'EASY', 'SUB', 'EASY', 'SUPR', 'EASY', 'REST')));
-    expect(lines.slice(0, 3).map(l => l.text.split(':')[0])).toEqual(['SPRT', 'SUB', 'SUPR']);
+    const lines = debriefLines(content, sport, analyse(content, week('FAST', 'EASY', 'THR', 'EASY', 'SEV', 'EASY', 'REST')));
+    expect(lines.slice(0, 3).map(l => l.text.split(':')[0])).toEqual(['FAST', 'THR', 'SEV']);
   });
 
   it('says so when a key session was never planned, and puts it last', () => {
-    const lines = debriefLines(content, sport, analyse(content, week('SPRT', 'EASY', 'SUB', 'EASY', 'EASY', 'EASY', 'REST')));
+    const lines = debriefLines(content, sport, analyse(content, week('FAST', 'EASY', 'THR', 'EASY', 'EASY', 'EASY', 'REST')));
     expect(lines.slice(0, 3).map(l => l.text)).toEqual([
-      'SPRT: full quality (legs 100%).',
-      'SUB: full quality (legs 75%).',
-      'No SUPR session this week.',
+      'FAST: full quality (legs 100%).',
+      'THR: full quality (legs 75%).',
+      'No SEV session this week.',
     ]);
     expect(lines[2]!.day).toBeNull();
   });
 
   it('reports a key session below full quality with its best day\'s legs', () => {
-    const lines = debriefLines(content, sport, analyse(content, week('SUB', 'SUPR', 'REST', 'SPRT')));
-    expect(lines[1]!.text).toBe('SUPR: legs only 50%, so not full quality.');
+    const lines = debriefLines(content, sport, analyse(content, week('THR', 'SEV', 'REST', 'FAST')));
+    expect(lines[1]!.text).toBe('SEV: legs only 50%, so not full quality.');
     expect(lines[1]!.day).toBe(1);
-    expect(lines[0]!.text).toBe('SUB: full quality (legs 100%).');
+    expect(lines[0]!.text).toBe('THR: full quality (legs 100%).');
   });
 
   it('uses the worthless line when the legs were gone', () => {
-    const lines = debriefLines(content, sport, analyse(content, week('SUB', 'SUPR', 'SPRT')));
-    expect(lines.map(l => l.text)).toContain('SPRT: legs 30%. Too tired for this to do its job.');
+    const lines = debriefLines(content, sport, analyse(content, week('THR', 'SEV', 'FAST')));
+    expect(lines.map(l => l.text)).toContain('FAST: legs 30%. Too tired for this to do its job.');
   });
 
   it('puts the checks in words, naming what failed', () => {
     const sentence = (plan: Session[]) => checksSentence(content, analyse(content, plan));
     expect(sentence(perfect)).toBe('6 sessions: good. 1 rest day: good. No red mornings: good.');
-    expect(sentence(week('SUB', 'EASY', 'SUPR', 'EASY', 'REST', 'REST', 'REST'))).toBe(
+    expect(sentence(week('THR', 'EASY', 'SEV', 'EASY', 'REST', 'REST', 'REST'))).toBe(
       '4 sessions: too few. 3 rest days: good. No red mornings: good.',
     );
     expect(sentence(week('EASY', 'EASY', 'EASY', 'EASY', 'EASY', 'EASY', 'EASY'))).toBe(
@@ -203,10 +203,10 @@ describe('the debrief', () => {
     expect(sentence(week('EASY', 'EASY', 'EASY', 'REST', 'REST', 'REST', 'AWAY'))).toBe(
       '3 sessions: too few. 4 rest days: too many. No red mornings: good.',
     );
-    expect(sentence(week('SUB', 'SUPR', 'REST', 'SPRT', 'REST', 'EASY', 'EASY'))).toBe(
+    expect(sentence(week('THR', 'SEV', 'REST', 'FAST', 'REST', 'EASY', 'EASY'))).toBe(
       '5 sessions: good. 2 rest days: good. 1 red morning: not good.',
     );
-    expect(sentence(week('SUB', 'SUPR', 'SPRT', 'SUB', 'SUPR', 'SPRT', 'SUB'))).toBe(
+    expect(sentence(week('THR', 'SEV', 'FAST', 'THR', 'SEV', 'FAST', 'THR'))).toBe(
       '7 sessions: good. 0 rest days: too few. 5 red mornings: not good.',
     );
   });
@@ -214,10 +214,10 @@ describe('the debrief', () => {
   it('marks good and bad news for the sound: full quality and met checks are good, the insight is neither', () => {
     const good = debriefLines(content, sport, analyse(content, perfect));
     expect(good.map(l => l.good)).toEqual([true, true, true, true, null]);
-    const bad = debriefLines(content, sport, analyse(content, week('SUB', 'SUPR', 'REST', 'SPRT')));
-    // SUB full, SUPR part, SPRT full (legs 80); 4 sessions fails a check
+    const bad = debriefLines(content, sport, analyse(content, week('THR', 'SEV', 'REST', 'FAST')));
+    // THR full, SEV part, FAST full (legs 80); 4 sessions fails a check
     expect(bad.map(l => l.good)).toEqual([true, false, true, false, null]);
-    const missing = debriefLines(content, sport, analyse(content, week('SUB', 'EASY')));
+    const missing = debriefLines(content, sport, analyse(content, week('THR', 'EASY')));
     expect(missing.slice(0, 3).map(l => l.good)).toEqual([true, false, false]);
   });
 
@@ -227,28 +227,28 @@ describe('the debrief', () => {
   });
 
   it('stays short enough for a few dialogue pages', () => {
-    for (const line of debriefLines(content, sport, analyse(content, week('SUB', 'SUPR', 'SPRT', 'SUB', 'SUPR', 'SPRT', 'SUB')))) {
+    for (const line of debriefLines(content, sport, analyse(content, week('THR', 'SEV', 'FAST', 'THR', 'SEV', 'FAST', 'THR')))) {
       expect(wrapText(line.text).length).toBeLessThanOrEqual(8);
     }
   });
 });
 
 describe('what screen readers hear', () => {
-  const analysis = analyse(content, week('SUB', 'SUPR', 'EASY', 'REST', '--', 'AWAY'));
+  const analysis = analyse(content, week('THR', 'SEV', 'EASY', 'REST', '--', 'AWAY'));
 
   it('reads a key day with its legs and its verdict', () => {
-    expect(dayAnnouncement(content, sport, 1, sessionFromChip(content, 'SUPR'), analysis)).toBe(
-      'Tuesday. Supra-threshold Intervals. Legs 50 percent. Not full quality. Sessions 3 of 5.',
+    expect(dayAnnouncement(content, sport, 1, sessionFromChip(content, 'SEV'), analysis)).toBe(
+      'Tuesday. Severe Intervals. Legs 50 percent. Not full quality. Sessions 3 of 5.',
     );
-    expect(dayAnnouncement(content, sport, 0, sessionFromChip(content, 'SUB'), analysis)).toBe(
-      'Monday. Sub-threshold. Legs 100 percent. Full quality. Sessions 3 of 5.',
+    expect(dayAnnouncement(content, sport, 0, sessionFromChip(content, 'THR'), analysis)).toBe(
+      'Monday. Threshold Running. Legs 100 percent. Full quality. Sessions 3 of 5.',
     );
   });
 
   it('says a worthless session is too tired', () => {
-    const stacked = analyse(content, week('SUB', 'SUPR', 'SPRT'));
-    expect(dayAnnouncement(content, sport, 2, sessionFromChip(content, 'SPRT'), stacked)).toBe(
-      'Wednesday. Sprint Training. Legs 30 percent. Too tired. Sessions 3 of 5.',
+    const stacked = analyse(content, week('THR', 'SEV', 'FAST'));
+    expect(dayAnnouncement(content, sport, 2, sessionFromChip(content, 'FAST'), stacked)).toBe(
+      'Wednesday. Fast Reps. Legs 30 percent. Too tired. Sessions 3 of 5.',
     );
   });
 
@@ -261,21 +261,21 @@ describe('what screen readers hear', () => {
 
   it('reads each day of the run, and an empty day as nothing planned, never as dashes', () => {
     const run = (day: number, chip: string) => runDayAnnouncement(content, sport, day, sessionFromChip(content, chip), analysis);
-    expect(run(0, 'SUB')).toBe('Monday. Sub-threshold. Full quality.');
-    expect(run(1, 'SUPR')).toBe('Tuesday. Supra-threshold Intervals. Not full quality.');
+    expect(run(0, 'THR')).toBe('Monday. Threshold Running. Full quality.');
+    expect(run(1, 'SEV')).toBe('Tuesday. Severe Intervals. Not full quality.');
     expect(run(2, 'EASY')).toBe('Wednesday. Easy Running. Support session.');
     expect(run(3, 'REST')).toBe('Thursday. Rest.');
     expect(run(4, '--')).toBe('Friday. Nothing planned.');
     expect(run(5, 'AWAY')).toBe('Saturday. AWAY.');
     for (const chip of ['--', 'REST', 'AWAY', ...content.cards.map(c => c.label)]) expect(run(1, chip)).not.toContain('--');
-    const stacked = analyse(content, week('SUB', 'SUPR', 'SPRT'));
-    expect(runDayAnnouncement(content, sport, 2, sessionFromChip(content, 'SPRT'), stacked)).toBe('Wednesday. Sprint Training. Too tired.');
+    const stacked = analyse(content, week('THR', 'SEV', 'FAST'));
+    expect(runDayAnnouncement(content, sport, 2, sessionFromChip(content, 'FAST'), stacked)).toBe('Wednesday. Fast Reps. Too tired.');
   });
 
   it('reads the GO slot with the week\'s numbers and what is missing', () => {
-    expect(goAnnouncement(analysis, [content.cards[3]!])).toBe('Run the week. 3 sessions. 4 rest days. 1 red morning. Missing: Sprint Training.');
+    expect(goAnnouncement(analysis, [content.cards[3]!])).toBe('Run the week. 3 sessions. 4 rest days. 1 red morning. Missing: Fast Reps.');
     expect(goAnnouncement(analysis, [])).toBe('Run the week. 3 sessions. 4 rest days. 1 red morning.');
-    const calm = analyse(content, week('SUB', 'EASY', 'SUPR', 'EASY', 'SPRT', 'EASY', 'REST'));
+    const calm = analyse(content, week('THR', 'EASY', 'SEV', 'EASY', 'FAST', 'EASY', 'REST'));
     expect(goAnnouncement(calm, [])).toBe('Run the week. 6 sessions. 1 rest day. 0 red mornings.');
   });
 });

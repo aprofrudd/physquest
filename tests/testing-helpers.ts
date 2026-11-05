@@ -38,6 +38,7 @@ export const inputOf = (...pressed: Button[]): InputState => {
 };
 
 export interface Said {
+  speaker?: string;
   text: string;
   choices?: string[];
   done?: (choice?: number) => void;
@@ -52,7 +53,7 @@ export const makeHost = (options: { firstVisit?: boolean } = {}) => {
     level: 3,
     input: { fill: (t: string) => t, label: (b: string) => b, blockRepeats: () => undefined, lastDevice: () => 'keyboard' } as unknown as Input,
     dialogue: {} as RoomHost['dialogue'],
-    say: (text, choices, done) => void said.push({ text, choices, done }),
+    say: (text, choices, done, options) => void said.push({ text, choices, done, speaker: options?.speaker?.name }),
     sayAll: (texts, done) => {
       texts.forEach((text, i) => said.push({ text, done: i === texts.length - 1 ? done : undefined }));
     },
@@ -61,6 +62,7 @@ export const makeHost = (options: { firstVisit?: boolean } = {}) => {
     firstVisit: options.firstVisit ?? false,
     replay: false,
     rulesRead: () => {},
+    tests: [],
   };
   return { host, said, completed };
 };
@@ -75,7 +77,9 @@ export interface RoomState {
   phase: string;
   order: string[];
   selected: number;
-  chosen: string | null;
+  /** The tests picked so far, in order, and which one is running. */
+  battery: string[];
+  running: number;
   check: { says: string; call: 'run' | 'rebook'; answer: string | null } | null;
   factor: number;
   result: { dataQuality: number; variableAccuracy: number } | null;
@@ -105,9 +109,25 @@ export const toPickWith = (seed: number, checks?: readonly AthleteCheck[]) => {
   return { ...kit, room };
 };
 
-/** Move the cursor to a test and choose it. */
-export const choose = (room: RoomInstrument, name: string) => {
-  let target = stateOf(room).order.indexOf(name);
-  while (target-- > 0) drive(room, 0.05, 'down');
+/** The test a one-test call adds second, so the battery is full: the other right test, or the other wrong one. */
+export const partnerOf = (name: string): string =>
+  ({ 'Lactate Profile': 'Critical Speed Test', 'Critical Speed Test': 'Lactate Profile', 'Wingate Test': 'Beep Test', 'Beep Test': 'Wingate Test' })[name] ??
+  'Beep Test';
+
+/** Move the cursor to one test and add it to the battery (waiting out the pick's lock first). */
+export const add = (room: RoomInstrument, name: string) => {
+  drive(room, DECISION_LOCK + 0.05);
+  const s = stateOf(room);
+  const n = s.order.length;
+  let steps = (s.order.indexOf(name) - s.selected + n) % n;
+  while (steps-- > 0) drive(room, 0.05, 'down');
   drive(room, 0.05, 'a');
+};
+
+/**
+ * Pick a full battery: the tests named, in order; with one name, its partner (partnerOf) is added second.
+ */
+export const choose = (room: RoomInstrument, ...names: string[]) => {
+  const battery = names.length === 1 ? [names[0]!, partnerOf(names[0]!)] : names;
+  for (const name of battery) add(room, name);
 };

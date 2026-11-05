@@ -27,7 +27,7 @@ export const LEVELS: LevelConfig[] = [
   {
     name: 'International Selection',
     setting: 'Combined Athletic Challenge',
-    bossName: 'POWER SURGE',
+    bossName: 'RACE TO THE LINE',
     sportIndex: 3,
   },
 ];

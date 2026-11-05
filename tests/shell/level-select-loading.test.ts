@@ -64,6 +64,7 @@ vi.mock('../../src/engine/Input', async importOriginal => {
       blockRepeats: () => H.emu!.blockRepeats(),
       lastDevice: () => 'console',
       setTextMode: () => {},
+      onChange: () => () => {}, // game.ts watches presses for its idle frame rate
       destroy: () => {},
     }),
   };

@@ -46,17 +46,24 @@ export const tap = (button: Button): InputState => {
 export interface DebugState {
   phase: string;
   view: number;
+  /** The file on screen and the files of the attempt. */
+  file: 'lactate' | 'trials' | null;
+  files: ('lactate' | 'trials')[];
+  /** KEEP IT (REAL) / REMOVE IT (GLITCH) under the cursor while a reading waits; null otherwise. */
+  choice: string | null;
   decided: number;
-  suspects: { kind: string; real: boolean; decided: string | null; right: boolean | null }[];
+  locked: boolean;
+  suspects: { kind: string; real: boolean; file: string; decided: string | null; right: boolean | null }[];
   cleanScore: number;
   pins: string[];
-  list: { name: string; key: boolean; pinned: boolean; odd: boolean; shown: string }[];
+  pinLimit: number;
+  list: { name: string; key: boolean; pinned: boolean; odd: boolean; shown: string; file: string }[];
   cursor: number;
   result: RoomResult;
 }
 
 /** A room on `seed` (the attempt it builds), on a first visit or a replay. */
-export const makeRig = (seed: number, options: { firstVisit?: boolean } = {}) => {
+export const makeRig = (seed: number, options: { firstVisit?: boolean; tests?: readonly string[] } = {}) => {
   const dialogue = createDialogueSystem();
   const results: RoomResult[] = [];
   let quits = 0;
@@ -72,6 +79,7 @@ export const makeRig = (seed: number, options: { firstVisit?: boolean } = {}) =>
     firstVisit: options.firstVisit ?? false,
     replay: false,
     rulesRead: () => {},
+    tests: options.tests ?? [],
   };
   const room = createDataRoom(host, seeded(seed));
   const step = (inp: InputState = idle()) => {
@@ -90,6 +98,27 @@ export const makeRig = (seed: number, options: { firstVisit?: boolean } = {}) =>
       step(tap(button));
       wait(after);
     },
+    /** The dialogue box's current text and choices (null when it is closed). */
+    box: () => (dialogue.isActive() ? { text: dialogue.state.pages.map(p => p.join(' ')).join(' '), choices: dialogue.state.choices } : null),
+    /** Answer the dialogue's question with choice `index`, once its list is up (waiting out its lock). */
+    pick(index: number) {
+      for (let guard = 0; guard < 200; guard++) {
+        const st = dialogue.state;
+        if (!st.active) return;
+        if (st.choices && st.waitingForInput) {
+          if (st.selectedChoice !== index) {
+            step(tap(st.selectedChoice < index ? 'down' : 'up'));
+            wait(0.05);
+            continue;
+          }
+          wait(0.4);
+          step(tap('a'));
+          wait(0.1);
+          return;
+        }
+        wait(0.1);
+      }
+    },
     /** Press A until the dialogue box closes. */
     closeDialogue() {
       for (let guard = 0; guard < 80 && dialogue.isActive(); guard++) {
@@ -106,6 +135,61 @@ export const makeRig = (seed: number, options: { firstVisit?: boolean } = {}) =>
   };
 };
 export type Rig = ReturnType<typeof makeRig>;
+
+/** Close the brief (and a file's intro) and wait out the first reading's lock. */
+export const toReading = (rig: Rig) => {
+  rig.closeDialogue();
+  rig.wait(0.5);
+};
+
+/**
+ * Decide the reading waiting now: DOWN moves the list to REMOVE IT (GLITCH), A confirms. Then wait out the
+ * verdict's lock.
+ */
+export const decideNow = (rig: Rig, remove: boolean) => {
+  if (remove) rig.press('down', 0.05);
+  rig.wait(0.4);
+  rig.press('a', 0.5);
+};
+
+/** From a decided reading on to the next one (closing a new file's intro), or to the key variables' intro. */
+export const onward = (rig: Rig) => {
+  rig.press('a', 0.3);
+  rig.closeDialogue();
+  rig.wait(0.5);
+};
+
+/** Clean every file with `remove(suspect)` and arrive at the key-variable list. */
+export const cleanAll = (rig: Rig, remove: (s: DebugState['suspects'][number], i: number) => boolean) => {
+  toReading(rig);
+  const suspects = rig.debug().suspects;
+  suspects.forEach((s, i) => {
+    decideNow(rig, remove(s, i));
+    onward(rig);
+  });
+};
+
+/** Move the key-variable cursor to `row` (the row count is LOCK IN) and wait out LOCK IN's own lock. */
+export const moveTo = (rig: Rig, row: number) => {
+  for (let guard = 0; guard < 14 && rig.debug().cursor !== row; guard++) rig.press('down', 0.2);
+  if (rig.debug().cursor !== row) throw new Error(`cursor stuck at ${rig.debug().cursor}, wanted ${row}`);
+  rig.wait(0.4);
+};
+
+/** Choose these rows, then LOCK IN and confirm it (LOCK IN is the second choice), then read the reveal to the end. */
+export const chooseAndLock = (rig: Rig, rows: readonly number[]) => {
+  for (const row of rows) {
+    moveTo(rig, row);
+    rig.press('a', 0.3);
+  }
+  moveTo(rig, rig.debug().list.length);
+  rig.press('a', 0.1); // LOCK IN asks first
+  rig.pick(1); // LOCK IN
+  for (let guard = 0; guard < 40 && rig.talking(); guard++) {
+    rig.press('a', 0.1);
+    rig.press('a', 0.3);
+  }
+};
 
 /** The stat the shell records for a result (its own calcStat). */
 export const statOf = (r: RoomResult): number => calcStat(r.dataQuality, r.variableAccuracy);

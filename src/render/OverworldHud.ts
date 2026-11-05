@@ -10,6 +10,7 @@ import { spokenName } from '../engine/nameToken';
 import { HUB_SIGNS } from '../data/maps';
 import { MEET_SIGN } from '../data/meetDoor';
 import { LEVEL_DATA } from '../data/sports';
+import { DIRECTOR_SPEAKER } from '../data/speakers';
 import {
   ROOM_KEYS,
   ROOM_LABEL,
@@ -17,11 +18,11 @@ import {
   STAT_KEYS,
   MEET_LABEL,
   allRoomsComplete,
-  athleteMet,
+  arenaOpen,
   doorLabel,
   meetOf,
-  nextDoor,
-  nextRoom,
+  nextStop,
+  retestDue,
   roomKeyForMap,
   roomUnlocked,
   roomsCompleted,
@@ -31,6 +32,7 @@ import {
   type RoomKey,
   type StatKey,
 } from '../state/GameState';
+import { SCORE_LABEL, scoreSpoken } from '../systems/SupportScores';
 
 const INK = '#101018';
 const PLATE = '#f8f0d8';
@@ -71,15 +73,51 @@ const LOCK: Pixels = [
 ];
 const LOCK_W = 7;
 
+// Icons are painted once per colour (and outline) into a small canvas and blitted: one drawImage a frame instead of a
+// fillRect per pixel (the hub's arrow, locks and ticks were ~290 fillRects every frame).
+const OUTLINE: ReadonlyArray<readonly [number, number]> = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+const iconCache = new Map<Pixels, Map<string, HTMLCanvasElement>>();
+
+const iconFor = (pixels: Pixels, color: string, outlined: boolean): HTMLCanvasElement => {
+  let byColor = iconCache.get(pixels);
+  if (!byColor) {
+    byColor = new Map();
+    iconCache.set(pixels, byColor);
+  }
+  const key = outlined ? `o${color}` : color;
+  let canvas = byColor.get(key);
+  if (!canvas) {
+    const pad = outlined ? 1 : 0;
+    let w = 1;
+    let h = 1;
+    for (const [px, py] of pixels) {
+      w = Math.max(w, px + 1);
+      h = Math.max(h, py + 1);
+    }
+    canvas = document.createElement('canvas');
+    canvas.width = w + pad * 2;
+    canvas.height = h + pad * 2;
+    const c = canvas.getContext('2d');
+    if (c) {
+      if (outlined) {
+        c.fillStyle = INK;
+        for (const [ox, oy] of OUTLINE) for (const [px, py] of pixels) c.fillRect(pad + px + ox, pad + py + oy, 1, 1);
+      }
+      c.fillStyle = color;
+      for (const [px, py] of pixels) c.fillRect(pad + px, pad + py, 1, 1);
+    }
+    byColor.set(key, canvas);
+  }
+  return canvas;
+};
+
 const plot = (ctx: CanvasRenderingContext2D, pixels: Pixels, x: number, y: number, color: string) => {
-  ctx.fillStyle = color;
-  for (const [px, py] of pixels) ctx.fillRect(x + px, y + py, 1, 1);
+  ctx.drawImage(iconFor(pixels, color, false), x, y);
 };
 
 /** Pixels with a 1px dark outline, so a small icon reads on any floor colour. */
 const plotOutlined = (ctx: CanvasRenderingContext2D, pixels: Pixels, x: number, y: number, fill: string) => {
-  for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) plot(ctx, pixels, x + ox, y + oy, INK);
-  plot(ctx, pixels, x, y, fill);
+  ctx.drawImage(iconFor(pixels, fill, true), x - 1, y - 1);
 };
 
 const rect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, edge: string, fill: string) => {
@@ -130,7 +168,7 @@ export const drawHubLabels = (ctx: CanvasRenderingContext2D, state: GameState) =
       const icon = state.roomProgress[roomKey] ? 'check' : roomUnlocked(state, roomKey) ? null : 'lock';
       drawLabelPlate(ctx, ROOM_LABEL[roomKey], sign.cx * TILE_SIZE, sign.cy * TILE_SIZE, icon);
     } else {
-      drawLabelPlate(ctx, 'ARENA', sign.cx * TILE_SIZE, sign.cy * TILE_SIZE, allRoomsComplete(state) ? null : 'lock');
+      drawLabelPlate(ctx, 'ARENA', sign.cx * TILE_SIZE, sign.cy * TILE_SIZE, arenaOpen(state) ? null : 'lock');
     }
   }
   // The ATHLETE room's door, in a visit that has one: never locked, ticked once the athlete has been met
@@ -157,6 +195,14 @@ export const drawDoorArrow = (ctx: CanvasRenderingContext2D, door: HubExit) => {
   // The tip comes within 4px of the door at the nearest point of the bob
   const top = up ? edge * TILE_SIZE + 9 - bob : edge * TILE_SIZE - 15 + bob;
   plotOutlined(ctx, up ? ARROW_UP : ARROW, left, top, GOLD);
+};
+
+/** The same arrow pointing down at a character (the Performance Director while a talk is due), above its bubble. */
+export const drawNpcArrow = (ctx: CanvasRenderingContext2D, tileX: number, tileY: number) => {
+  const bob = prefersReducedMotion() ? 0 : Math.round((Math.sin(Date.now() / 220) + 1) * 2);
+  const left = Math.round((tileX + 0.5) * TILE_SIZE) - 3;
+  const top = tileY * TILE_SIZE - BUBBLE_H - 3 - ARROW_H - 6 + bob; // clear of the bubble, even at the top of its hop
+  plotOutlined(ctx, ARROW, left, top, GOLD);
 };
 
 // --- Prompt bubbles and markers above characters ---------------------------------------
@@ -195,6 +241,13 @@ const bubbleSpot = (tileX: number, tileY: number, playerX: number, playerY: numb
 export const drawTalkPrompt = (ctx: CanvasRenderingContext2D, tileX: number, tileY: number, playerX: number, playerY: number) => {
   const spot = bubbleSpot(tileX, tileY, playerX, playerY);
   drawBubble(ctx, spot.x, spot.y + bobOffset(260, 1), 'A', INK);
+};
+
+/** The "A" bubble beside the player's head, for something with no room above it (the SUPPORT BOARD on the top wall). */
+export const drawTalkPromptBeside = (ctx: CanvasRenderingContext2D, playerX: number, playerY: number) => {
+  const x = Math.round(playerX) * TILE_SIZE + TILE_SIZE;
+  const y = Math.round(playerY) * TILE_SIZE - BUBBLE_H + 6;
+  drawBubble(ctx, x, y + bobOffset(260, 1), 'A', INK);
 };
 
 /** Bouncing "!" over a room athlete whose challenge is still open. */
@@ -263,12 +316,6 @@ export const drawSelectHint = (ctx: CanvasRenderingContext2D, state: GameState, 
 
 // --- Objectives panel ---------------------------------------------------------------
 
-const STAT_NAME: Record<StatKey, string> = {
-  speed: 'SPEED',
-  strength: 'STRENGTH',
-  endurance: 'ENDURANCE',
-  power: 'POWER',
-};
 const STAT_COLOR: Record<StatKey, string> = {
   speed: '#d03030',
   strength: '#d88020',
@@ -283,15 +330,17 @@ const NEXT_BLUE = '#2858a8';
 const percent = (v: number): number => Math.max(0, Math.min(100, Math.round(v * 100)));
 
 export const objectivesHint = (state: GameState): string => {
-  const next = nextDoor(state);
+  const next = nextStop(state);
+  if (next === 'director') return `NEXT: TALK TO ${DIRECTOR_SPEAKER.name.toUpperCase()}`;
+  if (retestDue(state)) return 'NEXT: RE-TEST IN TESTING';
   return next !== 'boss' ? `NEXT: VISIT THE ${doorLabel(next)} ROOM` : 'ALL ROOMS DONE - HEAD TO THE ARENA!';
 };
 
 /** The ATHLETE room's row: its sign name and what it gives (no stat: the overview). */
 const MEET_ROW = `${MEET_LABEL} (OVERVIEW)`;
 
-/** A room's row in the panel: its sign name and the stat it raises, e.g. "TRAINING (ENDURANCE)". */
-const roomRowLabel = (key: RoomKey): string => `${ROOM_LABEL[key]} (${STAT_NAME[ROOM_STAT[key]]})`;
+/** A room's row in the panel: its sign name and the score it records, e.g. "TESTING (TEST CHOICE)". */
+const roomRowLabel = (key: RoomKey): string => `${ROOM_LABEL[key]} (${SCORE_LABEL[ROOM_STAT[key]]})`;
 
 /** Plain-text version of the panel, for the screen-reader live region. `closeName` is the player's name for the SELECT button. */
 export const objectivesSummary = (state: GameState, closeName = 'SELECT'): string => {
@@ -299,7 +348,7 @@ export const objectivesSummary = (state: GameState, closeName = 'SELECT'): strin
     const status = state.roomProgress[k]
       ? `${percent(state.playerStats[ROOM_STAT[k]])} percent`
       : roomUnlocked(state, k) ? 'not done' : 'locked';
-    return `${ROOM_LABEL[k]} raises ${STAT_NAME[ROOM_STAT[k]].toLowerCase()}, ${status}`;
+    return `${ROOM_LABEL[k]} gives the ${scoreSpoken(ROOM_STAT[k])}, ${status}`;
   }).join('. ');
   const meet = meetOf(state);
   const athlete = state.meetRoom
@@ -331,7 +380,9 @@ export const drawObjectivesPanel = (ctx: CanvasRenderingContext2D, state: GameSt
 
   // Rooms (five rows when the ATHLETE room is there, a little closer together)
   drawText(ctx, 'ROOMS', left, 50, DIM);
-  const next = athleteMet(state) ? nextRoom(state) : null;
+  // The room to do next, only while it is open (a talk with the Director may be due first)
+  const stop = nextStop(state);
+  const next = stop === 'director' || stop === 'meet' || stop === 'boss' ? null : roomKeyForMap(stop);
   const pitch = state.meetRoom ? 11 : 13;
   const first = state.meetRoom ? 1 : 0;
   if (state.meetRoom) {
@@ -366,14 +417,14 @@ export const drawObjectivesPanel = (ctx: CanvasRenderingContext2D, state: GameSt
   });
   divider(114);
 
-  // Stats
-  drawText(ctx, 'STATS', left, 119, DIM);
-  const barX = left + 68;
-  const barW = 112;
+  // Support scores: each grades the player's work in one room (the longest name, TRAINING PLAN, ends at x = 97)
+  drawText(ctx, 'SUPPORT SCORES', left, 119, DIM);
+  const barX = left + 84;
+  const barW = 96;
   STAT_KEYS.forEach((key, i) => {
     const y = 130 + i * 12;
     const value = Math.max(0, Math.min(1, state.playerStats[key]));
-    drawText(ctx, STAT_NAME[key], left, y, TEXT);
+    drawText(ctx, SCORE_LABEL[key], left, y, TEXT);
     rect(ctx, barX, y - 1, barW, 9, TEXT, '#d8d8c8');
     const fill = Math.round((barW - 2) * value);
     if (fill > 0) {

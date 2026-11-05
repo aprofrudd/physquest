@@ -5,8 +5,8 @@ import { drawText, measureText } from '../../render/PixelFont';
 import { drawSprite } from '../../render/SpriteSheet';
 import { AISHA_SPRITE_COLORS, RUN_SPRITES } from '../testing/people';
 import { PALETTES } from '../../render/Palettes';
-import { COLORS, STAGE, clamp01, drawChip, drawCentred, drawCross, drawPanel, drawTick, chipWidth } from '../frame';
-import { BAD, GOOD, INK, PIN, SOFT, drawBracket, xOf, type RulerGeometry } from './ruler';
+import { COLORS, STAGE, clamp01, drawBrackets, drawChip, drawCentred, drawCross, drawPanel, drawTick, chipWidth } from '../frame';
+import { BAD, GOLD, GOOD, INK, PIN, SOFT, drawBracket, drawPin, xOf, type RulerGeometry } from './ruler';
 import type { Scale } from './model';
 
 /** Where the first row's ruler sits. */
@@ -20,9 +20,11 @@ export const GEOMETRY_2: RulerGeometry = { ...GEOMETRY, axisY: 94 };
 
 /**
  * Text rows (each seven pixels tall; the panel's paper starts at y 42, so the first line is two pixels clear of it).
- * The first row's heading and legend; the second row's summary, divider, heading and legend; the report's divider and first item.
+ * The first row's heading, its two keys (the noise band's, then the worthwhile lines'), the BEFORE label over the pole
+ * and YOUR GUESS's label under the ruler; the second row's summary, divider, heading and legend; the report's divider
+ * and first item.
  */
-export const FIRST_ROW = { title: 44, legend: 55 } as const;
+export const FIRST_ROW = { title: 44, noiseKey: 55, worthKey: 65, before: 75, guess: 113 } as const;
 export const SECOND_ROW = { summary: 44, divider: 54, title: 64, legend: 74 } as const;
 export const REPORT_ROW = { divider: 44, first: 57 } as const;
 
@@ -30,7 +32,7 @@ export const REPORT_ROW = { divider: 44, first: 57 } as const;
  * How high above its axis the retest dot starts its fall, on each row: just under the last words above that ruler
  * (the legend on the first row, the heading on the second), so the falling dot never crosses any text.
  */
-export const FALL = 22;
+export const FALL = 13;
 export const FALL_2 = 16;
 
 /** Text starts here and must stop before RIGHT (the panel's 4px border and 4px of paper clear). */
@@ -52,21 +54,77 @@ const width = (text: string): number => measureText(text) - 1;
 /** The panel everything sits on, in the room's own dark wood. */
 export const drawBoardPanel = (ctx: CanvasRenderingContext2D) => drawPanel(ctx, STAGE.x, STAGE.y, STAGE.w, PANEL_H, PALETTES.office.colors[1]);
 
-/** The row's heading at the left and BETTER → at the right (the ruler always runs worse to better). */
-export const drawTitleRow = (ctx: CanvasRenderingContext2D, title: string, y: number) => {
+/** The row's heading at the left and which way is better at the right (FASTER →: the ruler always runs worse to better). */
+export const drawTitleRow = (ctx: CanvasRenderingContext2D, title: string, better: string, y: number) => {
   drawText(ctx, title, LEFT, y, INK);
-  const better = 'BETTER →';
   drawText(ctx, better, RIGHT - width(better), y, SOFT);
 };
 
-/** BASELINE over the pole, in the pole's navy. */
-export const drawBaselineLabel = (ctx: CanvasRenderingContext2D, cx: number) =>
-  drawText(ctx, 'BASELINE', Math.round(cx - width('BASELINE') / 2), GEOMETRY.axisY - 22, NAVY_INK);
+/** BEFORE 72 S over the pole, in the pole's navy. */
+export const drawBeforeLabel = (ctx: CanvasRenderingContext2D, cx: number, text: string) =>
+  drawText(ctx, text, Math.round(cx - width(text) / 2), FIRST_ROW.before, NAVY_INK);
 
 /** LAST BLOCKS over the earlier blocks' ticks, in their grey, starting at x. */
-export const drawGhostLabel = (ctx: CanvasRenderingContext2D, x: number) => drawText(ctx, 'LAST BLOCKS', x, GEOMETRY.axisY - 22, GHOST_INK);
+export const drawGhostLabel = (ctx: CanvasRenderingContext2D, x: number) => drawText(ctx, 'LAST BLOCKS', x, FIRST_ROW.before, GHOST_INK);
 
-/** A one-line summary of a finished row with its tick or cross: LAST 400 M: 62 → 60 S ✓ */
+// ---- YOUR GUESS --------------------------------------------------------------------------------------------------
+
+/** The guess label's plate: 3px of blue either side of the words, with an arrow 3px beyond each end. */
+const PLATE_PAD = 3;
+const ARROW_GAP = 3;
+const ARROW_W = 4;
+
+/** The width of the guess label's plate and arrows, for a label `text`. */
+export const guessSpan = (text: string): number => width(text) + PLATE_PAD * 2 + (ARROW_GAP + ARROW_W) * 2;
+
+/** Where the guess label's plate starts for a guess at x: centred under it, kept inside the panel with its arrows. */
+export const guessPlateX = (x: number, text: string): number => {
+  const span = guessSpan(text);
+  const left = Math.max(LEFT, Math.min(RIGHT - span, Math.round(x - span / 2)));
+  return left + ARROW_GAP + ARROW_W;
+};
+
+/** A small arrow (4 wide, 7 tall) pointing left or right. */
+const drawArrow = (ctx: CanvasRenderingContext2D, x: number, y: number, dir: -1 | 1, color: string) => {
+  ctx.fillStyle = color;
+  for (let i = 0; i < ARROW_W; i++) {
+    const col = dir === 1 ? x + i : x + ARROW_W - 1 - i;
+    ctx.fillRect(col, y + i, 1, 7 - i * 2);
+  }
+};
+
+/**
+ * YOUR GUESS on the ruler: the blue triangle over the axis, a dashed blue line down past the numbers, and the label
+ * (YOUR GUESS 70.4 S) on a blue plate under the ruler with an arrow either side (it moves). `lit` is the blink's bright
+ * half (always true under reduced motion); `arrows` false hides the arrows (the walk-through, before it can move).
+ */
+export const drawGuess = (ctx: CanvasRenderingContext2D, g: RulerGeometry, x: number, text: string, lit: boolean, arrows = true) => {
+  const fill = lit ? PIN : '#6890d8';
+  drawPin(ctx, x, g.axisY - 6, fill);
+  ctx.fillStyle = PIN;
+  for (let y = g.axisY + g.half + 1; y < FIRST_ROW.guess - 1; y += 3) {
+    if (y >= g.axisY + g.half + 5 && y <= g.axisY + g.half + 12) continue; // leave the axis numbers clear
+    ctx.fillRect(x, y, 1, 2);
+  }
+  const plateX = guessPlateX(x, text);
+  const plateW = width(text) + PLATE_PAD * 2;
+  const y = FIRST_ROW.guess;
+  ctx.fillStyle = INK;
+  ctx.fillRect(plateX - 1, y - 2, plateW + 2, 11);
+  ctx.fillStyle = fill;
+  ctx.fillRect(plateX, y - 1, plateW, 9);
+  drawText(ctx, text, plateX + PLATE_PAD, y, PAPER);
+  if (arrows) {
+    drawArrow(ctx, plateX - 1 - ARROW_GAP - ARROW_W + 1, y, -1, PIN);
+    drawArrow(ctx, plateX + plateW + ARROW_GAP, y, 1, PIN);
+  }
+};
+
+/** Gold corner brackets around something the walk-through is explaining (2px clear of it all round). */
+export const drawHighlight = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) =>
+  drawBrackets(ctx, Math.max(STAGE.x + 3, x - 2), y - 2, Math.min(STAGE.x + STAGE.w - 3, x + w + 2) - Math.max(STAGE.x + 3, x - 2), h + 4, GOLD);
+
+/** A one-line summary of a finished row with its tick or cross: LAST 400 M: 72 → 70 S ✓ */
 export const drawSummaryLine = (ctx: CanvasRenderingContext2D, text: string, right: boolean, y: number) => {
   drawText(ctx, text, LEFT, y, INK);
   const at = LEFT + width(text) + 6;
@@ -85,10 +143,7 @@ export const drawDivider = (ctx: CanvasRenderingContext2D, label: string, y: num
   drawText(ctx, label, x + 4, y, SOFT);
 };
 
-// ---- the forecast: readout and chips ------------------------------------------------------------------------------
-
-/** FORECAST 60.4 S (1.6 BETTER) in the pin's blue, centred under the ruler. */
-export const drawReadout = (ctx: CanvasRenderingContext2D, text: string, y: number) => drawCentred(ctx, text, 128, y, PIN);
+// ---- the forecast: the chips ----------------------------------------------------------------------------------------
 
 /** The empty tick box on a chip that is not lit. */
 const drawBox = (ctx: CanvasRenderingContext2D, x: number, y: number) => {
@@ -108,7 +163,7 @@ const CHIP_A_X = Math.round(128 - CHIPS_W / 2);
 const CHIP_B_X = CHIP_A_X + chipWidth(CHIP_A) + CHIP_GAP;
 
 /**
- * The two chips that light as the pin passes the noise band and the worthwhile line. Lit chips are filled and carry a
+ * The two chips that light as YOUR GUESS passes the noise band and the worthwhile line. Lit chips are filled and carry a
  * tick, so the state shows without colour; unlit ones are empty outlines.
  */
 export const drawChips = (ctx: CanvasRenderingContext2D, y: number, beyondNoise: boolean, worthwhile: boolean) => {
@@ -170,7 +225,7 @@ export const drawWeekLabel = (ctx: CanvasRenderingContext2D, week: number) => {
 
 // ---- the retest: the gap between forecast and result --------------------------------------------------------------
 
-/** The bracket from the pin to the dot, and what it says: OFF BY 0.4 with INSIDE or OUTSIDE THE ERROR BARS. */
+/** The bracket from YOUR GUESS to the dot, and what it says: OFF BY 0.4 with INSIDE or OUTSIDE THE ERROR BARS. */
 export const drawGap = (ctx: CanvasRenderingContext2D, g: RulerGeometry, scale: Scale, forecast: number, actual: number, off: string, inside: boolean, y: number) => {
   const xa = xOf(g, scale, forecast);
   const xb = xOf(g, scale, actual);

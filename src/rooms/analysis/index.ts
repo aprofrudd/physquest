@@ -1,7 +1,9 @@
-// Analysis Room instrument: "Signal or Noise". The board is a ruler for one metric. The player reads how noisy the
-// test is (the typical error, a hatched band) and what change is worth having (gold lines), forecasts where the
-// athlete will land after a training block, watches the retest drop onto the ruler, and then judges two results:
-// the one trained (the last 400 m) and one the Data Room set aside (VO2max).
+// Analysis Room instrument: "Signal or Noise". The board is a ruler for one metric, every part of it labelled: BEFORE
+// (the baseline pole), the NOISE band (the typical error, hatched), the WORTHWHILE CHANGE (gold dashed lines) and
+// YOUR GUESS (a blue marker with its own moving label). The first visit walks through them one at a time, each
+// highlighted as it is explained. The player forecasts where the athlete will land after a training block, watches the
+// retest drop onto the ruler, and then judges two results from a choice list: the one trained (the last 400 m) and
+// one the Data Room set aside (VO2max).
 //
 // model.ts holds the rules and the scoring; ruler.ts and board.ts draw; this file is the buttons, the timers and
 // the order of things on screen. Timers advance with dt only, so the pause menu freezes everything. Words and
@@ -11,14 +13,20 @@ import { drawPromptBox } from '../../render/DialogueBox';
 import { prefersReducedMotion } from '../../render/motion';
 import { sfx } from '../../audio/Sfx';
 import { announce } from '../../ui/announce';
-import { STAGE, clamp01 } from '../frame';
-import type { AnalysisContent } from '../content/types';
+import { STAGE, blink, clamp01 } from '../frame';
+import type { AnalysisContent, TourMark } from '../content/types';
 import { contentFor } from '../content';
 import type { InstrumentFactory, RoomHost, RoomInstrument } from '../types';
 import {
   VERDICTS,
+  beforeLabel,
+  betterLabel,
   beyondNoise,
   createReview,
+  guessLabel,
+  judgeText,
+  noiseLabel,
+  worthLabel,
   fmt1,
   forecastWords,
   improvementOf,
@@ -41,30 +49,53 @@ import {
   type Score,
   type Verdict,
 } from './model';
-import { BAD, FULL, GOOD, INK, drawGhostTick, drawLegend, drawPin, drawRetestDot, drawRuler, xOf, type Reveal } from './ruler';
+import {
+  BAD,
+  FULL,
+  GOOD,
+  INK,
+  drawGhostTick,
+  drawLegend,
+  drawNoiseKey,
+  drawPin,
+  drawRetestDot,
+  drawRetestKey,
+  drawRuler,
+  drawWorthKey,
+  LEGEND_X,
+  xOf,
+  type Reveal,
+} from './ruler';
 import {
   FALL,
   FALL_2,
   FIRST_ROW,
   GEOMETRY,
   GEOMETRY_2,
+  LEFT,
   REPORT_ROW,
   SECOND_ROW,
-  drawBaselineLabel,
+  drawBeforeLabel,
   drawBlock,
   drawBoardPanel,
   drawChips,
   drawDivider,
   drawGap,
   drawGhostLabel,
-  drawReadout,
+  drawGuess,
+  drawHighlight,
   drawReport,
   drawStamp,
   drawSummaryLine,
   drawTitleRow,
   drawWeekLabel,
+  guessPlateX,
+  guessSpan,
   type ReportItem,
 } from './board';
+import { measureText } from '../../render/PixelFont';
+
+const textWidth = (text: string): number => measureText(text) - 1;
 
 /** A or B pressed this soon after something new appeared is ignored, so a carried-over press decides nothing unseen. */
 const LOCK = 0.35;
@@ -76,7 +107,8 @@ const TEXT_DELAY = 0.8; // the retest sentence waits for the picture
 const COLLAPSE_TIME = 0.35; // the finished row folds into one line
 const BUILD_TIME = 1.1; // the second ruler builds itself
 const SWAP_TIME = COLLAPSE_TIME + BUILD_TIME + DROP_TIME + WHISKER_TIME + 0.5;
-const REST = 0.4; // the pin must rest this long before it is read out to a screen reader
+const REST = 0.4; // YOUR GUESS must rest this long before it is read out to a screen reader
+const PAGE_BUILD = 0.6; // on the walk-through, each element draws itself in this long as its page comes up
 const RUSHED = 0.4; // a repeat visit builds the board this much faster
 
 type Step = 'brief' | 'block' | 'forecast' | 'retest' | 'asking' | 'explaining' | 'swap' | 'summary' | 'done';
@@ -119,14 +151,18 @@ export const createAnalysisInstrument = (
 
   // Words and places, worked out once
   const trainedTitle = titleOf(trained);
+  const trainedBetter = betterLabel(trained);
+  const decoyBetter = betterLabel(decoy);
+  const beforeText = beforeLabel(trained);
+  const noiseText = noiseLabel(trained);
+  const worthText = worthLabel(trained);
   const decoyTitle = `${titleOf(decoy)} ${plain(decoy.baseline)} → ${plain(decoy.retest)}`;
   const trainedSummary = summaryOf(trained);
   const baselineX = xOf(g, scales.trained, 0);
   const historyX = content.history.map(h => xOf(g, scales.trained, h));
   const ghostLabelX = (historyX.length > 0 ? Math.max(...historyX) : baselineX) - 6;
   const blockText = `The ${content.weeks}-week block is under way.`;
-  const question = `Where will her ${trained.metric.toLowerCase()} be after the block?`;
-  const forecastText = `${question} Move the pin with {LEFT} and {RIGHT}.`;
+  const forecastText = content.forecastAsk;
   const nextText = `Next: ${decoy.metric}, from the Data Room.`;
   const verdictText = (v: Verdict): string => content.verdicts[VERDICTS.indexOf(v)] ?? v;
   const fill = (text: string): string => host.input.fill(text);
@@ -141,6 +177,8 @@ export const createAnalysisInstrument = (
   let briefT = 0;
   let goldAt = Infinity; // when the gold lines may start (the second text, or soon on a repeat visit)
   const fullRules = (host.firstVisit || !session.rulesRead) && content.rules.length > 0;
+  let page = -1; // the walk-through's page on screen (-1 before the first)
+  let pageT = 0; // seconds it has been up
   const rushed = !host.firstVisit && session.rulesRead; // a visit after the rules were read: the board builds quickly
   // the block
   let blockT = 0;
@@ -149,7 +187,7 @@ export const createAnalysisInstrument = (
   // the forecast
   let held = 0;
   let rest = 0;
-  let readout = readoutFor(trained, 0, content.step);
+  let guessText = guessLabel(trained, 0, content.step);
   let litNoise = false;
   let litWorth = false;
   // the retest (and the second row's)
@@ -187,12 +225,35 @@ export const createAnalysisInstrument = (
 
   // ---- the brief ----
 
-  /** When the empty week strip comes in: as the second text mentions the block, or (a repeat visit) as the gold lines do. */
-  const stripAt = (): number => (rushed ? Math.max(goldAt, 3.4 * RUSHED) : goldAt);
+  /** When the empty week strip comes in on a repeat visit: as the gold lines do. (The walk-through leaves it out.) */
+  const stripAt = (): number => Math.max(goldAt, 3.4 * RUSHED);
 
-  /** Builds the first ruler piece by piece: the axis, the pole, the trial dots, the band, then the gold lines. */
+  /** The page that points at `mark` (Infinity when no page does: it is then drawn from the first page). */
+  const pageOf = (mark: TourMark): number => {
+    const i = content.tour.indexOf(mark);
+    return i < 0 ? 0 : i;
+  };
+
+  /** How far an element is drawn on the walk-through: whole once its page has passed, building as its page comes up. */
+  const tourShown = (mark: TourMark, start = 0, length = PAGE_BUILD): number => {
+    const at = pageOf(mark);
+    if (page > at) return 1;
+    if (page < at) return 0;
+    return still ? 1 : clamp01((pageT - start) / length);
+  };
+
+  /** Builds the first ruler: piece by piece with the walk-through's pages, or quickly on a repeat visit. */
   const setBriefReveal = () => {
-    const s = rushed ? RUSHED : 1;
+    if (fullRules) {
+      reveal.axis = tourShown('before', 0, 0.4);
+      reveal.pole = tourShown('before', 0.3, 0.3);
+      reveal.trials[0] = tourShown('before', 0.5, 0.25);
+      reveal.trials[1] = tourShown('before', 0.7, 0.25);
+      reveal.band = tourShown('noise');
+      reveal.gold = tourShown('worth');
+      return;
+    }
+    const s = RUSHED;
     const at = (start: number, length: number) => clamp01((briefT - start * s) / (length * s));
     reveal.axis = at(0, 0.6);
     reveal.pole = at(0.9, 0.4);
@@ -211,10 +272,11 @@ export const createAnalysisInstrument = (
     reveal.gold = FULL.gold;
   };
 
-  /** The rules one text at a time (B quits on any of them). The second text is where the gold lines come in. */
+  /** The walk-through, one page per element of the board, each highlighted while it is explained (B quits on any page). */
   const sayRules = (texts: readonly string[], i: number, onward: () => void) => {
     const last = i >= texts.length - 1;
-    if (i === Math.min(1, texts.length - 1)) goldAt = Math.min(goldAt, briefT);
+    page = i;
+    pageT = 0;
     host.say(texts[i] ?? '', undefined, last ? onward : () => sayRules(texts, i + 1, onward), last ? { exitLabel: 'QUIT', nextLabel: 'READY' } : undefined);
   };
 
@@ -222,6 +284,7 @@ export const createAnalysisInstrument = (
     const onward = () => {
       session.rulesRead = true;
       host.rulesRead();
+      page = -1;
       review.advance();
       startBlock();
     };
@@ -261,15 +324,15 @@ export const createAnalysisInstrument = (
 
   // ---- the forecast ----
 
-  /** The readout and the chips follow the pin: worked out when it moves. */
+  /** YOUR GUESS's label and the chips follow it: worked out when it moves. */
   const pinMoved = () => {
     const improvement = pinImprovement(review.pin, content.step);
-    readout = readoutFor(trained, review.pin, content.step);
+    guessText = guessLabel(trained, review.pin, content.step);
     litNoise = beyondNoise(trained, improvement);
     litWorth = worthwhile(trained, improvement);
   };
 
-  /** What a screen reader hears when the pin rests: where it is, and which chips are lit. */
+  /** What a screen reader hears when YOUR GUESS rests: where it is, and which chips are lit. */
   const forecastSentence = (): string => {
     const lit = litNoise ? (litWorth ? ' Beyond noise. Worthwhile.' : ' Beyond noise.') : ' Inside the noise band.';
     return forecastWords(trained, review.pin, content.step) + lit;
@@ -282,13 +345,13 @@ export const createAnalysisInstrument = (
     held = 0;
     rest = 0;
     pinMoved();
-    host.input.blockRepeats(); // a thumb already on the D-pad must not push the pin
-    announce(fill(`${forecastText} {A}: lock in. {B}: quit.`));
+    host.input.blockRepeats(); // a thumb already on the D-pad must not push the guess
+    announce(`${fill(forecastText)} ${forecastWords(trained, review.pin, content.step)}`);
   };
 
   const updateForecast = (dt: number, inp: InputState, busy: boolean) => {
     if (busy) return;
-    // The pin answers at once: only the buttons that decide something (A locks in, B leaves) wait out the lock
+    // The guess answers at once: only the buttons that decide something (A locks in, B leaves) wait out the lock
     const dir = (inp.rightRepeat ? 1 : 0) - (inp.leftRepeat ? 1 : 0);
     held = inp.left !== inp.right ? held + dt : 0;
     if (dir !== 0) {
@@ -300,7 +363,7 @@ export const createAnalysisInstrument = (
         sfx.play('bump'); // the end of the ruler
       }
     }
-    // A decision first, so a lock-in never shares a step with the resting pin's announcement
+    // A decision first, so a lock-in never shares a step with the resting guess's announcement
     if (lock <= 0) {
       if (inp.bPressed) return host.quit(); // nothing is decided yet
       if (inp.aPressed) return lockIn();
@@ -400,9 +463,9 @@ export const createAnalysisInstrument = (
 
   const ask = (row: Row): void => {
     const options = review.optionsFor(row).map(verdictText);
-    const r = rows[row];
+    host.input.blockRepeats();
     speak(
-      `Judge the result: ${plain(r.baseline)} → ${plain(r.retest)} ${r.unit.toLowerCase()}.`,
+      judgeText(content, rows[row]),
       options,
       choice => {
         const made = review.pick(choice ?? 0);
@@ -440,7 +503,7 @@ export const createAnalysisInstrument = (
     if (result) {
       items.push({
         ok: result.inside,
-        head: readoutFor(trained, review.pin, content.step).replace('FORECAST', 'YOUR FORECAST'),
+        head: readoutFor(trained, review.pin, content.step),
         lines: [{ text: result.off === 0 ? 'SPOT ON' : `${gapText}: ${result.inside ? 'INSIDE' : 'OUTSIDE'} THE ERROR BARS`, color: result.inside ? GOOD : BAD }],
       });
     }
@@ -473,38 +536,67 @@ export const createAnalysisInstrument = (
     const scale = scales.trained;
     if (step === 'brief') setBriefReveal();
     else setFullReveal();
+    const touring = step === 'brief' && fullRules;
     const forecasting = phase === 'forecast';
-    const showPin = phase === 'forecast' || phase === 'retest' || phase === 'verdict1';
+    const tourGuess = touring && page >= pageOf('guess');
+    const showPin = phase === 'forecast' || phase === 'retest' || phase === 'verdict1' || tourGuess;
     const showDot = phase === 'verdict1' || (phase === 'retest' && retestT > 0);
     if (phase === 'retest') setDot(retestT, g.axisY, FALL);
     else setDot(Infinity, g.axisY, FALL);
 
-    if (withTitle) drawTitleRow(ctx, trainedTitle, FIRST_ROW.title);
-    drawLegend(ctx, FIRST_ROW.legend, reveal.band > 0, reveal.gold > 0, showPin, showDot);
-    if (reveal.pole >= 1) drawBaselineLabel(ctx, baselineX);
+    if (withTitle) drawTitleRow(ctx, trainedTitle, trainedBetter, FIRST_ROW.title);
+    // the keys: each element's words and mark, as it appears
+    if (reveal.band > 0) drawNoiseKey(ctx, LEFT, FIRST_ROW.noiseKey, noiseText);
+    if (reveal.gold > 0) drawWorthKey(ctx, LEFT, FIRST_ROW.worthKey, worthText);
+    if (showDot) drawRetestKey(ctx, LEGEND_X.retest, FIRST_ROW.noiseKey);
+    if (reveal.pole >= 1) drawBeforeLabel(ctx, baselineX, beforeText);
     drawRuler(ctx, g, row, scale, ticks.trained, content.baselineTrials, reveal);
 
-    if (forecasting) {
+    if (forecasting || tourGuess) {
       // where the athlete's earlier blocks landed: the evidence for the forecast
       for (const x of historyX) drawGhostTick(ctx, x, g.axisY);
       drawGhostLabel(ctx, ghostLabelX);
     }
-    // the dot first, the pin over it: a forecast close to the result keeps its pin while the dot comes down
+    // the dot first, the guess over it: a forecast close to the result keeps its marker while the dot comes down
     if (showDot) drawRetestDot(ctx, g, scale, improvementOf(row), row.te, whiskers, dotY);
-    if (showPin) drawPin(ctx, xOf(g, scale, pinImprovement(review.pin, content.step)), g.axisY - 6);
+    const guessX = xOf(g, scale, pinImprovement(review.pin, content.step));
+    if (forecasting || tourGuess) drawGuess(ctx, g, guessX, guessText, still || blink(clock, 0.45) === 1, forecasting);
+    else if (showPin) drawPin(ctx, guessX, g.axisY - 6);
 
-    if (forecasting) {
-      drawReadout(ctx, readout, 116);
-      drawChips(ctx, 128, litNoise, litWorth);
-    }
+    if (forecasting) drawChips(ctx, 128, litNoise, litWorth);
+    if (touring) drawTourHighlight(ctx, guessX);
     if (phase === 'block') {
       drawBlock(ctx, content.weeks, weeksDone, weeksDone / content.weeks, clock, flash > 0);
       drawWeekLabel(ctx, Math.max(1, weeksDone));
-    } else if (phase === 'brief' && briefT >= stripAt()) {
-      drawBlock(ctx, content.weeks, 0, 0, 0, false); // the block ahead, empty, once the rules mention it
+    } else if (phase === 'brief' && !fullRules && briefT >= stripAt()) {
+      drawBlock(ctx, content.weeks, 0, 0, 0, false); // the block ahead, empty, once the gold lines are in
     }
     if (phase === 'retest' && result && whiskers >= 1) drawGap(ctx, g, scale, result.forecast, result.actual, gapText, result.inside, 116);
     if (step === 'explaining' && stamp && judging === 'trained') drawStamp(ctx, stamp.said, stamp.truth, stamp.right, 118);
+  };
+
+  /** Gold brackets round the element the walk-through's page is about (and its words). */
+  const drawTourHighlight = (ctx: CanvasRenderingContext2D, guessX: number) => {
+    const mark = content.tour[page];
+    const top = g.axisY - g.half;
+    const bottom = g.axisY + g.half;
+    if (mark === 'before') {
+      const w = textWidth(beforeText);
+      drawHighlight(ctx, baselineX - Math.ceil(w / 2), FIRST_ROW.before, w, g.axisY + g.half + 13 - FIRST_ROW.before);
+    } else if (mark === 'noise') {
+      const reach = baselineX - xOf(g, scales.trained, -trained.te);
+      drawHighlight(ctx, baselineX - reach, top, reach * 2 + 1, bottom - top + 1);
+      drawHighlight(ctx, LEFT, FIRST_ROW.noiseKey - 1, 13 + textWidth(noiseText), 9);
+    } else if (mark === 'worth') {
+      const left = xOf(g, scales.trained, -trained.swc);
+      const right = xOf(g, scales.trained, trained.swc);
+      drawHighlight(ctx, left - 1, top - 2, right - left + 3, bottom - top + 5);
+      drawHighlight(ctx, LEFT, FIRST_ROW.worthKey - 1, 10 + textWidth(worthText), 9);
+    } else if (mark === 'guess') {
+      const span = guessSpan(guessText);
+      const left = guessPlateX(guessX, guessText) - 7;
+      drawHighlight(ctx, Math.min(left, guessX - 6), g.axisY - 13, Math.max(span, 13), FIRST_ROW.guess + 9 - (g.axisY - 13));
+    }
   };
 
   const renderDecoy = (ctx: CanvasRenderingContext2D, since: number) => {
@@ -522,10 +614,10 @@ export const createAnalysisInstrument = (
       reveal.band = build(0.5, 0.4);
       reveal.gold = build(0.8, 0.3);
     }
-    drawTitleRow(ctx, decoyTitle, SECOND_ROW.title);
+    drawTitleRow(ctx, decoyTitle, decoyBetter, SECOND_ROW.title);
     setDot(since - BUILD_TIME, g2.axisY, FALL_2);
     const showDot = still || since > BUILD_TIME;
-    drawLegend(ctx, SECOND_ROW.legend, reveal.band > 0, reveal.gold > 0, false, showDot);
+    drawLegend(ctx, SECOND_ROW.legend, reveal.band > 0, reveal.gold > 0, showDot);
     drawRuler(ctx, g2, row, scale, ticks.decoy, [], reveal);
     if (showDot) drawRetestDot(ctx, g2, scale, improvementOf(row), row.te, whiskers, dotY);
     if (step === 'explaining' && stamp && judging === 'decoy') drawStamp(ctx, stamp.said, stamp.truth, stamp.right, 118);
@@ -579,6 +671,7 @@ export const createAnalysisInstrument = (
       switch (step) {
         case 'brief':
           briefT += dt;
+          pageT += dt;
           break;
         case 'block':
           updateBlock(dt, inp, busy);
@@ -612,6 +705,8 @@ export const createAnalysisInstrument = (
         phase: review.phase,
         step,
         pin: valueFor(trained, pinImprovement(review.pin, content.step)),
+        guess: guessText,
+        tour: step === 'brief' && page >= 0 ? (content.tour[page] ?? null) : null,
         pinSteps: review.pin,
         forecastImprovement: result ? result.forecast : null,
         c1: result ? score.c1 : null,

@@ -7,8 +7,8 @@ import { LABEL_MAX, featureOf, paceOf, paceText, partsOf, screenText, shortLabel
 const names = LEVEL_DATA[3]!.variables.map(v => v.name);
 
 describe('which feature a variable is', () => {
-  it('knows all five of the running level, vVO2max apart from VO2max', () => {
-    expect(names.map(featureOf)).toEqual(['lt1', 'lt2', 'vo2max', 'vvo2max', 'sprint']);
+  it('knows all eight of the running level, vVO2max apart from VO2max and HR at LT2 apart from LT2', () => {
+    expect(names.map(featureOf)).toEqual(['lt1', 'lt2', 'hrlt2', 'vo2max', 'vvo2max', 'cs', 'dprime', 'besttrial']);
   });
 
   it('gives every variable of the level a line in the content', () => {
@@ -21,7 +21,7 @@ describe('which feature a variable is', () => {
 
   it('still matches when a number in the brackets changes', () => {
     expect(featureOf('LT1 Pace (4:10/km)')).toBe('lt1');
-    expect(featureOf('Max Sprint Speed (30 km/h)')).toBe('sprint');
+    expect(featureOf('D Prime (165 m)')).toBe('dprime');
   });
 });
 
@@ -44,13 +44,13 @@ describe('the number in the brackets', () => {
 });
 
 describe('screen labels', () => {
-  it('shortens the five names the way the video wall shows them, at most 6 characters', () => {
-    expect(names.map(shortLabel)).toEqual(['LT1', 'LT2', 'VO2MAX', 'VVO2', 'SPRINT']);
+  it('shortens the names the way the screens show them, at most 6 characters', () => {
+    expect(names.map(shortLabel)).toEqual(['LT1', 'LT2', 'HR LT2', 'VO2MAX', 'VVO2', 'CS', 'DPRIME', 'BEST']);
     for (const name of names) expect(shortLabel(name).length).toBeLessThanOrEqual(LABEL_MAX);
   });
 
   it('takes the value as written', () => {
-    expect(names.map(n => screenText(n).value)).toEqual(['3:45', '3:20', '65', '2:55', '28']);
+    expect(names.map(n => screenText(n).value)).toEqual(['4:08', '3:34', '176', '58', '3:09', '3:22', '140', '2:58']);
   });
 });
 
@@ -59,6 +59,10 @@ describe('paces', () => {
     expect(paceOf(16)).toBe('3:45');
     expect(paceOf(18)).toBe('3:20');
     expect(paceOf(20.6)).toBe('2:55');
+    expect(paceOf(14.5)).toBe('4:08');
+    expect(paceOf(16.8)).toBe('3:34');
+    expect(paceOf(17.8)).toBe('3:22');
+    expect(paceOf(19)).toBe('3:09');
     expect(paceOf(14.2373)).toBe('4:13');
   });
 

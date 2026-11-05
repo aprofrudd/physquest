@@ -17,11 +17,12 @@ vi.mock('../src/render/PixelFont', async importOriginal => {
 
 import { wrapText } from '../src/render/DialogueBox';
 import { RUNNING } from '../src/rooms/content/running';
+import { MEET_RUNNING } from '../src/rooms/content/meet-running';
 import type { AthleteCheck } from '../src/rooms/content/types';
 import { createTestingRoomWith } from '../src/rooms/testing';
-import { DECISION_LOCK, RUN_SECONDS, WEEKDAYS, factorFor } from '../src/rooms/testing/model';
+import { DECISION_LOCK, RUN_SECONDS, WEEKDAYS, factorFor, resultFor } from '../src/rooms/testing/model';
 import type { RoomInstrument } from '../src/rooms/types';
-import { choose, closeLast, drive, makeHost, seeded, sport, stateOf, toPickWith } from './testing-helpers';
+import { choose, closeLast, drive, makeHost, partnerOf, seeded, sport, stateOf, toPickWith } from './testing-helpers';
 
 const content = RUNNING.testing;
 const upper = (text: string) => text.toUpperCase();
@@ -38,14 +39,14 @@ afterAll(() => {
 
 /** Words the lab adds that carry no physiology (UI), and the hints (their button names are filled in by the scene). */
 const UI_WORDS: readonly string[] = [
-  'AISHA NEEDS: ', 'EFFORT', 'GIVES:', 'RUNNING: ', 'DONE: ', 'LAB PRINTOUT', 'DATA QUALITY: SHAKY', 'SENT TO THE DATA LAB',
-  'NOT WHAT AISHA NEEDS', 'TEST DAY', 'RE-BOOKED', 'SHAKY', '!', '>', 'REST', 'ALL-OUT', 'OF 3',
-  'Which test should we use?', 'The lab printout is ready.',
-  '{A}: CHOOSE   {B}: QUIT', '{A}: SKIP   {B}: QUIT', '{A}: CONTINUE   {B}: QUIT',
+  'AISHA NEEDS: ', 'EFFORT', 'GIVES:', 'RUNNING: ', 'DONE: ', 'LAB PRINTOUT', 'DATA QUALITY: SHAKY', 'BOTH SENT TO THE DATA LAB',
+  '1 OF 2 TO THE DATA LAB', 'NO FILE FOR THE DATA LAB', '2 TESTS', 'TEST DAY', 'RE-BOOKED', 'SHAKY', '!', '>', 'REST', 'ALL-OUT', 'OF 3',
+  'Choose 2 tests for her battery.', 'The lab printout is ready.', 'That test is already in her battery.',
+  '{A}: ADD   {B}: QUIT', '{A}: ADD   {B}: UNDO', '{A}: SKIP   {B}: QUIT', '{A}: CONTINUE   {B}: QUIT',
   ...WEEKDAYS,
 ];
 
-const allowed = new Set<string>([...UI_WORDS, content.needs]);
+const allowed = new Set<string>([...UI_WORDS, content.needs, MEET_RUNNING.needs.testingNeeds]);
 for (const test of sport.tests) {
   const card = content.cards.find(c => c.name === test.name)!;
   allowed.add(test.name);
@@ -54,7 +55,10 @@ for (const test of sport.tests) {
   for (const chip of card.chips) allowed.add(chip);
   allowed.add(`RECORDS: ${card.gives}`);
   for (const line of wrapText(`GIVES: ${card.gives}`, 14)) allowed.add(line.startsWith('GIVES: ') ? line.slice(6) : line);
-  for (const line of wrapText(`Aisha is running the ${test.name}.`)) allowed.add(line);
+  allowed.add(`${test.name} ✓`);
+  for (const k of [1, 2]) for (const line of wrapText(`Aisha is running the ${test.name} (test ${k} of 2).`)) allowed.add(line);
+  for (const line of wrapText(`Test 1: ${test.name}. Now choose test 2.`)) allowed.add(line);
+  for (const other of sport.tests) allowed.add(`${upper(test.name)} + ${upper(other.name)}`);
 }
 /** Counters on the run's readout: STAGE 3, TRIAL 2 (then OF 3), LEVEL 4. */
 const COUNTERS = [/^STAGE \d$/, /^TRIAL \d$/, /^LEVEL \d$/];
@@ -82,11 +86,12 @@ interface Played {
   check: AthleteCheck;
   call: 'run' | 'rebook';
   question: string;
+  speaker: string | undefined;
   choices: string[] | undefined;
   why: string;
-  verdict: string;
-  insight: string;
-  result: { dataQuality: number; variableAccuracy: number } | undefined;
+  /** Lines said after the printout (none: the Director's check-in in the hub gives the verdict). */
+  after: number;
+  result: { dataQuality: number; variableAccuracy: number; testing?: { tests: readonly string[]; call: string } } | undefined;
 }
 
 const play = (test: string, check: AthleteCheck, call: 'run' | 'rebook', seed: number): Played => {
@@ -99,16 +104,14 @@ const play = (test: string, check: AthleteCheck, call: 'run' | 'rebook', seed: n
   watch(kit.room, 2);
   const why = kit.said[kit.said.length - 1]!.text;
   closeLast(kit.said);
-  watch(kit.room, RUN_SECONDS + 1); // the calendar, the run and its printout
+  watch(kit.room, 2 * RUN_SECONDS + 1); // the calendar, both runs and the printout
   expect(stateOf(kit.room).phase).toBe('printout');
   drive(kit.room, DECISION_LOCK + 0.1);
+  const before = kit.said.length;
   drive(kit.room, 0.05, 'a');
   look(kit.room);
-  const verdict = kit.said[kit.said.length - 1]!.text;
-  closeLast(kit.said);
-  const insight = kit.said[kit.said.length - 1]!.text;
-  closeLast(kit.said);
-  return { test, check, call, question: question.text, choices: question.choices, why, verdict, insight, result: kit.completed[0] };
+  const after = kit.said.length - before;
+  return { test, check, call, question: question.text, speaker: question.speaker, choices: question.choices, why, after, result: kit.completed[0] };
 };
 
 const played: Played[] = [];
@@ -140,8 +143,9 @@ describe('every line the room says, for every test, every check and both calls',
 
   it('asks test day in her own words, with the two choices', () => {
     for (const p of played) {
-      expect(p.question).toBe(`Test day. Aisha says: "${p.check.says}"`);
-      expect(p.choices).toEqual(['RUN THE TEST', 'RE-BOOK IT']);
+      expect(p.question).toBe(p.check.says);
+      expect(p.speaker).toBe('Aisha');
+      expect(p.choices).toEqual(['RUN THE TESTS', 'RE-BOOK IT']);
     }
   });
 
@@ -151,20 +155,17 @@ describe('every line the room says, for every test, every check and both calls',
     }
   });
 
-  it('gives the classic verdict for the test, then the test insight', () => {
-    for (const p of played) {
-      const test = sport.tests.find(t => t.name === p.test)!;
-      expect(p.verdict).toBe(test.correct ? `Good choice! ${test.description}` : `Not ideal. ${test.description} This isn't the best match for the athlete's needs.`);
-      expect(p.insight).toBe(sport.testInsight);
-    }
+  it('says nothing more after the printout: the room completes (the Director gives the verdict in the hub)', () => {
+    for (const p of played) expect(p.after).toBe(0);
   });
 
-  it('records the test\'s own data quality and accuracy, less the readiness factor, exactly once', () => {
+  it('records the battery\'s own data quality and accuracy, less the readiness factor, exactly once', () => {
     for (const p of played) {
-      const test = sport.tests.find(t => t.name === p.test)!;
+      const battery = [p.test, partnerOf(p.test)].map(name => sport.tests.find(t => t.name === name)!);
+      const outcome = p.call === p.check.call ? 'right' : p.check.call === 'rebook' ? 'ranAnyway' : 'needlessRebook';
       expect(p.result, `${p.test} / ${p.check.says} / ${p.call}`).toEqual({
-        dataQuality: test.dataQuality * factorFor(content, p.check, p.call),
-        variableAccuracy: test.correct ? 1 : 0.3,
+        ...resultFor(sport.tests, battery, factorFor(content, p.check, p.call)),
+        testing: { tests: battery.map(t => t.name), call: outcome },
       });
     }
   });
@@ -184,7 +185,7 @@ describe('every word the room draws', () => {
       for (const chip of card.chips) expect(seen.has(chip), chip).toBe(true);
       expect(seen.has(`RECORDS: ${card.gives}`), card.gives).toBe(true);
     }
-    for (const word of ['LAB PRINTOUT', 'SENT TO THE DATA LAB', 'NOT WHAT AISHA NEEDS', 'TEST DAY', 'RE-BOOKED', 'REST', 'ALL-OUT', ...WEEKDAYS.slice(0, 5)]) {
+    for (const word of ['LAB PRINTOUT', 'BOTH SENT TO THE DATA LAB', 'NO FILE FOR THE DATA LAB', 'TEST DAY', 'RE-BOOKED', 'REST', 'ALL-OUT', ...WEEKDAYS.slice(0, 5)]) {
       expect(seen.has(word), word).toBe(true);
     }
     for (const counter of [/^STAGE 7$/, /^TRIAL 3$/, /^LEVEL 6$/]) expect([...seen].some(text => counter.test(text)), String(counter)).toBe(true);

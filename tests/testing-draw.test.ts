@@ -116,7 +116,7 @@ afterAll(() => {
 
 const sport = LEVEL_DATA[3]!;
 const content = RUNNING.testing;
-const stages = RUNNING.data.stages.length;
+const stages = RUNNING.data.lactate.stages.length;
 const listTop = 108;
 const window = pickWindow(listTop);
 
@@ -199,15 +199,30 @@ describe('the run', () => {
   });
 });
 
+/** A model with `names` in its battery (each pick after its lock) and the call made. */
+const withBattery = (names: readonly string[], call: 'run' | 'rebook') => {
+  const model = createTestingModel({ sport, content: { ...content, checks: [{ ...content.checks[0]!, call }] }, rng: () => 0.2 });
+  model.startPick();
+  for (const name of names) {
+    model.update(1);
+    model.moveCursor(model.state.order.findIndex(t => t.name === name) - model.state.cursor);
+    model.choose();
+  }
+  model.answer('run');
+  return model;
+};
+
 describe('the printout', () => {
-  it('draws the card sliding out and settled, for a right test, a wrong one and shaky data', () => {
-    for (const [name, call] of [['Lactate Threshold Test', 'rebook'], ['Wingate Test', 'run'], ['Critical Speed Test', 'run']] as const) {
-      const model = createTestingModel({ sport, content: { ...content, checks: [{ ...content.checks[0]!, call }] }, rng: () => 0.2 });
-      model.startPick();
-      model.update(1);
-      model.moveCursor(model.state.order.findIndex(t => t.name === name));
-      model.choose();
-      model.answer('run');
+  it('draws the card sliding out and settled, for a full battery, a partial one, none, and shaky data', () => {
+    const batteries = [
+      [['Lactate Profile', 'Critical Speed Test'], 'rebook'],
+      [['Wingate Test', 'Beep Test'], 'run'],
+      [['Critical Speed Test', 'Wingate Test'], 'rebook'],
+      [['Beep Test', 'Lactate Profile'], 'run'],
+    ] as const;
+    for (const [names, call] of batteries) {
+      const name = names.join(' + ');
+      const model = withBattery(names, call);
       for (const calm of [false, true]) {
         for (let slide = 0; slide <= PRINTOUT_SECONDS + 0.5; slide += 0.1) {
           const view: PrintoutView = { window: runWindow, calm, lines: model.printout(), slide };
@@ -217,12 +232,8 @@ describe('the printout', () => {
     }
   });
 
-  it('says shaky only when the test ran on a day to re-book', () => {
-    const model = createTestingModel({ sport, content: { ...content, checks: [{ ...content.checks[0]!, call: 'rebook' }] }, rng: () => 0.2 });
-    model.startPick();
-    model.update(1);
-    model.choose();
-    model.answer('run');
-    expect(model.printout().shaky).toBe('DATA QUALITY: SHAKY');
+  it('says shaky only when the battery ran on a day to re-book', () => {
+    expect(withBattery(['Lactate Profile', 'Beep Test'], 'rebook').printout().shaky).toBe('DATA QUALITY: SHAKY');
+    expect(withBattery(['Lactate Profile', 'Beep Test'], 'run').printout().shaky).toBeNull();
   });
 });

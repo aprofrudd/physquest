@@ -24,11 +24,11 @@ const stat = (chips: readonly string[]): number => {
 };
 
 const GOOD: Record<number, string[]> = {
-  1: ['SUB', 'AWAY', 'EASY', 'SUPR', 'EASY', 'SPRT', 'REST'],
-  2: ['SUB', 'EASY', 'AWAY', 'SUPR', 'EASY', 'SPRT', 'REST'],
-  3: ['SUB', 'EASY', 'SUPR', 'AWAY', 'EASY', 'SPRT', 'REST'],
+  1: ['THR', 'AWAY', 'EASY', 'SEV', 'EASY', 'FAST', 'REST'],
+  2: ['THR', 'EASY', 'AWAY', 'SEV', 'EASY', 'FAST', 'REST'],
+  3: ['THR', 'EASY', 'SEV', 'AWAY', 'EASY', 'FAST', 'REST'],
 };
-const OPTIONS = ['--', 'SUB', 'SUPR', 'SPRT', 'EASY', 'REST'];
+const OPTIONS = ['--', 'THR', 'SEV', 'FAST', 'EASY', 'REST'];
 
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]!;
@@ -123,19 +123,19 @@ describe('bots', () => {
   });
 
   it('a planner who forgets a key session scores about 0.7-0.76', () => {
-    expect(stat(['SUB', 'EASY', 'AWAY', 'SUPR', 'EASY', 'EASY', 'REST'])).toBeCloseTo(0.76);
-    expect(stat(['SUB', 'EASY', 'AWAY', 'SUPR', 'EASY', 'REST', 'REST'])).toBeCloseTo(0.707, 2);
+    expect(stat(['THR', 'EASY', 'AWAY', 'SEV', 'EASY', 'EASY', 'REST'])).toBeCloseTo(0.76);
+    expect(stat(['THR', 'EASY', 'AWAY', 'SEV', 'EASY', 'REST', 'REST'])).toBeCloseTo(0.707, 2);
   });
 
   it('a planner who puts two hard days back to back scores well below the perfect week', () => {
-    const score = stat(['SUB', 'SUPR', 'AWAY', 'SPRT', 'EASY', 'EASY', 'REST']);
+    const score = stat(['THR', 'SEV', 'AWAY', 'FAST', 'EASY', 'EASY', 'REST']);
     expect(score).toBeLessThan(0.8);
     expect(score).toBeGreaterThan(0.6);
   });
 
   it('a planner who trains hard every day scores about 0.43', () => {
-    expect(stat(['SUB', 'SUPR', 'AWAY', 'SUB', 'SUPR', 'SPRT', 'SUB'])).toBeLessThan(0.5);
-    expect(stat(['SUB', 'SUPR', 'SPRT', 'SUB', 'SUPR', 'SPRT', 'SUB'])).toBeCloseTo(0.43, 2);
+    expect(stat(['THR', 'SEV', 'AWAY', 'THR', 'SEV', 'FAST', 'THR'])).toBeLessThan(0.5);
+    expect(stat(['THR', 'SEV', 'FAST', 'THR', 'SEV', 'FAST', 'THR'])).toBeCloseTo(0.43, 2);
   });
 
   it('a planner who only runs easy, or plans nothing, scores 0.20', () => {

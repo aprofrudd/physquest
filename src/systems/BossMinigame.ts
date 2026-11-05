@@ -7,9 +7,28 @@ import { consoleLabel, type InputState } from '../engine/Input';
 import { sfx } from '../audio/Sfx';
 import { GAME_W } from '../render/DialogueBox';
 import { drawText, measureText } from '../render/PixelFont';
+import { prefersReducedMotion } from '../render/motion';
 import { ROOM_KEYS, ROOM_LABEL, ROOM_STAT, type StatKey } from '../state/GameState';
+import { FINALE_RUNNING } from '../rooms/content/finale-running';
+import {
+  EV_BELL,
+  EV_EMPTY,
+  EV_KICK,
+  EV_LAP,
+  EV_PASS,
+  createRace,
+  raceOver,
+  raceScore,
+  raceWon,
+  stepRace,
+  type RaceState,
+} from './RaceModel';
+import { drawRace } from './RaceView';
 
-export type MinigameType = 'sprint' | 'strength' | 'endurance' | 'power';
+/** 'race' is Distance Running's RACE TO THE LINE (RaceModel.ts); the others are the classic levels' bouts. */
+export type MinigameType = 'sprint' | 'strength' | 'endurance' | 'power' | 'race';
+
+const RACE_TEXT = FINALE_RUNNING.race;
 
 export const MINIGAME_FOR_STAT: Record<StatKey, MinigameType> = {
   speed: 'sprint',
@@ -18,14 +37,7 @@ export const MINIGAME_FOR_STAT: Record<StatKey, MinigameType> = {
   power: 'power',
 };
 
-export const STAT_LABEL: Record<StatKey, string> = {
-  speed: 'SPEED',
-  strength: 'STRENGTH',
-  endurance: 'ENDURANCE',
-  power: 'POWER',
-};
-
-/** Hub sign label of the room that raises a stat (e.g. 'TESTING' for speed). */
+/** Hub sign label of the room that records a score (e.g. 'TESTING' for TEST CHOICE, key speed). */
 export const roomLabelForStat = (stat: StatKey): string => {
   const key = ROOM_KEYS.find(k => ROOM_STAT[k] === stat);
   return key ? ROOM_LABEL[key] : '';
@@ -37,6 +49,12 @@ export const RIVAL_FACTOR: Record<MinigameType, number> = {
   strength: 0.8,
   endurance: 0.75,
   power: 0.7,
+  race: 0.7, // as the POWER SURGE it replaces, so Distance Running's TARGET is unchanged
+};
+
+/** The arena's title for a bout type that has its own (else the sport's bossEvent). */
+export const MINIGAME_EVENT: Readonly<Partial<Record<MinigameType, string>>> = {
+  race: RACE_TEXT.event,
 };
 
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
@@ -116,6 +134,10 @@ export interface MinigameState {
   sweetSpot: number; // 0-1 along the bar
   startPhase: number; // cursor position at GO
   tapProgress: number; // cursor position when A was pressed, -1 until then
+  // race (null for the other bouts)
+  race: RaceState | null;
+  practice: boolean; // the race's practice straight: no score, no rival
+  bellFlash: number; // seconds left of the BELL cue
 }
 
 export const createMinigameState = (
@@ -123,6 +145,7 @@ export const createMinigameState = (
   playerRating: number,
   rivalCeiling: number,
   rng: () => number = Math.random,
+  practice = false,
 ): MinigameState => {
   const sweetSpot = 0.5 + rng() * 0.3;
   const wrap = (v: number) => ((v % 1) + 1) % 1;
@@ -133,7 +156,8 @@ export const createMinigameState = (
       type === 'sprint' ? SPRINT_DURATION
         : type === 'strength' ? STRENGTH_DURATION
           : type === 'endurance' ? ENDURANCE_DURATION
-            : POWER_DURATION,
+            : type === 'race' ? 0 // run to the line, not the clock
+              : POWER_DURATION,
     rating: clamp01(playerRating),
     rivalCeiling: clamp01(rivalCeiling),
     target: rivalFinalScore(type, rivalCeiling),
@@ -157,6 +181,9 @@ export const createMinigameState = (
     sweetSpot,
     startPhase: wrap(sweetSpot - POWER_LEAD / POWER_CYCLE),
     tapProgress: -1,
+    race: type === 'race' ? createRace(playerRating, rivalFinalScore(type, rivalCeiling), practice) : null,
+    practice: type === 'race' && practice,
+    bellFlash: 0,
   };
 };
 
@@ -241,6 +268,32 @@ const updatePower = (s: MinigameState, pressed: boolean): void => {
   sfx.play(s.won ? 'select' : 'wrong');
 };
 
+const BELL_FLASH = 1.5;
+
+/** The race: step the model, sound its events, and score it at the line. */
+const updateRace = (s: MinigameState, r: RaceState, dt: number, held: boolean): void => {
+  stepRace(r, dt, held);
+  const ev = r.events;
+  if (ev & EV_KICK) sfx.play('mash');
+  if (ev & EV_BELL) {
+    sfx.play('correct');
+    s.bellFlash = BELL_FLASH;
+  } else if (ev & EV_LAP) {
+    sfx.play('beat');
+  }
+  if (ev & EV_EMPTY) sfx.play('wrong');
+  if (ev & EV_PASS) sfx.play('blip');
+  s.bellFlash = Math.max(0, s.bellFlash - (ev & EV_BELL ? 0 : dt));
+  if (!raceOver(r)) return;
+  if (s.practice) {
+    s.complete = true; // no score and no winner on the practice straight
+    return;
+  }
+  s.playerScore = raceScore(r);
+  finish(s);
+  s.won = raceWon(r); // a dead heat on the rival's shoulder scores the TARGET exactly: not a win
+};
+
 /** Advance one fixed step. A is ignored for the first INPUT_LOCK seconds after GO. */
 export const updateMinigame = (
   s: MinigameState,
@@ -257,6 +310,11 @@ export const updateMinigame = (
   const live = s.timer >= INPUT_LOCK;
   const pressed = live && inp.aPressed;
   const held = live && inp.a;
+
+  if (s.race) {
+    updateRace(s, s.race, dt, held);
+    return;
+  }
 
   switch (s.type) {
     case 'sprint':
@@ -303,6 +361,8 @@ export const boutWasIdle = (s: MinigameState): boolean => {
       return s.hits === 0 && s.strayMisses === 0;
     case 'power':
       return s.tapProgress < 0;
+    case 'race':
+      return !s.race?.held;
   }
 };
 
@@ -323,6 +383,7 @@ export const MINIGAME_PROMPT: Record<MinigameType, string> = {
   strength: 'HOLD IT DOWN!',
   endurance: 'TAP ON THE BEAT!',
   power: 'TAP AT THE MARK!',
+  race: RACE_TEXT.prompt,
 };
 
 // The rules card: how each bout type is played. {A} is filled in with the player's name for the button.
@@ -331,6 +392,7 @@ export const MINIGAME_RULES: Record<MinigameType, string> = {
   strength: 'Hold {A} down. Your bar rises while you hold it and stops when you let go.',
   endurance: 'Press {A} each time a note reaches the green zone. Taps between notes count as misses.',
   power: 'You get one tap. Press {A} while the cursor is in the green zone: the dark centre scores the most.',
+  race: RACE_TEXT.rules[1], // the card's pages come from raceRulesPages (they name the rating and the TARGET)
 };
 
 /** The same rules in a line, for a bout type the player has already been through. */
@@ -339,6 +401,7 @@ export const MINIGAME_RULES_SHORT: Record<MinigameType, string> = {
   strength: 'Hold {A} down the whole time.',
   endurance: 'Press {A} as each note hits the green zone.',
   power: 'One tap: press {A} in the green zone.',
+  race: RACE_TEXT.rulesShort,
 };
 
 const pct = (v: number): number => Math.round(clamp01(v) * 100);
@@ -557,9 +620,13 @@ export const renderMinigame = (ctx: CanvasRenderingContext2D, s: MinigameState, 
     case 'power':
       drawPower(ctx, s);
       break;
+    case 'race':
+      // The BELL! cue blinks while it is fresh (steady under reduced motion, and once it has faded)
+      if (s.race) drawRace(ctx, s.race, s.complete, s.bellFlash <= 0 || prefersReducedMotion() || Math.floor(s.bellFlash * 6) % 2 === 0);
+      break;
   }
 
-  if (s.complete) {
+  if (s.complete && !s.practice) {
     const text = s.won ? 'YOU WIN!' : 'YOU LOSE!';
     drawText(ctx, text, Math.round((GAME_W - measureText(text, 2)) / 2), RESULT_Y, s.won ? HUD_COLORS.good : HUD_COLORS.bad, 2);
   }

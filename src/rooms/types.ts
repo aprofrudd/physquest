@@ -2,6 +2,7 @@ import type { Input, InputState } from '../engine/Input';
 import type { DialogueOptions } from '../render/DialogueBox';
 import type { SportData } from '../data/sports';
 import type { DialogueSystem } from '../systems/Dialogue';
+import type { TestCall } from '../state/GameState';
 
 /** What a finished room feeds into its stat: calcStat(dataQuality, variableAccuracy), both 0-1. */
 export interface RoomResult {
@@ -12,6 +13,11 @@ export interface RoomResult {
    * a stat; dataQuality and variableAccuracy are then ignored.
    */
   overview?: { good: number; of: number };
+  /**
+   * The Testing Lab only: the battery that was run (the tests' names in sports.ts, in the order picked) and how the
+   * test-day call went. The scene keeps the latest for the Performance Director's check-in and the Data Lab's files.
+   */
+  testing?: { tests: readonly string[]; call: TestCall };
 }
 
 /**
@@ -46,6 +52,12 @@ export interface RoomHost {
   rulesRead(): void;
   /** The room was finished before this visit (a replay: the best stat is kept). */
   replay: boolean;
+  /**
+   * The Testing Lab's last battery (test names in sports.ts), for the rooms whose content depends on what was
+   * tested (the Data Lab's files, the Training Floor's targets). Empty before any battery: the rooms then use every
+   * test that gives a file.
+   */
+  tests: readonly string[];
 }
 
 export interface RoomInstrument {

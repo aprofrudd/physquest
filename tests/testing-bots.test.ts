@@ -19,29 +19,33 @@ const seeded = (seed: number): Rng => {
   };
 };
 
-/** What a bot does: which test (by name) and what call to make on test day. */
+/** What a bot does: which tests (by name, in order) go in the battery, and what call to make on test day. */
 interface Bot {
-  test: (names: readonly string[], rng: Rng) => string;
+  tests: (names: readonly string[], rng: Rng) => readonly [string, string];
   call: (right: CheckCall, rng: Rng) => CheckCall;
 }
 
 const opposite = (call: CheckCall): CheckCall => (call === 'run' ? 'rebook' : 'run');
 
-/** One attempt: the bot picks a test and makes its call; returns the stat the room would record. */
+/** One attempt: the bot builds its battery and makes its call; returns the stat the room would record. */
 const play = (bot: Bot, seed: number): number => {
   const rng = seeded(seed);
   const model = createTestingModel({ sport, content, rng });
   model.startPick();
-  model.update(1);
   const names = model.state.order.map(t => t.name);
-  model.moveCursor(Math.max(0, names.indexOf(bot.test(names, rng)))); // the cursor starts on the first test
-  model.choose();
+  for (const name of bot.tests(names, rng)) {
+    model.update(1);
+    model.moveCursor(Math.max(0, names.indexOf(name)) - model.state.cursor);
+    model.choose();
+  }
   if (model.state.phase === 'check') {
     const right = model.state.check!.call;
     model.answer(bot.call(right, rng));
     model.beginRun();
   }
   model.update(RUN_SECONDS + 0.1);
+  model.update(RUN_SECONDS + 0.1);
+  expect(model.state.phase).toBe('printout');
   return statOf(model.result());
 };
 
@@ -51,22 +55,41 @@ const stats = (bot: Bot, runs = 1000) => {
   return { mean, min: values[0]!, p5: values[Math.floor(runs * 0.05)]!, p95: values[Math.floor(runs * 0.95)]!, max: values[values.length - 1]! };
 };
 
-const named = (name: string): Bot['test'] => () => name;
+const named = (a: string, b: string): Bot['tests'] => () => [a, b];
 const right: Bot['call'] = r => r;
+const LP = 'Lactate Profile';
+const CS = 'Critical Speed Test';
+const RIGHT_TESTS = [LP, CS];
+const WRONG_TESTS = ['Wingate Test', 'Beep Test'];
+
+/** Two different tests at random. */
+const anyTwo = (names: readonly string[], rng: Rng): [string, string] => {
+  const first = names[Math.floor(rng() * names.length)]!;
+  const rest = names.filter(n => n !== first);
+  return [first, rest[Math.floor(rng() * rest.length)]!];
+};
 
 const BOTS: Record<string, Bot> = {
-  'perfect: Lactate Threshold, right call': { test: named('Lactate Threshold Test'), call: right },
-  'good: Critical Speed, right call': { test: named('Critical Speed Test'), call: right },
-  'right test, always runs (ignores readiness)': { test: named('Lactate Threshold Test'), call: () => 'run' },
-  'right test, always re-books': { test: named('Lactate Threshold Test'), call: () => 'rebook' },
-  'right test, reads readiness right 70%': { test: named('Lactate Threshold Test'), call: (r, rng) => (rng() < 0.7 ? r : opposite(r)) },
-  'wrong test (Beep), right call': { test: named('Beep Test'), call: right },
-  'typical mistakes: 60% right test, 70% right call': {
-    test: (names, rng) => (rng() < 0.6 ? (rng() < 0.5 ? 'Lactate Threshold Test' : 'Critical Speed Test') : (rng() < 0.5 ? 'Beep Test' : 'Wingate Test')),
+  'perfect: both right tests, right call': { tests: named(LP, CS), call: right },
+  'partial: lactate profile + Wingate, right call': { tests: named(LP, 'Wingate Test'), call: right },
+  'partial: critical speed + Beep, right call': { tests: named(CS, 'Beep Test'), call: right },
+  'right tests, always runs (ignores readiness)': { tests: named(LP, CS), call: () => 'run' },
+  'right tests, always re-books': { tests: named(LP, CS), call: () => 'rebook' },
+  'right tests, reads readiness right 70%': { tests: named(LP, CS), call: (r, rng) => (rng() < 0.7 ? r : opposite(r)) },
+  'no right test (Wingate + Beep), right call': { tests: named('Wingate Test', 'Beep Test'), call: right },
+  'typical mistakes: each pick 60% right, 70% right call': {
+    tests: (_names, rng) => {
+      const pickOne = (taken: string[]) => {
+        const pool = (rng() < 0.6 ? RIGHT_TESTS : WRONG_TESTS).filter(n => !taken.includes(n));
+        return (pool.length > 0 ? pool : [...RIGHT_TESTS, ...WRONG_TESTS].filter(n => !taken.includes(n)))[Math.floor(rng() * 2) % Math.max(1, pool.length)]!;
+      };
+      const first = pickOne([]);
+      return [first, pickOne([first])];
+    },
     call: (r, rng) => (rng() < 0.7 ? r : opposite(r)),
   },
-  'random: any test, coin-flip call': { test: (names, rng) => names[Math.floor(rng() * names.length)]!, call: (_r, rng) => (rng() < 0.5 ? 'run' : 'rebook') },
-  'worst: Wingate, wrong call': { test: named('Wingate Test'), call: (r) => opposite(r) },
+  'random: any two tests, coin-flip call': { tests: anyTwo, call: (_r, rng) => (rng() < 0.5 ? 'run' : 'rebook') },
+  'worst: Wingate + Beep, wrong call': { tests: named('Wingate Test', 'Beep Test'), call: r => opposite(r) },
 };
 
 describe('bots', () => {
@@ -79,35 +102,40 @@ describe('bots', () => {
   });
 
   it('lands perfect play between 0.92 and 0.98', () => {
-    const perfect = table['perfect: Lactate Threshold, right call']!;
-    expect(perfect.min).toBeCloseTo(0.98, 9);
-    expect(perfect.max).toBeCloseTo(0.98, 9);
-    const good = table['good: Critical Speed, right call']!;
-    expect(good.mean).toBeCloseTo(0.96, 9);
+    const perfect = table['perfect: both right tests, right call']!;
+    expect(perfect.min).toBeCloseTo(0.97, 9);
+    expect(perfect.max).toBeCloseTo(0.97, 9);
   });
 
-  it('costs the right test something when readiness is ignored, and little when it is over-cautious', () => {
-    const ignores = table['right test, always runs (ignores readiness)']!;
-    const cautious = table['right test, always re-books']!;
-    expect(ignores.mean).toBeLessThan(0.97);
-    expect(ignores.mean).toBeGreaterThan(0.86);
-    expect(ignores.min).toBeCloseTo(0.866, 9);
-    expect(cautious.mean).toBeGreaterThan(0.96);
-    expect(cautious.mean).toBeLessThan(0.98);
+  it('puts a partial battery in the mixed band (50 to 80)', () => {
+    for (const name of ['partial: lactate profile + Wingate, right call', 'partial: critical speed + Beep, right call']) {
+      expect(table[name]!.mean).toBeGreaterThanOrEqual(0.5);
+      expect(table[name]!.mean).toBeLessThan(0.8);
+    }
   });
 
-  it('keeps the wrong tests well below the right ones', () => {
-    expect(table['wrong test (Beep), right call']!.mean).toBeCloseTo(0.42, 9);
-    expect(table['worst: Wingate, wrong call']!.max).toBeLessThan(0.4);
-    expect(table['worst: Wingate, wrong call']!.min).toBeGreaterThan(0.2);
+  it('costs the right tests something when readiness is ignored, and little when it is over-cautious', () => {
+    const ignores = table['right tests, always runs (ignores readiness)']!;
+    const cautious = table['right tests, always re-books']!;
+    expect(ignores.mean).toBeLessThan(0.96);
+    expect(ignores.mean).toBeGreaterThan(0.85);
+    expect(ignores.min).toBeCloseTo(0.4 * 0.925 * 0.7 + 0.6, 9);
+    expect(cautious.mean).toBeGreaterThan(0.95);
+    expect(cautious.mean).toBeLessThan(0.97);
   });
 
-  it('puts typical mistakes in the middle and random play near the classic room (half the tests are right)', () => {
-    const typical = table['typical mistakes: 60% right test, 70% right call']!;
-    expect(typical.mean).toBeGreaterThan(0.6);
+  it('keeps a battery with no right test well below, in the weak band', () => {
+    expect(table['no right test (Wingate + Beep), right call']!.mean).toBeCloseTo(0.4, 9);
+    expect(table['worst: Wingate + Beep, wrong call']!.max).toBeLessThan(0.4);
+    expect(table['worst: Wingate + Beep, wrong call']!.min).toBeGreaterThan(0.2);
+  });
+
+  it('puts typical mistakes in the middle and random play below them', () => {
+    const typical = table['typical mistakes: each pick 60% right, 70% right call']!;
+    expect(typical.mean).toBeGreaterThan(0.55);
     expect(typical.mean).toBeLessThan(0.85);
-    const random = table['random: any test, coin-flip call']!;
-    expect(random.mean).toBeGreaterThan(0.55);
+    const random = table['random: any two tests, coin-flip call']!;
+    expect(random.mean).toBeGreaterThan(0.5);
     expect(random.mean).toBeLessThan(0.72);
     expect(random.p5).toBeLessThan(0.45);
     expect(random.p95).toBeGreaterThan(0.9);

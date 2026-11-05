@@ -32,6 +32,12 @@ import {
   valueFor,
   whyFor,
   worthwhile,
+  beforeLabel,
+  betterLabel,
+  guessLabel,
+  judgeText,
+  noiseLabel,
+  worthLabel,
   type Verdict,
 } from '../src/rooms/analysis/model';
 
@@ -54,17 +60,17 @@ const row = (patch: Partial<ReviewRow>): ReviewRow => ({ ...trained, ...patch })
 
 describe('the numbers of a row', () => {
   it('reads the change and the improvement whichever way the metric runs', () => {
-    expect(changeOf(trained)).toBe(-2); // 62 to 60 s: the time fell
+    expect(changeOf(trained)).toBe(-2); // 72 to 70 s: the time fell
     expect(improvementOf(trained)).toBe(2); // and falling is better
-    expect(changeOf(decoy)).toBe(2); // 65 to 67
+    expect(changeOf(decoy)).toBe(2); // 58 to 60
     expect(improvementOf(decoy)).toBe(2); // and rising is better
   });
 
   it('turns an improvement back into the metric\'s own units', () => {
-    expect(valueFor(trained, 1.6)).toBe(60.4);
-    expect(valueFor(trained, -0.4)).toBe(62.4);
-    expect(valueFor(decoy, 3)).toBe(68);
-    expect(valueFor(decoy, 0)).toBe(65);
+    expect(valueFor(trained, 1.6)).toBe(70.4);
+    expect(valueFor(trained, -0.4)).toBe(72.4);
+    expect(valueFor(decoy, 3)).toBe(61);
+    expect(valueFor(decoy, 0)).toBe(58);
   });
 });
 
@@ -75,7 +81,7 @@ describe('the verdict rule', () => {
   });
 
   it('puts every boundary on the right side', () => {
-    const at = (size: number) => trueVerdict(row({ baseline: 62, retest: 62 - size, te: 0.6, swc: 0.8 }));
+    const at = (size: number) => trueVerdict(row({ baseline: 72, retest: 72 - size, te: 0.6, swc: 0.8 }));
     expect(at(0)).toBe('noise');
     expect(at(0.6)).toBe('noise'); // exactly the typical error: still noise
     expect(at(0.7)).toBe('small');
@@ -84,32 +90,32 @@ describe('the verdict rule', () => {
     expect(at(5)).toBe('worth');
   });
 
-  it('is not tipped by floating point (61.4 is exactly 0.6 from 62)', () => {
-    expect(trueVerdict(row({ baseline: 62, retest: 61.4 }))).toBe('noise');
-    expect(trueVerdict(row({ baseline: 62, retest: 61.2 }))).toBe('worth'); // 0.8
+  it('is not tipped by floating point (71.4 is exactly 0.6 from 72)', () => {
+    expect(trueVerdict(row({ baseline: 72, retest: 71.4 }))).toBe('noise');
+    expect(trueVerdict(row({ baseline: 72, retest: 71.2 }))).toBe('worth'); // 0.8
   });
 
   it('judges a change in the worse direction by its size', () => {
-    expect(trueVerdict(row({ retest: 62.4 }))).toBe('noise'); // 0.4 slower
-    expect(trueVerdict(row({ retest: 62.7 }))).toBe('small'); // 0.7 slower
-    expect(trueVerdict(row({ retest: 64 }))).toBe('worth'); // 2.0 slower: a worthwhile change, the wrong way
-    expect(trueVerdict(row({ baseline: 65, retest: 62, better: 'higher', te: 1.5, swc: 3 }))).toBe('worth');
+    expect(trueVerdict(row({ retest: 72.4 }))).toBe('noise'); // 0.4 slower
+    expect(trueVerdict(row({ retest: 72.7 }))).toBe('small'); // 0.7 slower
+    expect(trueVerdict(row({ retest: 74 }))).toBe('worth'); // 2.0 slower: a worthwhile change, the wrong way
+    expect(trueVerdict(row({ baseline: 58, retest: 55, better: 'higher', te: 1.5, swc: 3 }))).toBe('worth');
   });
 
   it('calls a swc that is no bigger than the typical error worth acting on once past the error', () => {
-    expect(trueVerdict(row({ te: 1, swc: 0.5, retest: 60.5 }))).toBe('worth'); // 1.5 beyond te
-    expect(trueVerdict(row({ te: 1, swc: 0.5, retest: 61.5 }))).toBe('noise'); // 0.5 inside te
+    expect(trueVerdict(row({ te: 1, swc: 0.5, retest: 70.5 }))).toBe('worth'); // 1.5 beyond te
+    expect(trueVerdict(row({ te: 1, swc: 0.5, retest: 71.5 }))).toBe('noise'); // 0.5 inside te
   });
 });
 
 describe('the ruler', () => {
   it('runs from 1.5 x the expected change on the worse side to 2.5 x on the better side', () => {
     expect(scaleFor(trained)).toEqual({ worse: -3, better: 5 });
-    expect(valueFor(trained, -3)).toBe(65); // numbers fall to the right for the last 400 m
-    expect(valueFor(trained, 5)).toBe(57);
+    expect(valueFor(trained, -3)).toBe(75); // numbers fall to the right for the last 400 m
+    expect(valueFor(trained, 5)).toBe(67);
     expect(scaleFor(decoy)).toEqual({ worse: -3, better: 5 });
-    expect(valueFor(decoy, -3)).toBe(62);
-    expect(valueFor(decoy, 5)).toBe(70);
+    expect(valueFor(decoy, -3)).toBe(55);
+    expect(valueFor(decoy, 5)).toBe(63);
   });
 
   it('puts the baseline at three eighths of the way across', () => {
@@ -121,9 +127,9 @@ describe('the ruler', () => {
 
   it('labels whole numbers, worse to better, left to right', () => {
     const ticks = ticksFor(trained, scaleFor(trained));
-    expect(ticks.map(t => t.value)).toEqual([65, 64, 63, 62, 61, 60, 59, 58, 57]);
+    expect(ticks.map(t => t.value)).toEqual([75, 74, 73, 72, 71, 70, 69, 68, 67]);
     expect(ticks.map(t => t.improvement)).toEqual([-3, -2, -1, 0, 1, 2, 3, 4, 5]);
-    expect(ticksFor(decoy, scaleFor(decoy)).map(t => t.value)).toEqual([62, 63, 64, 65, 66, 67, 68, 69, 70]);
+    expect(ticksFor(decoy, scaleFor(decoy)).map(t => t.value)).toEqual([55, 56, 57, 58, 59, 60, 61, 62, 63]);
   });
 
   it('thins the labels when the ruler is long', () => {
@@ -134,14 +140,14 @@ describe('the ruler', () => {
   });
 
   it('survives a row with no change at all', () => {
-    const flat = row({ retest: 62 });
+    const flat = row({ retest: 72 });
     const scale = scaleFor(flat);
     expect(scale.better).toBeGreaterThan(0);
     expect(scale.worse).toBeLessThan(0);
   });
 });
 
-describe('the forecast pin', () => {
+describe('YOUR GUESS (the forecast)', () => {
   const scale = scaleFor(trained);
   const range = pinRange(scale, content.step);
 
@@ -149,8 +155,8 @@ describe('the forecast pin', () => {
     expect(range).toEqual({ min: -15, max: 25 });
     expect(pinImprovement(8, content.step)).toBe(1.6);
     expect(pinImprovement(-3, content.step)).toBe(-0.6);
-    expect(valueFor(trained, pinImprovement(range.min, content.step))).toBe(65);
-    expect(valueFor(trained, pinImprovement(range.max, content.step))).toBe(57);
+    expect(valueFor(trained, pinImprovement(range.min, content.step))).toBe(75);
+    expect(valueFor(trained, pinImprovement(range.max, content.step))).toBe(67);
   });
 
   it('clamps at both ends', () => {
@@ -209,8 +215,8 @@ describe('scoring', () => {
     expect(c1(2)).toBe(1);
     expect(c1(1.4)).toBe(1); // exactly 0.6 off
     expect(c1(2.6)).toBe(1);
-    expect(c1(1.6)).toBe(1); // the pin on an earlier block's tick (60.4)
-    expect(c1(2.4)).toBe(1); // and on the other (59.6)
+    expect(c1(1.6)).toBe(1); // YOUR GUESS on an earlier block's tick (70.4)
+    expect(c1(2.4)).toBe(1); // and on the other (69.6)
   });
 
   it('falls in a straight line to nothing at four typical errors', () => {
@@ -250,23 +256,39 @@ describe('scoring', () => {
 
 describe('the words built from the numbers', () => {
   it('writes the live readout', () => {
-    expect(readoutFor(trained, 0, 0.2)).toBe('FORECAST 62.0 S (NO CHANGE)');
-    expect(readoutFor(trained, 8, 0.2)).toBe('FORECAST 60.4 S (1.6 BETTER)');
-    expect(readoutFor(trained, -2, 0.2)).toBe('FORECAST 62.4 S (0.4 WORSE)');
-    expect(readoutFor(trained, 25, 0.2)).toBe('FORECAST 57.0 S (5.0 BETTER)');
+    expect(readoutFor(trained, 0, 0.2)).toBe('YOUR GUESS 72.0 S (NO CHANGE)');
+    expect(readoutFor(trained, 8, 0.2)).toBe('YOUR GUESS 70.4 S (1.6 FASTER)');
+    expect(readoutFor(trained, -2, 0.2)).toBe('YOUR GUESS 72.4 S (0.4 SLOWER)');
+    expect(readoutFor(trained, 25, 0.2)).toBe('YOUR GUESS 67.0 S (5.0 FASTER)');
+  });
+
+  it('labels YOUR GUESS with its value and unit, and the ruler with its measure, BEFORE, noise and worthwhile change', () => {
+    expect(guessLabel(trained, 8, 0.2)).toBe('YOUR GUESS 70.4 S');
+    expect(guessLabel(trained, 0, 0.2)).toBe('YOUR GUESS 72.0 S');
+    expect(guessLabel(decoy, 5, 0.2)).toBe('YOUR GUESS 59.0 ML/KG/MIN');
+    expect(beforeLabel(trained)).toBe('BEFORE 72 S');
+    expect(noiseLabel(trained)).toBe('NOISE: TYPICAL ERROR 0.6 S');
+    expect(worthLabel(trained)).toBe('WORTHWHILE CHANGE: 0.8 S');
+    expect(betterLabel(trained)).toBe('FASTER →');
+    expect(betterLabel(decoy)).toBe('HIGHER →');
+  });
+
+  it('asks plainly what to judge, with the row\'s numbers', () => {
+    expect(judgeText(content, trained)).toBe('Her last 400 m retest: 72 → 70 s. Is that change noise, real but too small, or worth acting on?');
+    expect(judgeText(content, decoy)).toBe('Her VO2max retest: 58 → 60 ml/kg/min. Is that change noise, real but too small, or worth acting on?');
   });
 
   it('says the forecast for a screen reader', () => {
-    expect(forecastWords(trained, 8, 0.2)).toBe('Forecast 60.4 s, 1.6 better.');
-    expect(forecastWords(trained, 0, 0.2)).toBe('Forecast 62.0 s, no change.');
-    expect(forecastWords(trained, -2, 0.2)).toBe('Forecast 62.4 s, 0.4 worse.');
+    expect(forecastWords(trained, 8, 0.2)).toBe('Your guess: 70.4 s, 1.6 faster.');
+    expect(forecastWords(trained, 0, 0.2)).toBe('Your guess: 72.0 s, no change.');
+    expect(forecastWords(trained, -2, 0.2)).toBe('Your guess: 72.4 s, 0.4 slower.');
   });
 
   it('titles a row and summarises it', () => {
     expect(titleOf(trained)).toBe('LAST 400 M (S)');
     expect(titleOf(decoy)).toBe('VO2MAX (ML/KG/MIN)');
-    expect(summaryOf(trained)).toBe('LAST 400 M: 62 → 60 S');
-    expect(summaryOf(decoy)).toBe('VO2MAX: 65 → 67 ML/KG/MIN');
+    expect(summaryOf(trained)).toBe('LAST 400 M: 72 → 70 S');
+    expect(summaryOf(decoy)).toBe('VO2MAX: 58 → 60 ML/KG/MIN');
   });
 
   it('fills the explanation of the true verdict from the content, verbatim', () => {
@@ -274,15 +296,15 @@ describe('the words built from the numbers', () => {
     expect(whyFor(content, decoy)).toBe(
       'It moved 2.0 ml/kg/min: beyond the typical error (1.5) but short of the smallest worthwhile change (3.0).',
     );
-    expect(whyFor(content, row({ retest: 61.6 }))).toBe('It moved 0.4 s: inside the typical error (0.6), so it could just be noise.');
+    expect(whyFor(content, row({ retest: 71.6 }))).toBe('It moved 0.4 s: inside the typical error (0.6), so it could just be noise.');
   });
 
   it('writes the retest sentence', () => {
     const forecast = 1.6;
     expect(retestSentence(trained, forecast, retestOf(trained, forecast))).toBe(
-      'Retest: 60 s. You forecast 60.4 s. Off by 0.4: inside the error bars.',
+      'Retest: 70 s. You forecast 70.4 s. Off by 0.4: inside the error bars.',
     );
-    expect(retestSentence(trained, 0, retestOf(trained, 0))).toBe('Retest: 60 s. You forecast 62 s. Off by 2.0: outside the error bars.');
+    expect(retestSentence(trained, 0, retestOf(trained, 0))).toBe('Retest: 70 s. You forecast 72 s. Off by 2.0: outside the error bars.');
     expect(retestSentence(trained, 2, retestOf(trained, 2))).toContain('Spot on.');
   });
 });

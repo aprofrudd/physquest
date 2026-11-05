@@ -462,24 +462,29 @@ export const drawPrintoutStage = (ctx: CanvasRenderingContext2D, view: PrintoutV
     fill(ctx, C.grey, cardX + cardW - 5, y, 2, 2);
   }
   const lineX = cardX + 12;
-  let y = top + 7;
+  let y = top + 6;
   drawText(ctx, lines.title, cardX + Math.round((cardW - (measureText(lines.title) - 1)) / 2), y, color(C.dark));
   fill(ctx, C.light, cardX + 12, y + 9, cardW - 24, 1);
-  y += 15;
-  drawText(ctx, lines.testName, lineX, y, COLORS.ink);
-  y += 11;
-  drawText(ctx, lines.records, lineX, y, color(C.dark));
-  y += 12;
+  y += 13;
+  // each test: a tick when it gives the Data Lab a file, a cross when not, then what it records
+  for (const test of lines.tests) {
+    paintGrid(ctx, test.good ? TICK : CROSS, lineX, y - 1);
+    drawText(ctx, test.name, lineX + 13, y, COLORS.ink);
+    y += 10;
+    drawText(ctx, test.records, lineX + 13, y, color(C.dark));
+    y += 11;
+  }
   if (lines.shaky) {
     paintGrid(ctx, ALERT, lineX, y - 1);
     drawText(ctx, lines.shaky, lineX + 11, y + 1, color(C.red));
-    y += 13;
+    y += 12;
   }
-  // the verdict, on a strip: a tick and green for the right test, a cross and red for the wrong one
+  // the verdict, on a strip: green and a tick for every right test, cream and a warning for some, red and a cross for none
   const stripW = cardW - 24;
+  const tone = lines.verdictTone;
   fill(ctx, C.outline, lineX, y, stripW, 15);
-  fill(ctx, lines.verdictGood ? C.paleGreen : C.paleRed, lineX + 1, y + 1, stripW - 2, 13);
-  paintGrid(ctx, lines.verdictGood ? TICK : CROSS, lineX + 5, y + 3);
+  fill(ctx, tone === 'full' ? C.paleGreen : tone === 'partial' ? C.cream : C.paleRed, lineX + 1, y + 1, stripW - 2, 13);
+  paintGrid(ctx, tone === 'full' ? TICK : tone === 'partial' ? ALERT : CROSS, lineX + 5, y + 3);
   drawText(ctx, lines.verdict, lineX + 20, y + 4, COLORS.ink);
 
   // printer body over the bottom of the paper

@@ -30,7 +30,7 @@ import type { AthleteCheck } from '../src/rooms/content/types';
 import { createTestingRoomWith } from '../src/rooms/testing';
 import { DECISION_LOCK, REBOOK_SECONDS, RUN_SECONDS, RUN_SKIP_AFTER } from '../src/rooms/testing/model';
 import type { RoomInstrument } from '../src/rooms/types';
-import { STEP, closeLast, inputOf, makeHost, seeded, type Button } from './testing-helpers';
+import { STEP, closeLast, inputOf, makeHost, partnerOf, seeded, type Button } from './testing-helpers';
 
 /** One update step, the way the scene makes it. */
 const step = (room: RoomInstrument, ...pressed: Button[]) => {
@@ -60,13 +60,18 @@ const toPick = (seed: number, checks?: readonly AthleteCheck[]) => {
   return { ...kit, room };
 };
 
-const choose = (room: RoomInstrument, name: string) => {
-  let target = stateOf(room).order.indexOf(name);
-  while (target-- > 0) drive(room, 0.05, 'down');
-  drive(room, 0.05, 'a');
+/** Pick a full battery (one test and its partner, or the tests named), as testing-helpers does. */
+const choose = (room: RoomInstrument, ...names: string[]) => {
+  for (const name of names.length === 1 ? [names[0]!, partnerOf(names[0]!)] : names) {
+    drive(room, DECISION_LOCK + 0.05);
+    const s = stateOf(room);
+    let steps = (s.order.indexOf(name) - s.selected + s.order.length) % s.order.length;
+    while (steps-- > 0) drive(room, 0.05, 'down');
+    drive(room, 0.05, 'a');
+  }
 };
 
-const LT = 'Lactate Threshold Test';
+const LT = 'Lactate Profile';
 const rebookCheck = RUNNING.testing.checks.find(c => c.call === 'rebook')!;
 const runCheck = RUNNING.testing.checks.find(c => c.call === 'run')!;
 
@@ -90,7 +95,7 @@ describe('what a screen reader hears as the run starts', () => {
     intoRun(rebookCheck, 'rebook');
     const heard = announcedByRoom().map(a => a.text);
     const first = heard.find(t => /^Re-booked/.test(t));
-    expect(first).toBe('Re-booked: the calendar moves on two days. Running the Lactate Threshold Test. stage 1');
+    expect(first).toBe('Re-booked: the calendar moves on two days. Running the Lactate Profile (test 1 of 2). stage 1');
     expect(heard.filter(t => /Re-booked|Running the/.test(t))).toHaveLength(1);
   });
 
@@ -98,13 +103,13 @@ describe('what a screen reader hears as the run starts', () => {
     log.announced.length = 0;
     intoRun(rebookCheck, 'run');
     const heard = announcedByRoom().map(a => a.text);
-    expect(heard).toContain('Running the Lactate Threshold Test. Data quality: shaky. stage 1');
+    expect(heard).toContain('Running the Lactate Profile (test 1 of 2). Data quality: shaky. stage 1');
   });
 
   it('just names the test and the stage on a good day', () => {
     log.announced.length = 0;
     intoRun(runCheck, 'run', 'Critical Speed Test');
-    expect(announcedByRoom().map(a => a.text)).toContain('Running the Critical Speed Test. trial 1 of 3');
+    expect(announcedByRoom().map(a => a.text)).toContain('Running the Critical Speed Test (test 1 of 2). trial 1 of 3');
   });
 
   it('does the same with no test day at all', () => {
@@ -113,23 +118,25 @@ describe('what a screen reader hears as the run starts', () => {
     choose(kit.room, 'Beep Test');
     drive(kit.room, 0.1);
     expect(stateOf(kit.room).phase).toBe('run');
-    expect(announcedByRoom().map(a => a.text)).toContain('Running the Beep Test. level 1');
+    expect(announcedByRoom().map(a => a.text)).toContain('Running the Beep Test (test 1 of 2). level 1');
   });
 
   it('drops a cursor announcement still waiting for the cursor to rest when the test is chosen', () => {
     log.announced.length = 0;
     const kit = toPick(13, [runCheck]);
+    drive(kit.room, 0.05, 'a'); // the first test goes in
+    drive(kit.room, DECISION_LOCK + 0.05);
     drive(kit.room, 0.05, 'down'); // the cursor moves: its announcement waits for the cursor to rest
-    drive(kit.room, 0.05, 'a'); // and the test is chosen before that
+    drive(kit.room, 0.05, 'a'); // and the battery is completed before that
     expect(stateOf(kit.room).phase).toBe('check');
     drive(kit.room, 1);
-    expect(announcedByRoom().filter(a => /Test\. .*Gives /.test(a.text))).toEqual([]);
+    expect(announcedByRoom().filter(a => /Test\. .*Gives /.test(a.text) && !a.text.startsWith('Added: '))).toEqual([]);
   });
 
   it('never announces twice in one step, so nothing it says is replaced by the next thing', () => {
     log.announced.length = 0;
     const kit = intoRun(rebookCheck, 'run', 'Beep Test');
-    drive(kit.room, RUN_SECONDS + 0.2); // the whole run and its printout
+    drive(kit.room, 2 * RUN_SECONDS + 0.2); // both runs and the printout
     const steps = announcedByRoom().map(a => a.step);
     expect(steps.length).toBeGreaterThan(6);
     expect(new Set(steps).size).toBe(steps.length);
@@ -148,22 +155,26 @@ afterAll(() => {
 });
 
 describe('the first frame of the printout', () => {
-  it('already shows the test that was run, when A skips the run', () => {
+  it('already shows the tests that were run, when A skips the runs', () => {
     const kit = toPick(11, [runCheck]);
     const order = stateOf(kit.room).order;
-    const chosen = order.find(name => name !== order[0])!; // not the first in the list: the one a stale printout would show
-    choose(kit.room, chosen);
-    closeLast(kit.said, 0); // RUN THE TEST (a ready day, so the right call)
+    // not the first in the list: the one a stale printout would show
+    const chosen = order.find(name => name !== order[0])!;
+    const other = order.find(name => name !== order[0] && name !== chosen)!;
+    choose(kit.room, chosen, other);
+    closeLast(kit.said, 0); // RUN THE TESTS (a ready day, so the right call)
     closeLast(kit.said);
     drive(kit.room, RUN_SKIP_AFTER + 0.1);
     expect(stateOf(kit.room).phase).toBe('run');
-
-    step(kit.room, 'a'); // skip
+    step(kit.room, 'a'); // skip the first
+    drive(kit.room, RUN_SKIP_AFTER + 0.1);
+    step(kit.room, 'a'); // skip the second
     expect(stateOf(kit.room).phase).toBe('printout');
     log.texts.length = 0;
     kit.room.render(noop); // the very next frame, before the next step
     expect(log.texts).toContain('LAB PRINTOUT');
     expect(log.texts).toContain(chosen.toUpperCase());
+    expect(log.texts).toContain(other.toUpperCase());
     expect(log.texts).not.toContain(order[0]!.toUpperCase());
   });
 
@@ -171,10 +182,10 @@ describe('the first frame of the printout', () => {
     const kit = toPick(12, [runCheck]);
     const order = stateOf(kit.room).order;
     const chosen = order[order.length - 1]!;
-    choose(kit.room, chosen);
+    choose(kit.room, chosen, order[0]!);
     closeLast(kit.said, 0);
     closeLast(kit.said);
-    drive(kit.room, RUN_SECONDS + 0.2);
+    drive(kit.room, 2 * RUN_SECONDS + 0.2);
     expect(stateOf(kit.room).phase).toBe('printout');
     log.texts.length = 0;
     kit.room.render(noop);

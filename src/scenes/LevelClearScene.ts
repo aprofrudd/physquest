@@ -10,7 +10,10 @@ import { LEVELS } from '../data/levels';
 import { LEVEL_DATA } from '../data/sports';
 import { sfx } from '../audio/Sfx';
 import { announce } from '../ui/announce';
-import { HUD_COLORS, MINIGAME_FOR_STAT, STAT_LABEL, drawMeter, roomLabelForStat, type MinigameType } from '../systems/BossMinigame';
+import { HUD_COLORS, drawMeter, roomLabelForStat, type MinigameType } from '../systems/BossMinigame';
+import { SCORE_LABEL, boutType } from '../systems/SupportScores';
+import { finaleContentFor } from '../rooms/content/finale-running';
+import { raceAdvice } from '../systems/Finale';
 
 export type LevelClearChoice = 'next' | 'retry' | 'hub';
 
@@ -38,6 +41,7 @@ const TIMING_TIP: Record<MinigameType, string> = {
   strength: 'KEEP {A} HELD THE WHOLE TIME!',
   endurance: 'PRESS {A} AS EACH NOTE HITS THE ZONE!',
   power: 'TAP WHEN THE CURSOR IS IN THE GREEN!',
+  race: 'TIME YOUR KICK TO EMPTY THE GAUGE AT THE LINE!',
 };
 
 const pct = (v: number): number => Math.round(Math.max(0, Math.min(1, v)) * 100);
@@ -94,9 +98,11 @@ const wrapEven = (text: string, maxChars: number): string[] => {
 
 /** Why the player lost, as sentences (button names as {A} tokens): the rating first, since it caps the score; then whether they pressed at all. */
 const defeatAdvice = (r: LevelResult): string[] => {
-  if (r.rating <= r.rivalScore) return [`YOUR ${STAT_LABEL[r.focus]} RATING WAS TOO LOW.`, `REPLAY THE ${roomLabelForStat(r.focus)} ROOM.`];
+  if (r.rating <= r.rivalScore) return ['YOUR RATING WAS TOO LOW.', `REPLAY THE ${roomLabelForStat(r.focus)} ROOM TO RAISE YOUR ${SCORE_LABEL[r.focus]} SCORE.`];
   if (r.idle) return ['NO {A} PRESSES DETECTED.', 'PRESS {A} DURING THE BOUT.'];
-  return ['YOUR SCIENCE WAS GOOD ENOUGH.', TIMING_TIP[MINIGAME_FOR_STAT[r.focus]]];
+  const content = finaleContentFor(r.level);
+  if (r.race && content) return ['YOUR SCIENCE WAS GOOD ENOUGH.', raceAdvice(content, r.race)];
+  return ['YOUR SCIENCE WAS GOOD ENOUGH.', TIMING_TIP[boutType(r.level)]];
 };
 
 export const createLevelClearScene = (
@@ -145,12 +151,13 @@ export const createLevelClearScene = (
       const key = STAT_KEYS[i]!;
       const value = r ? r.stats[key] : 0;
       const rowY = y + 12 + i * 18;
-      drawText(ctx, STAT_LABEL[key], panelX + 12, rowY, '#080808');
-      const barX = 92;
+      drawText(ctx, SCORE_LABEL[key], panelX + 12, rowY, '#080808');
+      // The longest name (TRAINING PLAN) ends at x = 105
+      const barX = 112;
       const color = value > 0.7 ? HUD_COLORS.reached : value > 0.4 ? '#c0a830' : HUD_COLORS.rival;
-      drawMeter(ctx, barX, rowY - 2, 100, 11, value, color);
+      drawMeter(ctx, barX, rowY - 2, 80, 11, value, color);
       // Inside the panel: bar ends at 192, value text at 198..222, panel interior ends at 236
-      drawText(ctx, `${pct(value)}%`, barX + 100 + 6, rowY, '#080808');
+      drawText(ctx, `${pct(value)}%`, barX + 80 + 6, rowY, '#080808');
     }
   };
 
@@ -168,12 +175,14 @@ export const createLevelClearScene = (
 
   const drawComplete = (ctx: CanvasRenderingContext2D, r: LevelResult | null) => {
     const pal = PALETTES.title;
-    drawTitle(ctx, 'GAME COMPLETE!', 16, 2, WIN_GREEN);
+    // A sport with an ending of its own finishes its case study here; the debrief follows in the hub
+    const clear = r ? finaleContentFor(r.level)?.clear : undefined;
+    drawTitle(ctx, clear?.title ?? 'GAME COMPLETE!', 16, 2, WIN_GREEN);
     if (r) {
       const level = LEVELS[r.level];
       if (level) centred(ctx, level.name, 36, pal.colors[1]);
       drawStatsPanel(ctx, 50, r);
-      CLOSING_LINES.forEach((line, i) => centred(ctx, line, 146 + i * 12, i === 0 ? pal.colors[0] : pal.colors[1]));
+      (clear?.lines ?? CLOSING_LINES).forEach((line, i) => centred(ctx, line, 146 + i * 12, i === 0 ? pal.colors[0] : pal.colors[1]));
     } else {
       // Reached from the level select with no bout to report: no stats to show
       centred(ctx, 'EVERY SPORT CLEARED!', 60, pal.colors[1]);
@@ -187,7 +196,7 @@ export const createLevelClearScene = (
 
     // Diagnosis: was it the science (rating) or the timing?
     drawPokemonBox(ctx, 16, 38, GAME_W - 32, 78, pal.colors[1]);
-    const stat = STAT_LABEL[r.focus];
+    const stat = SCORE_LABEL[r.focus];
     const room = roomLabelForStat(r.focus);
     const tooLow = r.rating <= r.rivalScore;
     centred(ctx, `FOCUS: ${stat} (${room} ROOM)`, 46, HUD_COLORS.ink);
@@ -218,24 +227,29 @@ export const createLevelClearScene = (
     if (timer >= INPUT_LOCK) centred(ctx, input.fill('{DPAD}: MOVE   {A}: CHOOSE'), 206, pal.colors[1]);
   };
 
+  /** A win in a visit with the Performance Director: continuing goes back to the hub for Dr Ellis's debrief. */
+  const debriefNext = (): boolean => result !== null && result.outcome !== 'lose' && gameState.meetRoom && finaleContentFor(result.level) !== undefined;
+
   const announceView = () => {
     const r = result;
     const level = r ? LEVELS[r.level]?.name ?? '' : '';
     const stats = r
-      ? STAT_KEYS.map(k => `${STAT_LABEL[k].toLowerCase()} ${pct(r.stats[k])} percent`).join(', ')
+      ? `Support scores: ${STAT_KEYS.map(k => `${SCORE_LABEL[k].toLowerCase()} ${pct(r.stats[k])} percent`).join(', ')}`
       : '';
     if (view === 'lose' && r) {
       announce(
-        `Defeated. Focus ${STAT_LABEL[r.focus].toLowerCase()}, ${roomLabelForStat(r.focus).toLowerCase()} room. ` +
+        `Defeated. Focus ${SCORE_LABEL[r.focus].toLowerCase()} score, ${roomLabelForStat(r.focus).toLowerCase()} room. ` +
         `Rating ${pct(r.rating)} percent versus target ${pct(r.rivalScore)} percent. ` +
         `Score ${pct(r.playerScore)} percent versus target ${pct(r.rivalScore)} percent. ` +
         `${defeatAdvice(r).map(sentence => input.fill(spoken(sentence))).join(' ')} ` +
         `Menu: ${MENU[menuIndex]?.label.toLowerCase() ?? ''}.`,
       );
     } else if (view === 'complete') {
-      announce(`Game complete! ${stats ? `${stats}. ` : ''}${input.fill('Press {A} to continue.')}`);
+      const clear = r ? finaleContentFor(r.level)?.clear : undefined;
+      const said = clear ? clear.spoken : 'Game complete!';
+      announce(`${said} ${stats ? `${stats}. ` : ''}${input.fill(debriefNext() ? 'Press {A} for the debrief.' : 'Press {A} to continue.')}`);
     } else {
-      announce(`Level clear! ${level}. ${stats}. ${input.fill('Press {A} to continue.')}`);
+      announce(`Level clear! ${level}. ${stats}. ${input.fill(debriefNext() ? 'Press {A} for the debrief.' : 'Press {A} to continue.')}`);
     }
   };
 
@@ -302,7 +316,8 @@ export const createLevelClearScene = (
 
       // Continue prompt blinks once the screen is listening
       if (view !== 'lose' && timer >= INPUT_LOCK && Date.now() % 800 < 520) {
-        centred(ctx, input.fill('PRESS {A} TO CONTINUE'), GAME_H - 22, pal.colors[0]);
+        const prompt = debriefNext() ? finaleContentFor(result!.level)?.clear.prompt : undefined;
+        centred(ctx, input.fill(prompt ?? 'PRESS {A} TO CONTINUE'), GAME_H - 22, pal.colors[0]);
       }
     },
   };

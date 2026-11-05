@@ -10,9 +10,9 @@ export type Phase = 'work' | 'rest' | 'steady' | 'off';
 
 const STYLE_BY_LABEL: Readonly<Record<string, SessionStyle>> = {
   EASY: 'easy',
-  SUB: 'steady',
-  SUPR: 'reps',
-  SPRT: 'sprints',
+  THR: 'steady',
+  SEV: 'reps',
+  FAST: 'sprints', // fast reps with full recovery: short bursts and long rests
 };
 
 export const styleOf = (content: TrainingContent, session: Session): SessionStyle => {

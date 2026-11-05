@@ -1,4 +1,5 @@
 import { createGameLoop } from './engine/GameLoop';
+import { watchFrames } from './engine/frameWatch';
 import { createInput } from './engine/Input';
 import { createSceneManager, type SceneId } from './engine/SceneManager';
 import {
@@ -27,9 +28,19 @@ import { setNameSource } from './engine/nameToken';
 import { announce } from './ui/announce';
 import { newRoomsOn } from './rooms/preview';
 import { LEVELS, allPlayableCleared } from './data/levels';
+import { finaleContentFor } from './rooms/content/finale-running';
+import { finaleTalk } from './systems/Finale';
 
 // Scenes where the player is mid-level: auto-pause and auto-save when the app is backgrounded
 const IN_LEVEL: readonly SceneId[] = ['overworld', 'roomChallenge', 'bossBattle'];
+
+// Rendering budget (updates stay at 60 Hz whatever this says). Phones and tablets draw every other update (30 fps):
+// the pixel art moves in whole pixels and nothing in the game needs more, and it halves the GPU and battery work.
+// The boss bouts keep 60 fps on every device (the RACE TO THE LINE's kick is timed by eye). With no button held or pressed for
+// IDLE_AFTER seconds, every device drops to 20 fps until the next press.
+const TOUCH_RENDER_EVERY = 2;
+const IDLE_RENDER_EVERY = 3;
+const IDLE_AFTER = 10_000; // ms
 
 export const startGame = (root: HTMLElement) => {
   newRoomsOn(); // a ?rooms= choice in the address is remembered from the first page load
@@ -156,7 +167,9 @@ export const startGame = (root: HTMLElement) => {
         const wasComplete = gameState.gameComplete;
         gameState.bossDefeated[level] = true;
         gameState.gameComplete = allPlayableCleared(gameState.bossDefeated);
-        clearActiveLevel(gameState); // a won level replays from scratch
+        // A won level replays from scratch, except a case study with the Performance Director: its debrief is in
+        // the hub, where the SUPPORT BOARD keeps the scores and every room stays open for replays
+        if (!(gameState.meetRoom && finaleContentFor(level))) clearActiveLevel(gameState);
         lastResult = { ...result, level, stats, outcome: gameState.gameComplete && !wasComplete ? 'complete' : 'win' };
       } else {
         // Keep room progress so the player can retry the bout or improve a room
@@ -174,13 +187,23 @@ export const startGame = (root: HTMLElement) => {
     gameState,
     () => lastResult,
     (choice) => {
+      // The case study's ending (a visit with the Performance Director): back in the hub, Aisha on the race, then
+      // Dr Ellis's debrief (a shorter one after a defeat, when the player goes back to the hub)
+      const finale = lastResult && gameState.meetRoom ? finaleContentFor(lastResult.level) : undefined;
+      const toHub = () => {
+        gameState.returnDoor = 'boss';
+        sceneManager.switchTo('overworld');
+      };
       if (choice === 'retry') {
         sceneManager.switchTo('bossBattle');
       } else if (choice === 'hub') {
-        gameState.returnDoor = 'boss';
-        sceneManager.switchTo('overworld');
+        if (finale && lastResult) overworldScene.queueTalk(finaleTalk(finale, lastResult));
+        toHub();
+      } else if (finale && lastResult && lastResult.outcome !== 'lose') {
+        overworldScene.queueTalk(finaleTalk(finale, lastResult));
+        toHub();
       } else if (lastResult?.outcome === 'complete') {
-        sceneManager.switchTo('title');
+        toHub(); // the game is complete, but it does not end: back to the hub
       } else {
         sceneManager.switchTo('levelSelect');
       }
@@ -189,7 +212,19 @@ export const startGame = (root: HTMLElement) => {
 
   sceneManager.switchTo('title');
 
-  const loop = createGameLoop(ctx, () => sceneManager.getCurrent(), ui.present);
+  const coarse = typeof window.matchMedia === 'function' ? window.matchMedia('(pointer: coarse)') : null;
+  let lastInput = performance.now();
+  let held = 0;
+  input.onChange((_, down) => {
+    held = Math.max(0, held + (down ? 1 : -1));
+    lastInput = performance.now();
+  });
+  const renderEvery = (): number => {
+    if (sceneManager.getCurrentId() === 'bossBattle') return 1;
+    if (held === 0 && performance.now() - lastInput > IDLE_AFTER) return IDLE_RENDER_EVERY;
+    return coarse?.matches ? TOUCH_RENDER_EVERY : 1;
+  };
+  const loop = createGameLoop(ctx, () => sceneManager.getCurrent(), ui.present, { renderEvery, watch: watchFrames(ctx) });
   loop.start();
 
   // The redesigned rooms' chunk loads in the background once the title is up, so it is ready before anyone
@@ -238,6 +273,7 @@ export const startGame = (root: HTMLElement) => {
       dialogue,
       pauseMenu,
       sfx,
+      frames: () => ({ ...loop.stats() }),
     };
     void (anyNewRooms ? loadRooms() : Promise.resolve(true)).then(() => {
       (window as unknown as Record<string, unknown>).__pq = hook;

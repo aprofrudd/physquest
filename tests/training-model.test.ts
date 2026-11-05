@@ -53,11 +53,11 @@ const stat = (plan: Session[]): number => {
 
 describe('legs', () => {
   it('starts Monday fresh', () => {
-    expect(legsFor(content, week('SUB'))[0]).toBe(100);
+    expect(legsFor(content, week('THR'))[0]).toBe(100);
   });
 
   it('drops after a key session: the morning after and two mornings after', () => {
-    const legs = legsFor(content, week('SUB', 'REST', 'REST', 'REST'));
+    const legs = legsFor(content, week('THR', 'REST', 'REST', 'REST'));
     expect(legs.slice(0, 4)).toEqual([100, 100 - content.legs.keyNextDay, 100 - content.legs.keyTwoDays, 100]);
   });
 
@@ -67,28 +67,28 @@ describe('legs', () => {
   });
 
   it('adds the costs of the two days before', () => {
-    const legs = legsFor(content, week('SUB', 'SUPR', 'REST'));
+    const legs = legsFor(content, week('THR', 'SEV', 'REST'));
     expect(legs[2]).toBe(100 - content.legs.keyNextDay - content.legs.keyTwoDays);
   });
 
   it('adds a support session yesterday to a key session two days ago', () => {
-    const legs = legsFor(content, week('SUB', 'EASY', 'REST'));
+    const legs = legsFor(content, week('THR', 'EASY', 'REST'));
     expect(legs[2]).toBe(100 - content.legs.supportNextDay - content.legs.keyTwoDays);
   });
 
   it('never goes below 0 or above 100', () => {
     const harsh = { ...content, legs: { ...content.legs, keyNextDay: 80, keyTwoDays: 60 } };
-    const legs = legsFor(harsh, week('SUB', 'SUPR', 'SPRT', 'SUB', 'SUPR', 'SPRT', 'SUB'));
+    const legs = legsFor(harsh, week('THR', 'SEV', 'FAST', 'THR', 'SEV', 'FAST', 'THR'));
     expect(Math.min(...legs)).toBe(0);
     expect(Math.max(...legs)).toBe(100);
   });
 
   it('gets nothing from an away day, a rest day or an empty day', () => {
-    expect(legsFor(content, week('SUB', 'AWAY', '--', 'REST')).slice(2, 4)).toEqual([80, 100]);
+    expect(legsFor(content, week('THR', 'AWAY', '--', 'REST')).slice(2, 4)).toEqual([80, 100]);
   });
 
   it('counts a repeated key card each time', () => {
-    const legs = legsFor(content, week('SUB', 'SUB', 'SUB'));
+    const legs = legsFor(content, week('THR', 'THR', 'THR'));
     expect(legs.slice(0, 3)).toEqual([100, 50, 30]);
   });
 });
@@ -108,12 +108,12 @@ describe('quality', () => {
   });
 
   it('is only given to key sessions', () => {
-    const a = analyse(content, week('EASY', 'SUB', 'REST'));
+    const a = analyse(content, week('EASY', 'THR', 'REST'));
     expect(a.quality).toEqual([null, expect.any(Number), null, null, null, null, null]);
   });
 
   it('loses quality on the second of two key sessions on back-to-back days', () => {
-    const a = analyse(content, week('SUB', 'SUPR'));
+    const a = analyse(content, week('THR', 'SEV'));
     expect(a.quality[0]).toBe(1);
     expect(a.quality[1]).toBeLessThan(1);
     expect(a.quality[1]).toBeCloseTo((50 - content.legs.noneAt) / (content.legs.fullAt - content.legs.noneAt));
@@ -123,47 +123,47 @@ describe('quality', () => {
 describe('key cards', () => {
   it('finds the three key cards in card order', () => {
     const keys = keyCardIndices(content);
-    expect(keys.map(i => content.cards[i]!.label)).toEqual(['SUB', 'SUPR', 'SPRT']);
+    expect(keys.map(i => content.cards[i]!.label)).toEqual(['THR', 'SEV', 'FAST']);
   });
 
   it('takes the best day of a card placed twice (the one with the most legs)', () => {
-    const a = analyse(content, week('SUB', 'SUB', 'REST', 'SUB'));
-    const sub = a.keys.find(k => content.cards[k.card]!.label === 'SUB')!;
+    const a = analyse(content, week('THR', 'THR', 'REST', 'THR'));
+    const sub = a.keys.find(k => content.cards[k.card]!.label === 'THR')!;
     expect(sub.day).toBe(0); // legs 100 on Monday beats 50 on Tuesday and 80 on Thursday
     expect(sub.legs).toBe(100);
     expect(sub.best).toBe(1);
   });
 
   it('takes the earliest of equal days', () => {
-    const a = analyse(content, week('SUB', 'REST', 'REST', 'REST', 'SUB'));
+    const a = analyse(content, week('THR', 'REST', 'REST', 'REST', 'THR'));
     expect(a.keys[0]!.day).toBe(0);
   });
 
   it('reports a card that was never placed with no day and no quality', () => {
-    const a = analyse(content, week('SUB'));
-    const sprt = a.keys.find(k => content.cards[k.card]!.label === 'SPRT')!;
+    const a = analyse(content, week('THR'));
+    const sprt = a.keys.find(k => content.cards[k.card]!.label === 'FAST')!;
     expect(sprt).toEqual({ card: sprt.card, best: 0, day: null, legs: null });
   });
 
   it('lists the key cards still missing', () => {
-    expect(missingKeys(content, week('SUB', 'EASY')).map(c => c.label)).toEqual(['SUPR', 'SPRT']);
-    expect(missingKeys(content, week('SUB', 'SUPR', 'SPRT'))).toEqual([]);
-    expect(missingKeys(content, week()).map(c => c.label)).toEqual(['SUB', 'SUPR', 'SPRT']);
+    expect(missingKeys(content, week('THR', 'EASY')).map(c => c.label)).toEqual(['SEV', 'FAST']);
+    expect(missingKeys(content, week('THR', 'SEV', 'FAST'))).toEqual([]);
+    expect(missingKeys(content, week()).map(c => c.label)).toEqual(['THR', 'SEV', 'FAST']);
   });
 });
 
 describe('the checks', () => {
   it('counts key and support sessions, not rest, away or empty days', () => {
-    const a = analyse(content, week('SUB', 'EASY', 'REST', 'AWAY'));
+    const a = analyse(content, week('THR', 'EASY', 'REST', 'AWAY'));
     expect(a.sessions).toBe(2);
     expect(a.restDays).toBe(5); // REST, AWAY and the three empty days
   });
 
   it('wants at least the minimum number of sessions', () => {
-    const four = analyse(content, week('SUB', 'EASY', 'SUPR', 'EASY', 'REST', 'REST', 'REST'));
+    const four = analyse(content, week('THR', 'EASY', 'SEV', 'EASY', 'REST', 'REST', 'REST'));
     expect(four.sessions).toBe(4);
     expect(four.checks.sessions).toBe(false);
-    const five = analyse(content, week('SUB', 'EASY', 'SUPR', 'EASY', 'SPRT', 'REST', 'REST'));
+    const five = analyse(content, week('THR', 'EASY', 'SEV', 'EASY', 'FAST', 'REST', 'REST'));
     expect(five.checks.sessions).toBe(true);
   });
 
@@ -188,18 +188,18 @@ describe('the checks', () => {
 
   it('counts mornings below the red line, one cut of the structure mark each', () => {
     // Key, key, rest: Wednesday is at 100 - 50 - 20 = 30, a red morning
-    const one = analyse(content, week('SUB', 'SUPR', 'REST', 'REST', 'REST', 'REST', 'REST'));
+    const one = analyse(content, week('THR', 'SEV', 'REST', 'REST', 'REST', 'REST', 'REST'));
     expect(one.legs[2]).toBe(30);
     expect(one.redMornings).toBe(1);
     expect(one.checks.red).toBe(false);
     // The red term takes 0.5 off for the first red morning
-    const withoutRed = analyse(content, week('SUB', 'REST', 'SUPR', 'REST', 'SPRT', 'EASY', 'EASY'));
+    const withoutRed = analyse(content, week('THR', 'REST', 'SEV', 'REST', 'FAST', 'EASY', 'EASY'));
     expect(withoutRed.redMornings).toBe(0);
     expect(withoutRed.checks.red).toBe(true);
   });
 
   it('floors the red term at zero', () => {
-    const a = analyse(content, week('SUB', 'SUPR', 'SPRT', 'SUB', 'SUPR', 'SPRT', 'SUB'));
+    const a = analyse(content, week('THR', 'SEV', 'FAST', 'THR', 'SEV', 'FAST', 'THR'));
     expect(a.redMornings).toBe(5);
     // sessions ok (7 >= 5), rest not ok (0 rest days), red term floored: structure = (1 + 0 + 0) / 3
     expect(a.structure).toBeCloseTo(1 / 3);
@@ -207,7 +207,7 @@ describe('the checks', () => {
 
   it('exactly matches the spec at the threshold of a red morning (legs below, not at, the line)', () => {
     const edge = { ...content, checks: { ...content.checks, redBelow: 50 } };
-    const a = analyse(edge, week('SUB', 'REST'));
+    const a = analyse(edge, week('THR', 'REST'));
     expect(a.legs[1]).toBe(50);
     expect(a.redMornings).toBe(0); // 50 is not below 50
   });
@@ -215,18 +215,18 @@ describe('the checks', () => {
 
 describe('the score', () => {
   it('gives the perfect hard-easy week 0.96', () => {
-    expect(stat(week('SUB', 'EASY', 'SUPR', 'EASY', 'SPRT', 'EASY', 'REST'))).toBeCloseTo(0.96);
+    expect(stat(week('THR', 'EASY', 'SEV', 'EASY', 'FAST', 'EASY', 'REST'))).toBeCloseTo(0.96);
   });
 
   it('gives other good weeks the same 0.96 (key, rest, key, rest, key, easy, easy)', () => {
-    expect(stat(week('SUB', 'REST', 'SUPR', 'REST', 'SPRT', 'EASY', 'EASY'))).toBeCloseTo(0.96);
+    expect(stat(week('THR', 'REST', 'SEV', 'REST', 'FAST', 'EASY', 'EASY'))).toBeCloseTo(0.96);
   });
 
   it('keeps the perfect score with the away day on any of TUE, WED or THU', () => {
     for (const away of [1, 2, 3]) {
       // Find a perfect plan for this away day by search: it must exist and score 0.96
       let best = 0;
-      const cards = ['SUB', 'SUPR', 'SPRT', 'EASY', 'REST'];
+      const cards = ['THR', 'SEV', 'FAST', 'EASY', 'REST'];
       const plan: string[] = Array.from({ length: 7 }, () => '--');
       plan[away] = 'AWAY';
       const days = [0, 1, 2, 3, 4, 5, 6].filter(d => d !== away);
@@ -246,7 +246,7 @@ describe('the score', () => {
   });
 
   it('scores a hard day on each of the days one after another far below it', () => {
-    expect(stat(week('SUB', 'SUPR', 'SPRT', 'SUB', 'SUPR', 'SPRT', 'SUB'))).toBeCloseTo(0.43, 2);
+    expect(stat(week('THR', 'SEV', 'FAST', 'THR', 'SEV', 'FAST', 'THR'))).toBeCloseTo(0.43, 2);
   });
 
   it('scores only easy sessions, or an empty week, 0.20', () => {
@@ -256,23 +256,23 @@ describe('the score', () => {
 
   it('gates the structure bonus on the key work: the data quality is 0.5 at a stimulus of 0.5 or less', () => {
     // Two key sessions at full quality and the third missing: stimulus 2/3
-    const two = analyse(content, week('SUB', 'EASY', 'SUPR', 'EASY', 'REST', 'EASY', 'EASY'));
+    const two = analyse(content, week('THR', 'EASY', 'SEV', 'EASY', 'REST', 'EASY', 'EASY'));
     expect(two.stimulus).toBeCloseTo(2 / 3);
     expect(two.dataQuality).toBeGreaterThan(0.5);
     // One key session at full quality: stimulus 1/3, no bonus
-    const one = analyse(content, week('SUB', 'EASY', 'EASY', 'EASY', 'EASY', 'REST', 'EASY'));
+    const one = analyse(content, week('THR', 'EASY', 'EASY', 'EASY', 'EASY', 'REST', 'EASY'));
     expect(one.stimulus).toBeCloseTo(1 / 3);
     expect(one.dataQuality).toBe(0.5);
   });
 
   it('keeps the variable accuracy equal to the stimulus', () => {
-    const a = analyse(content, week('SUB', 'EASY', 'SUPR', 'REST', 'SPRT', 'EASY', 'REST'));
+    const a = analyse(content, week('THR', 'EASY', 'SEV', 'REST', 'FAST', 'EASY', 'REST'));
     expect(a.variableAccuracy).toBe(a.stimulus);
   });
 
   it('puts every plan between 0.2 and 0.96', () => {
     const rng = seeded(7);
-    const chips = ['--', 'SUB', 'SUPR', 'EASY', 'SPRT', 'REST', 'AWAY'];
+    const chips = ['--', 'THR', 'SEV', 'EASY', 'FAST', 'REST', 'AWAY'];
     for (let i = 0; i < 2000; i++) {
       const s = stat(week(...Array.from({ length: 7 }, () => chips[Math.floor(rng() * chips.length)]!)));
       expect(s).toBeGreaterThanOrEqual(0.2 - 1e-9);
@@ -304,11 +304,11 @@ describe('chips and sessions', () => {
   });
 
   it('fills the gaps in a content line and leaves unknown ones alone', () => {
-    expect(fillLine('{label}: legs {legs}% {nope}', { label: 'SUB', legs: 50 })).toBe('SUB: legs 50% {nope}');
+    expect(fillLine('{label}: legs {legs}% {nope}', { label: 'THR', legs: 50 })).toBe('THR: legs 50% {nope}');
   });
 
   it('shortens a zone name before its bracket', () => {
-    expect(shortZone('Sub-threshold (LT1-LT2 pace)')).toBe('Sub-threshold');
+    expect(shortZone('Threshold Running (LT1-LT2 pace)')).toBe('Threshold Running');
     expect(shortZone('Easy Running (slower than LT1)')).toBe('Easy Running');
     expect(shortZone('Plain')).toBe('Plain');
   });
@@ -422,7 +422,7 @@ describe('the planner', () => {
 
   it('reports the missing key cards', () => {
     const p = createPlanner(content, seeded(3));
-    expect(p.missing().map(c => c.label)).toEqual(['SUB', 'SUPR', 'SPRT']);
+    expect(p.missing().map(c => c.label)).toEqual(['THR', 'SEV', 'FAST']);
   });
 
   it('can reach every session on every day', () => {
@@ -444,16 +444,16 @@ describe('the planner', () => {
 
 describe('what the screens draw', () => {
   it('makes a cell per day: its kind, its chip text, its legs, and whether a key session is flagged', () => {
-    const plan = week('SUB', 'SUPR', 'EASY', 'REST', 'AWAY', '--');
+    const plan = week('THR', 'SEV', 'EASY', 'REST', 'AWAY', '--');
     const cells = dayCells(content, plan, analyse(content, plan));
     expect(cells.map(c => c.kind)).toEqual(['key', 'key', 'support', 'rest', 'away', 'empty', 'empty']);
-    expect(cells.map(c => c.label)).toEqual(['SUB', 'SUPR', 'EASY', 'REST', 'AWAY', '--', '--']);
+    expect(cells.map(c => c.label)).toEqual(['THR', 'SEV', 'EASY', 'REST', 'AWAY', '--', '--']);
     expect(cells.map(c => c.legs)).toEqual([100, 50, 30, 75, 100, 100, 100]);
     expect(cells.map(c => c.flagged)).toEqual([false, true, false, false, false, false, false]);
   });
 
   it('stacks the zones as a ladder: support first, then the key cards in card order', () => {
-    expect(ladderOrder(content).map(i => content.cards[i]!.label)).toEqual(['EASY', 'SUB', 'SUPR', 'SPRT']);
+    expect(ladderOrder(content).map(i => content.cards[i]!.label)).toEqual(['EASY', 'THR', 'SEV', 'FAST']);
     expect(ladderRungs(content)).toEqual(['support', 'key', 'key', 'key']);
   });
 });
@@ -462,9 +462,9 @@ describe('how a day is played', () => {
   it('maps each running card to its style', () => {
     const style = (label: string) => styleOf(content, sessionFromChip(content, label));
     expect(style('EASY')).toBe('easy');
-    expect(style('SUB')).toBe('steady');
-    expect(style('SUPR')).toBe('reps');
-    expect(style('SPRT')).toBe('sprints');
+    expect(style('THR')).toBe('steady');
+    expect(style('SEV')).toBe('reps');
+    expect(style('FAST')).toBe('sprints');
     expect(style('REST')).toBe('rest');
     expect(style('AWAY')).toBe('away');
     expect(style('--')).toBe('none');

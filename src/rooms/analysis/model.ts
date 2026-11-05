@@ -175,20 +175,48 @@ export const decimalsOf = (step: number): number => {
   return dot < 0 ? 0 : text.length - dot - 1;
 };
 
-/** FORECAST 60.4 S (1.6 BETTER): the live readout under the ruler. */
+/** The words for an improvement of `improvement` (in the metric's units): 1.6 FASTER, 0.4 SLOWER, NO CHANGE. */
+const gapWords = (row: ReviewRow, improvement: number, decimals: number): string =>
+  improvement === 0 ? 'NO CHANGE' : `${Math.abs(improvement).toFixed(decimals)} ${improvement > 0 ? row.betterWord : row.worseWord}`;
+
+/** YOUR GUESS 70.4 S: the label that moves with the guess on the ruler. */
+export const guessLabel = (row: ReviewRow, steps: number, step: number): string =>
+  `YOUR GUESS ${valueFor(row, pinImprovement(steps, step)).toFixed(Math.max(1, decimalsOf(step)))} ${row.unit}`;
+
+/** YOUR GUESS 70.4 S (1.6 FASTER): the guess with how far it is from BEFORE (the report's head). */
 export const readoutFor = (row: ReviewRow, steps: number, step: number): string => {
   const improvement = pinImprovement(steps, step);
-  const decimals = Math.max(1, decimalsOf(step));
-  const gap = improvement === 0 ? 'NO CHANGE' : `${Math.abs(improvement).toFixed(decimals)} ${improvement > 0 ? 'BETTER' : 'WORSE'}`;
-  return `FORECAST ${valueFor(row, improvement).toFixed(decimals)} ${row.unit} (${gap})`;
+  return `${guessLabel(row, steps, step)} (${gapWords(row, improvement, Math.max(1, decimalsOf(step)))})`;
 };
 
-/** What a screen reader hears for the pin: Forecast 60.4 s, 1.6 better. */
+/** What a screen reader hears for the guess: Your guess: 70.4 s, 1.6 faster. */
 export const forecastWords = (row: ReviewRow, steps: number, step: number): string => {
   const improvement = pinImprovement(steps, step);
   const decimals = Math.max(1, decimalsOf(step));
-  const gap = improvement === 0 ? 'no change' : `${Math.abs(improvement).toFixed(decimals)} ${improvement > 0 ? 'better' : 'worse'}`;
-  return `Forecast ${valueFor(row, improvement).toFixed(decimals)} ${row.unit.toLowerCase()}, ${gap}.`;
+  return `Your guess: ${valueFor(row, improvement).toFixed(decimals)} ${row.unit.toLowerCase()}, ${gapWords(row, improvement, decimals).toLowerCase()}.`;
+};
+
+/** BEFORE 72 S: the label over the baseline pole. */
+export const beforeLabel = (row: ReviewRow): string => `BEFORE ${plain(row.baseline)} ${row.unit}`;
+
+/** NOISE: TYPICAL ERROR 0.6 S. */
+export const noiseLabel = (row: ReviewRow): string => `NOISE: TYPICAL ERROR ${plain(row.te)} ${row.unit}`;
+
+/** WORTHWHILE CHANGE: 0.8 S. */
+export const worthLabel = (row: ReviewRow): string => `WORTHWHILE CHANGE: ${plain(row.swc)} ${row.unit}`;
+
+/** FASTER →: which way is better, at the right of the heading (the ruler always runs worse to better). */
+export const betterLabel = (row: ReviewRow): string => `${row.betterWord} →`;
+
+/** The verdict question for a row, from the content's template. */
+export const judgeText = (content: AnalysisContent, row: ReviewRow): string => {
+  const fills: Readonly<Record<string, string>> = {
+    name: row.name,
+    before: plain(row.baseline),
+    after: plain(row.retest),
+    unit: row.unit.toLowerCase(),
+  };
+  return content.judgeAsk.replace(/\{(name|before|after|unit)\}/g, (_, key: string) => fills[key] ?? '');
 };
 
 /** The ruler's heading: LAST 400 M (S). */

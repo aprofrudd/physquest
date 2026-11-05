@@ -5,6 +5,7 @@ import { T } from '../../render/TileMap';
 import type { MapData } from '../maps';
 import { HUB_MAP } from '../maps';
 import { DIRECTOR_KEY, MEET_DOOR } from '../meetDoor';
+import { BOARD_SPOTS } from '../supportBoard';
 import { MEET_MAP } from '../../state/GameState';
 
 const F = T.FLOOR;
@@ -46,8 +47,8 @@ export const DIRECTOR_HUB: MapData = {
     [BL, WT, WT, WT, WT, WT, WT, WT, WT, WT, WT, WT, WT, WT, WT, BR],
   ],
   npcs: [{ x: 7, y: 5, dialogueKey: DIRECTOR_KEY }],
-  equipment: HUB_MAP.equipment,
+  equipment: [...HUB_MAP.equipment, ...BOARD_SPOTS], // the SUPPORT BOARD, drawn over the north wall top left
   doors: [...HUB_MAP.doors, { x: MEET_DOOR.x, y: MEET_DOOR.y, target: MEET_MAP }],
   describe:
-    'The Performance Director stands on the rug in the middle of the hall. TESTING and DATA doors on the north wall, TRAINING and ANALYSIS doors below the desks, the ATHLETE room door bottom left and the ARENA doors bottom middle.',
+    'The Performance Director stands on the rug in the middle of the hall. TESTING and DATA doors on the north wall, TRAINING and ANALYSIS doors below the desks, the ATHLETE room door bottom left and the ARENA doors bottom middle. The SUPPORT BOARD with your support scores hangs on the north wall, top left, above the plant.',
 };

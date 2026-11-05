@@ -133,7 +133,7 @@ describe('the things to look at', () => {
     expect(lines('room4_screen2')).toEqual(['Prediction model: Performance trajectory.', `Goal: ${sport.goal}`]);
     expect(lines('room4_screen3')).toEqual(['Prediction model: Training load response.', sport.athleteProfile]);
     expect(lines('room4_screen4')).toEqual(['Prediction model: Competition readiness score.']);
-    expect(sport.goal).toContain('speed reserve');
+    expect(sport.goal).toContain('last lap');
   });
 
   it('describes the room for screen readers', () => {

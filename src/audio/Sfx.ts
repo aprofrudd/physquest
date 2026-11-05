@@ -40,6 +40,10 @@ const SOUNDS: Record<SfxName, Note[]> = {
 const MIN_GAP: Partial<Record<SfxName, number>> = { bump: 0.25, blip: 0.035, mash: 0.03, beat: 0.05 };
 
 const MUTE_KEY = 'physquest_muted';
+// A running AudioContext keeps the audio hardware and its render thread busy even in silence (on a phone that is
+// steady battery drain and heat). It is suspended when the page is hidden and after this long without a sound, and
+// resumed by the next gesture or sound. This is power management for the audio device, not game logic.
+const IDLE_SUSPEND_MS = 15_000;
 const VOLUME = 0.12;
 // Automated test runs (a browser driven by a test tool sets navigator.webdriver; a player's browser never does) keep
 // the whole sound path but at zero volume, so they don't beep through the computer's speakers.
@@ -93,8 +97,53 @@ const createSfx = (): Sfx => {
     return ctx;
   };
 
+  let started = false; // the context has run once (unlocked by a gesture), so it may be resumed without one
+  let resuming = false;
+  let pending: SfxName | null = null; // the sound asked for while the context wakes up
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const suspend = () => {
+    if (ctx && ctx.state === 'running') void ctx.suspend().catch(() => {});
+  };
+  const armIdle = () => {
+    if (idleTimer !== undefined) clearTimeout(idleTimer);
+    idleTimer = setTimeout(suspend, IDLE_SUSPEND_MS);
+  };
+  const wake = (then: SfxName | null) => {
+    if (!ctx) return;
+    pending = then ?? pending;
+    if (resuming) return;
+    resuming = true;
+    void ctx
+      .resume()
+      .then(() => {
+        resuming = false;
+        started = true;
+        armIdle();
+        const name = pending;
+        pending = null;
+        if (name) play(name);
+      })
+      .catch(() => {
+        resuming = false;
+        pending = null;
+      });
+  };
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') suspend();
+    });
+  }
+
   const play = (name: SfxName) => {
-    if (muted || !ctx || !master || ctx.state !== 'running') return;
+    if (muted || !ctx || !master) return;
+    if (ctx.state === 'suspended' && started) {
+      wake(name); // asleep after a quiet spell: the sound plays as soon as it is awake
+      return;
+    }
+    if (ctx.state !== 'running') return;
+    started = true;
+    armIdle();
     const now = ctx.currentTime;
     const gap = MIN_GAP[name];
     const last = lastPlayed.get(name);
@@ -140,7 +189,12 @@ const createSfx = (): Sfx => {
     },
     unlock() {
       const c = ensureContext();
-      if (c && c.state !== 'running') void c.resume().catch(() => {});
+      if (!c) return;
+      if (c.state !== 'running') wake(null);
+      else {
+        started = true;
+        armIdle();
+      }
     },
     onMuteChange(fn) {
       muteListeners.add(fn);

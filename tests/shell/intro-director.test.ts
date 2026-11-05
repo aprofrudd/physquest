@@ -147,7 +147,7 @@ describe('the Distance Running hub', () => {
     expect(w.dialogue.isActive()).toBe(false);
   });
 
-  it('B on the welcome leaves it unheard: it does not restart by itself, the Director gives it in full, then the reminder and after lines', () => {
+  it('B on the welcome leaves it unheard: it does not restart by itself, the Director gives it in full, then the reminder and the needs chat', () => {
     const w = makeHub();
     w.scene.onEnter?.();
     w.step(idle(), 30);
@@ -170,7 +170,8 @@ describe('the Distance Running hub', () => {
     w.readAll();
     GS.meetOf(w.gameState).met = true;
     w.step(tap('a'), 3);
-    expect(page(w.dialogue)).toContain('Good first meeting, Alan.');
+    // once the athlete is met: the needs chat (tests/shell/director-checkins.test.ts follows it through)
+    expect(page(w.dialogue)).toContain(MEET_RUNNING.needs.intro[0]!.replace('{NAME}', 'Alan').slice(0, 30));
   });
 
   it('TESTING refuses until the ATHLETE room is done; the ATHLETE door opens the room', () => {

@@ -91,7 +91,10 @@ const KIND_FOR: Readonly<Record<FeatureKind, TraceKind>> = {
   lt2: 'power',
   vo2max: 'wave',
   vvo2max: 'ecg',
-  sprint: 'bars',
+  hrlt2: 'ecg',
+  cs: 'power',
+  dprime: 'bars',
+  besttrial: 'noise',
 };
 const KIND_BY_INDEX: readonly TraceKind[] = ['wave', 'ecg', 'decay', 'power', 'bars'];
 
@@ -104,7 +107,8 @@ export const screensFor = (sport: SportData): readonly Screen[] => {
     screens = sport.variables.slice(0, WALL_SLOTS).map((v, i) => {
       const feature = featureOf(v.name);
       const text = screenText(v.name);
-      return { label: text.label, value: text.value, kind: feature ? KIND_FOR[feature] : KIND_BY_INDEX[i % KIND_BY_INDEX.length]!, color: i % 2 === 0 ? LIGHT : ACCENT };
+      return { label: text.label, value: '', // never a number: the screens stand for variables, not results
+         kind: feature ? KIND_FOR[feature] : KIND_BY_INDEX[i % KIND_BY_INDEX.length]!, color: i % 2 === 0 ? LIGHT : ACCENT };
     });
     screenCache.set(sport, screens);
   }

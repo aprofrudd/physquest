@@ -6,20 +6,12 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('../../src/audio/Sfx', () => ({ sfx: { play: () => {}, isMuted: () => false, toggleMuted: () => {} } }));
 const announced: string[] = [];
 vi.mock('../../src/ui/announce', () => ({ announce: (t: string) => void announced.push(t) }));
-const { makeRig, tap, idle, DT } = await import('../datalab-rig');
+const { makeRig, tap, idle, DT, cleanAll } = await import('../datalab-rig');
 type Rig = ReturnType<typeof makeRig>;
 
 const reachPin = (seed: number): Rig | null => {
   const rig = makeRig(seed, { firstVisit: false });
-  rig.closeDialogue();
-  rig.wait(0.5);
-  for (let g = 0; g < 200 && rig.debug().phase === 'cleanup'; g++) {
-    if (rig.talking()) rig.closeDialogue();
-    rig.wait(0.4);
-    const d = rig.debug();
-    if (d.view === d.decided && d.decided < d.suspects.length) rig.press('a', 0.4); // remove (right or wrong, it does not matter)
-    else rig.press('a', 0.4); // forward
-  }
+  cleanAll(rig, () => seed % 2 === 0); // right or wrong, it does not matter here
   for (let g = 0; g < 40 && rig.talking(); g++) rig.closeDialogue();
   rig.wait(0.5);
   return rig.debug().phase === 'pin' ? rig : null;
@@ -81,17 +73,19 @@ describe('Data Lab LOCK IN wait under random play', () => {
         const after = rig.debug();
         if (button === 'a') {
           if (before.cursor === rows) {
-            // A on LOCK IN
-            if (after.phase === 'reveal') {
-              lockIns++;
-              if (sinceArrive >= 0 && sinceArrive < 0.35 - 1e-9) problems.push(`I1 seed ${seed}: locked in ${sinceArrive.toFixed(3)} s after arriving`);
+            // A on LOCK IN: it asks first (STAY / LOCK IN); answering LOCK IN locks in
+            if (rig.talking()) {
+              if (sinceArrive >= 0 && sinceArrive < 0.35 - 1e-9) problems.push(`I1 seed ${seed}: asked to lock in ${sinceArrive.toFixed(3)} s after arriving`);
+              rig.pick(1);
+              if (rig.debug().phase === 'reveal') lockIns++;
+              else problems.push(`seed ${seed}: LOCK IN answered but no reveal`);
               break;
             } else if (sinceArrive >= 0.36 && !lockedBefore) {
               problems.push(`I3 seed ${seed}: A on LOCK IN ${sinceArrive.toFixed(3)} s after arriving did nothing (locked=${lockedBefore})`);
             }
           } else if (onRow && !lockedBefore && sinceToggle > 0.2) {
             // A on a pin row with no lock running: it must toggle or refuse the 4th pin
-            const expected = pinnedBefore ? before.pins.length - 1 : before.pins.length < 3 ? before.pins.length + 1 : before.pins.length;
+            const expected = pinnedBefore ? before.pins.length - 1 : before.pins.length < before.pinLimit ? before.pins.length + 1 : before.pins.length;
             toggles++;
             if (after.pins.length !== expected) problems.push(`I2 seed ${seed}: A on row ${before.cursor} (pinned=${pinnedBefore}, ${before.pins.length} pins) gave ${after.pins.length} pins, expected ${expected}; since arriving on LOCK IN ${sinceArrive}`);
             lastToggle = step;

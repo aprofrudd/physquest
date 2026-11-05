@@ -156,9 +156,9 @@ const playWeek = (rig: Rig, chips: string[]) => {
 };
 
 const PERFECT: Record<number, string[]> = {
-  1: ['SUB', 'AWAY', 'EASY', 'SUPR', 'EASY', 'SPRT', 'REST'],
-  2: ['SUB', 'EASY', 'AWAY', 'SUPR', 'EASY', 'SPRT', 'REST'],
-  3: ['SUB', 'EASY', 'SUPR', 'AWAY', 'EASY', 'SPRT', 'REST'],
+  1: ['THR', 'AWAY', 'EASY', 'SEV', 'EASY', 'FAST', 'REST'],
+  2: ['THR', 'EASY', 'AWAY', 'SEV', 'EASY', 'FAST', 'REST'],
+  3: ['THR', 'EASY', 'SEV', 'AWAY', 'EASY', 'FAST', 'REST'],
 };
 
 describe('the brief', () => {
@@ -269,7 +269,7 @@ describe('planning', () => {
 
   it('keeps legs, checks and the stimulus up to date as sessions are placed', () => {
     const rig = openPlan();
-    const hard = rig.state().order.includes('SUB') ? 'SUB' : 'SUPR';
+    const hard = rig.state().order.includes('THR') ? 'THR' : 'SEV';
     place(rig, hard);
     expect(rig.state().legs[1]).toBe(50);
     expect(rig.state().checks.sessions).toBe(false);
@@ -346,7 +346,7 @@ describe('running the week', () => {
     tap(rig, 'leftPressed', 'leftRepeat');
     tap(rig, 'aPressed');
     const q = rig.last();
-    expect(q.text).toBe('No Sub-threshold session yet. No Supra-threshold Intervals session yet. No Sprint Training session yet. Run the week?');
+    expect(q.text).toBe('No Threshold Running session yet. No Severe Intervals session yet. No Fast Reps session yet. Run the week?');
     expect(q.choices).toEqual(['NO', 'YES']); // NO first, so mashing A cannot run an unfinished week
     expect(q.options?.exitLabel).toBe('NO');
     rig.answer(0);
@@ -474,7 +474,7 @@ describe('the debrief and the result', () => {
 
   it('records the model\'s own score for a poor week', () => {
     const rig = openPlan();
-    const chips = ['SUB', 'SUPR', 'SPRT', 'SUB', 'SUPR', 'SPRT', 'SUB'];
+    const chips = ['THR', 'SEV', 'FAST', 'THR', 'SEV', 'FAST', 'THR'];
     const plan = chips.map((c, d) => (d === rig.state().away ? 'AWAY' : c));
     playWeek(rig, plan);
     const a = analyse(content, plan.map(c => sessionFromChip(content, c)));
@@ -511,15 +511,15 @@ describe('the debrief and the result', () => {
   it('shows the key sessions in the order they fall on the board', () => {
     const rig = openPlan();
     const away = rig.state().away as number;
-    // SPRT on the first free day, then SUPR, then SUB
+    // FAST on the first free day, then SEV, then SUB
     const free = [0, 1, 2, 3].filter(d => d !== away);
     const chips: string[] = Array.from({ length: 7 }, () => 'REST');
     chips[away] = 'AWAY';
-    chips[free[0]!] = 'SPRT';
-    chips[free[1]!] = 'SUPR';
-    chips[free[2]!] = 'SUB';
+    chips[free[0]!] = 'FAST';
+    chips[free[1]!] = 'SEV';
+    chips[free[2]!] = 'THR';
     playWeek(rig, chips);
-    expect(rig.last().text.split(':')[0]).toBe('SPRT');
+    expect(rig.last().text.split(':')[0]).toBe('FAST');
   });
 });
 
@@ -592,7 +592,7 @@ describe('what screen readers hear', () => {
     vi.mocked(announce).mockClear();
     tap(rig, 'leftPressed', 'leftRepeat');
     step(rig, 0.4);
-    expect(spoken().pop()).toBe('Run the week. 0 sessions. 7 rest days. 0 red mornings. Missing: Sub-threshold, Supra-threshold Intervals, Sprint Training.');
+    expect(spoken().pop()).toBe('Run the week. 0 sessions. 7 rest days. 0 red mornings. Missing: Threshold Running, Severe Intervals, Fast Reps.');
   });
 
   it('reads each day of the run, support days as support sessions', () => {
@@ -604,7 +604,7 @@ describe('what screen readers hear', () => {
     vi.mocked(announce).mockClear();
     step(rig, 8.6);
     const lines = spoken();
-    expect(lines[0]).toBe('Running the week. Monday. Sub-threshold. Full quality.'); // the start is said with Monday's line
+    expect(lines[0]).toBe('Running the week. Monday. Threshold Running. Full quality.'); // the start is said with Monday's line
     expect(lines.some(l => /Easy Running\. Support session\.$/.test(l))).toBe(true);
     expect(lines.some(l => /AWAY\.$/.test(l))).toBe(true);
     expect(lines.filter(l => /^(Running the week\. )?\w+day\./.test(l))).toHaveLength(DAY_COUNT);
@@ -614,7 +614,7 @@ describe('what screen readers hear', () => {
     const rig = openPlan();
     const away = rig.state().away as number;
     // One session on Monday and every other free day left empty
-    planWeek(rig, ['SUB', '--', '--', '--', '--', '--', '--'].map((chip, d) => (d === away ? 'AWAY' : chip)));
+    planWeek(rig, ['THR', '--', '--', '--', '--', '--', '--'].map((chip, d) => (d === away ? 'AWAY' : chip)));
     tap(rig, 'aPressed');
     answerYes(rig);
     vi.mocked(announce).mockClear();

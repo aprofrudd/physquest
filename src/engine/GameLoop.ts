@@ -1,4 +1,5 @@
 import { drawText, measureText } from '../render/PixelFont';
+import type { FrameWatch } from './frameWatch';
 
 export interface Scene {
   update(dt: number): void;
@@ -8,6 +9,7 @@ export interface Scene {
 }
 
 const TIMESTEP = 1000 / 60; // ~16.67ms
+const KEEP_ALIVE = 1000; // ms: an unchanged frame is still presented this often (a restored display canvas fills again)
 const MAX_FRAME = 100; // cap catch-up after a stall (tab switch, GC pause)
 const MAX_ERRORS = 30; // consecutive failing frames before giving up
 
@@ -47,20 +49,49 @@ const reloadOnNextGesture = () => {
   window.addEventListener('keydown', reload, { once: true });
 };
 
+export interface LoopOptions {
+  /**
+   * Render once every this many fixed updates (read each frame): 1 renders after every update (60 fps), 2 every
+   * other one (30 fps). Updates always run at 60 Hz, so timers, input and game logic are unchanged.
+   */
+  renderEvery?: () => number;
+  /** Hashes each rendered frame (see frameWatch.ts): onRendered (present) is skipped when nothing changed. */
+  watch?: FrameWatch;
+}
+
+/** Work done since the loop started (for measurements and the debug hook). */
+export interface LoopStats {
+  updates: number;
+  renders: number;
+  /** Frames handed to onRendered (renders minus the unchanged frames skipped). */
+  presents: number;
+}
+
 export const createGameLoop = (
   ctx: CanvasRenderingContext2D,
   getScene: () => Scene | null,
   onRendered?: () => void,
+  options: LoopOptions = {},
 ) => {
   let lastTime = 0;
   let accumulator = 0;
   let running = false;
+  let paused = false; // the page is hidden: no frames are scheduled at all
   let rafId = 0;
-  let needsRender = true;
+  let stepsSinceRender = 0;
+  let forceRender = true; // the first frame, and the first after the page comes back
+  let lastPresent = -Infinity;
   let errorFrames = 0;
+  const stats: LoopStats = { updates: 0, renders: 0, presents: 0 };
+
+  const present = (time: number) => {
+    lastPresent = time;
+    stats.presents++;
+    onRendered?.();
+  };
 
   const tick = (time: number) => {
-    if (!running) return;
+    if (!running || paused) return;
     // Schedule first so one bad frame can't stop the loop
     rafId = requestAnimationFrame(tick);
 
@@ -73,15 +104,23 @@ export const createGameLoop = (
       // remaining steps of this frame must go to the new scene.
       while (accumulator >= TIMESTEP) {
         accumulator -= TIMESTEP;
-        needsRender = true;
+        stepsSinceRender++;
+        stats.updates++;
         getScene()?.update(TIMESTEP / 1000); // pass seconds
       }
 
-      // On 90/120Hz displays most frames have no new update; skip redundant draws.
-      if (needsRender) {
-        needsRender = false;
+      // Render only after an update (on 90/120Hz displays most frames have none), and at most once every
+      // `renderEvery` updates
+      const every = Math.max(1, Math.floor(options.renderEvery?.() ?? 1));
+      if (forceRender || (stepsSinceRender > 0 && stepsSinceRender >= every)) {
+        const forced = forceRender;
+        forceRender = false;
+        stepsSinceRender = 0;
+        options.watch?.begin();
         getScene()?.render(ctx);
-        onRendered?.();
+        stats.renders++;
+        const changed = options.watch ? options.watch.changed() : true;
+        if (changed || forced || time - lastPresent >= KEEP_ALIVE) present(time);
       }
       errorFrames = 0;
     } catch (err) {
@@ -92,7 +131,7 @@ export const createGameLoop = (
         cancelAnimationFrame(rafId);
         drawCrashScreen(ctx);
         try {
-          onRendered?.();
+          present(time);
         } catch {
           // nothing more we can show
         }
@@ -101,11 +140,20 @@ export const createGameLoop = (
     }
   };
 
+  // Hidden: stop scheduling frames altogether (browsers throttle rAF in the background, but not always to zero, e.g.
+  // a page left visible behind a lock screen's media controls). Visible again: start afresh, without catching up on
+  // the time spent away.
   const onVisibility = () => {
-    // Don't try to catch up on time spent in the background
-    if (document.visibilityState === 'visible') {
+    if (!running) return;
+    if (document.visibilityState === 'hidden') {
+      paused = true;
+      cancelAnimationFrame(rafId);
+    } else if (paused) {
+      paused = false;
       lastTime = performance.now();
       accumulator = 0;
+      forceRender = true;
+      rafId = requestAnimationFrame(tick);
     }
   };
 
@@ -113,15 +161,20 @@ export const createGameLoop = (
     start() {
       if (running) return;
       running = true;
+      paused = document.visibilityState === 'hidden';
       lastTime = performance.now();
       accumulator = 0;
-      needsRender = true;
+      stepsSinceRender = 0;
+      forceRender = true;
       errorFrames = 0;
       document.addEventListener('visibilitychange', onVisibility);
-      rafId = requestAnimationFrame(tick);
+      if (!paused) rafId = requestAnimationFrame(tick);
     },
+    /** Counters since the loop was created. */
+    stats: (): Readonly<LoopStats> => stats,
     stop() {
       running = false;
+      paused = false;
       cancelAnimationFrame(rafId);
       document.removeEventListener('visibilitychange', onVisibility);
     },

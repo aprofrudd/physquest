@@ -118,13 +118,11 @@ describe('Testing Lab map', () => {
     expect(map.talk!['room1_laptop']!(sport)).toEqual([sport.athleteProfile, `Goal: ${sport.goal}`]);
   });
 
-  it('shows the thresholds from the data line on the lactate analyser, exactly as written there', () => {
+  it('shows no numbers on the lactate analyser before her tests are run (one line only)', () => {
     const lines = map.talk!['room1_equip4']!(sport);
-    expect(lines[0]).toBe('Testing equipment: Blood lactate analyser.');
-    expect(thresholdReadout(sport.dataOutput)).toBe('LT1 3:45/km (2.0 mmol/L), LT2 3:20/km (4.0 mmol/L)');
-    expect(lines[1]).toBe('Display: LT1 3:45/km (2.0 mmol/L), LT2 3:20/km (4.0 mmol/L).');
-    expect(lines).toHaveLength(2);
-    for (const line of lines.slice(1)) expect(sport.dataOutput).toContain(line.replace(/^Display: /, '').replace(/\.$/, ''));
+    expect(lines).toEqual(['Testing equipment: Blood lactate analyser.']);
+    expect(thresholdReadout(sport.dataOutput)).toBeNull();
+    expect(thresholdReadout('LT1 3:45/km (2.0 mmol/L), LT2 3:20/km (4.0 mmol/L), VO2max 65')).toBe('LT1 3:45/km (2.0 mmol/L), LT2 3:20/km (4.0 mmol/L)');
   });
 
   it('has one line only on the analyser for a sport whose data has no thresholds', () => {

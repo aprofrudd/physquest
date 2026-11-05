@@ -1,4 +1,4 @@
-// The Testing Lab's rules: shuffles, the test-day check, the readiness factor, the run's clock and the score.
+// The Testing Lab's rules: shuffles, the battery, the test-day check, the readiness factor, each run's clock and the score.
 import { describe, expect, it } from 'vitest';
 import { LEVEL_DATA } from '../src/data/sports';
 import { RUNNING } from '../src/rooms/content/running';
@@ -7,7 +7,9 @@ import {
   DECISION_LOCK,
   RUN_SECONDS,
   RUN_SKIP_AFTER,
+  PARTIAL_BATTERY_ACCURACY,
   athleteName,
+  coverageOf,
   createTestingModel,
   factorFor,
   pickCheck,
@@ -21,7 +23,7 @@ import {
 const sport = LEVEL_DATA[3]!;
 const content = RUNNING.testing;
 const test = (name: string) => sport.tests.find(t => t.name === name)!;
-const LT = test('Lactate Threshold Test');
+const LT = test('Lactate Profile');
 const CS = test('Critical Speed Test');
 const WINGATE = test('Wingate Test');
 const BEEP = test('Beep Test');
@@ -49,18 +51,33 @@ const modelWith = (check: AthleteCheck | null, seed = 1) =>
     rng: seeded(seed),
   });
 
+type Model = ReturnType<typeof modelWith>;
+
+/** Put `tests` in the battery, in order, as a player would (each pick waits out its lock). */
+const pickBattery = (model: Model, tests: readonly (typeof LT)[]) => {
+  for (const test of tests) {
+    model.update(DECISION_LOCK + 0.01);
+    model.moveCursor(model.state.order.indexOf(test) - model.state.cursor);
+    model.choose();
+  }
+};
+
 /** Run a model through the pick to the end of the printout, as a player would. */
-const play = (model: ReturnType<typeof modelWith>, test: typeof LT, call?: 'run' | 'rebook') => {
+const play = (model: Model, tests: readonly (typeof LT)[], call?: 'run' | 'rebook') => {
   model.startPick();
-  model.update(DECISION_LOCK + 0.01);
-  model.moveCursor(model.state.order.indexOf(test)); // the cursor starts on the first test
-  model.choose();
+  pickBattery(model, tests);
   if (model.state.phase === 'check') {
     model.answer(call ?? 'run');
     model.beginRun();
   }
-  model.update(RUN_SECONDS + 0.01);
+  for (let i = 0; i < tests.length; i++) model.update(RUN_SECONDS + 0.01);
   return model;
+};
+
+/** The first two tests of the list, picked in order (a full battery from the pick's start). */
+const pickFirstTwo = (model: Model) => {
+  model.startPick();
+  pickBattery(model, [model.state.order[0]!, model.state.order[1]!]);
 };
 
 describe('shuffled', () => {
@@ -136,29 +153,35 @@ describe('readiness factor', () => {
 });
 
 describe('score', () => {
-  const stat = (t: typeof LT, factor: number) => statOf(resultFor(t, factor));
+  const stat = (tests: readonly (typeof LT)[], factor: number) => statOf(resultFor(sport.tests, tests, factor));
 
-  it('lands the specified stat for each test with the right call', () => {
-    expect(stat(LT, 1)).toBeCloseTo(0.98, 9);
-    expect(stat(CS, 1)).toBeCloseTo(0.96, 9);
-    expect(stat(WINGATE, 1)).toBeCloseTo(0.38, 9);
-    expect(stat(BEEP, 1)).toBeCloseTo(0.42, 9);
+  it('lands the specified stat for each kind of battery with the right call', () => {
+    expect(stat([LT, CS], 1)).toBeCloseTo(0.4 * 0.925 + 0.6, 9); // 0.97: both tests with a Data Lab file
+    expect(stat([LT, WINGATE], 1)).toBeCloseTo(0.4 * 0.725 + 0.6 * PARTIAL_BATTERY_ACCURACY, 9); // 0.68: one of them
+    expect(stat([CS, BEEP], 1)).toBeCloseTo(0.4 * 0.75 + 0.6 * PARTIAL_BATTERY_ACCURACY, 9);
+    expect(stat([WINGATE, BEEP], 1)).toBeCloseTo(0.4 * 0.55 + 0.6 * 0.3, 9); // 0.40: neither
   });
 
-  it('takes the readiness factor off the test data quality only', () => {
-    expect(stat(LT, content.ranAnyway)).toBeCloseTo(0.866, 9);
-    expect(stat(LT, content.needlessRebook)).toBeCloseTo(0.4 * 0.95 * 0.95 + 0.6, 9);
-    expect(resultFor(LT, 0.7).variableAccuracy).toBe(1);
+  it('calls a battery full, partial or none by the tests sports.ts calls right', () => {
+    expect(coverageOf(sport.tests, [CS, LT])).toBe('full');
+    expect(coverageOf(sport.tests, [LT, BEEP])).toBe('partial');
+    expect(coverageOf(sport.tests, [WINGATE, BEEP])).toBe('none');
   });
 
-  it('gives 0.3 variable accuracy to a test sports.ts calls wrong, 1 to a right one', () => {
-    for (const t of sport.tests) expect(resultFor(t, 1).variableAccuracy).toBe(t.correct ? 1 : 0.3);
+  it('takes the readiness factor off the data quality only', () => {
+    expect(stat([LT, CS], content.ranAnyway)).toBeCloseTo(0.4 * 0.925 * 0.7 + 0.6, 9);
+    expect(stat([LT, CS], content.needlessRebook)).toBeCloseTo(0.4 * 0.925 * 0.95 + 0.6, 9);
+    expect(resultFor(sport.tests, [LT, CS], 0.7).variableAccuracy).toBe(1);
   });
 
-  it('keeps perfect play between 0.92 and 0.98 and the worst play far below', () => {
-    expect(stat(LT, 1)).toBeLessThanOrEqual(0.98 + 1e-9);
-    expect(stat(CS, 1)).toBeGreaterThanOrEqual(0.92);
-    const worst = Math.min(...sport.tests.map(t => stat(t, content.ranAnyway)));
+  it('keeps perfect play between 0.92 and 0.98, a partial battery mixed and the worst play far below', () => {
+    expect(stat([LT, CS], 1)).toBeLessThanOrEqual(0.98 + 1e-9);
+    expect(stat([LT, CS], 1)).toBeGreaterThanOrEqual(0.92);
+    for (const pair of [[LT, WINGATE], [LT, BEEP], [CS, WINGATE], [CS, BEEP]]) {
+      expect(stat(pair, 1)).toBeGreaterThanOrEqual(0.5);
+      expect(stat(pair, 1)).toBeLessThan(0.8);
+    }
+    const worst = stat([WINGATE, BEEP], content.ranAnyway);
     expect(worst).toBeLessThan(0.4);
     expect(worst).toBeGreaterThan(0.15);
   });
@@ -173,19 +196,39 @@ describe('the flow', () => {
     expect(model.highlighted()).toBe(model.state.order[0]);
   });
 
-  it('ignores A for the first 0.35 s of the pick', () => {
+  it('ignores A for the first 0.35 s of the pick, and again after each test is added', () => {
     const model = modelWith(null);
     model.startPick();
     expect(model.canDecide()).toBe(false);
-    model.choose();
-    expect(model.state.phase).toBe('pick');
+    expect(model.choose()).toBe('locked');
     model.update(DECISION_LOCK - 0.01);
-    model.choose();
-    expect(model.state.phase).toBe('pick');
+    expect(model.choose()).toBe('locked');
     model.update(0.02);
     expect(model.canDecide()).toBe(true);
-    model.choose();
+    expect(model.choose()).toBe('added');
+    expect(model.state.battery).toEqual([model.state.order[0]]);
+    expect(model.state.phase).toBe('pick');
+    expect(model.state.cursor).toBe(1); // moved on to the next test not in the battery
+    expect(model.choose()).toBe('locked'); // a new decision: its own lock
+    model.update(DECISION_LOCK + 0.01);
+    expect(model.choose()).toBe('full');
     expect(model.state.phase).toBe('run');
+    expect(model.state.battery).toEqual([model.state.order[0], model.state.order[1]]);
+  });
+
+  it('builds a battery of the content size: no test twice, and B takes the last one out', () => {
+    const model = modelWith(null);
+    expect(model.size).toBe(2);
+    model.startPick();
+    model.update(DECISION_LOCK + 0.01);
+    model.choose();
+    model.update(DECISION_LOCK + 0.01);
+    model.moveCursor(-1); // back onto the test just added
+    expect(model.choose()).toBe('taken'); // the same test again
+    expect(model.state.battery).toHaveLength(1);
+    expect(model.unpick()).toBe(true);
+    expect(model.state.battery).toHaveLength(0);
+    expect(model.unpick()).toBe(false);
   });
 
   it('wraps the cursor both ways and only moves in the pick', () => {
@@ -203,16 +246,12 @@ describe('the flow', () => {
 
   it('goes to test day when there are checks, straight to the run when there are none', () => {
     const withCheck = modelWith(rebookCheck);
-    withCheck.startPick();
-    withCheck.update(1);
-    withCheck.choose();
+    pickFirstTwo(withCheck);
     expect(withCheck.state.phase).toBe('check');
-    expect(withCheck.state.chosen).toBe(withCheck.state.order[0]);
+    expect(withCheck.current()).toBe(withCheck.state.order[0]);
 
     const without = modelWith(null);
-    without.startPick();
-    without.update(1);
-    without.choose();
+    pickFirstTwo(without);
     expect(without.state.phase).toBe('run');
     expect(without.factor()).toBe(1);
     expect(without.state.check).toBeNull();
@@ -220,27 +259,21 @@ describe('the flow', () => {
 
   it('says whether the call was right and marks a test that ran on a day to re-book as shaky', () => {
     const shaky = modelWith(rebookCheck);
-    shaky.startPick();
-    shaky.update(1);
-    shaky.choose();
+    pickFirstTwo(shaky);
     expect(shaky.answer('run')).toBe(false);
     expect(shaky.shaky()).toBe(true);
     expect(shaky.state.rebooked).toBe(false);
     expect(shaky.factor()).toBe(content.ranAnyway);
 
     const right = modelWith(rebookCheck);
-    right.startPick();
-    right.update(1);
-    right.choose();
+    pickFirstTwo(right);
     expect(right.answer('rebook')).toBe(true);
     expect(right.shaky()).toBe(false);
     expect(right.state.rebooked).toBe(true);
     expect(right.factor()).toBe(1);
 
     const needless = modelWith(runCheck);
-    needless.startPick();
-    needless.update(1);
-    needless.choose();
+    pickFirstTwo(needless);
     expect(needless.answer('rebook')).toBe(false);
     expect(needless.shaky()).toBe(false); // the data is fine, only the day was wasted
     expect(needless.factor()).toBe(content.needlessRebook);
@@ -248,9 +281,7 @@ describe('the flow', () => {
 
   it('moves the calendar on while a re-booking is flipping, and nowhere else', () => {
     const model = modelWith(rebookCheck);
-    model.startPick();
-    model.update(1);
-    model.choose();
+    pickFirstTwo(model);
     model.update(0.5);
     expect(model.state.flip).toBe(0);
     model.answer('rebook');
@@ -258,33 +289,36 @@ describe('the flow', () => {
     expect(model.state.flip).toBeCloseTo(0.4, 9);
   });
 
-  it('lets A skip the run only after half a second, and ends it by itself at five seconds', () => {
+  it('runs each test of the battery in turn: A skips one after half a second, each ends by itself at five seconds', () => {
     const model = modelWith(null);
-    model.startPick();
-    model.update(1);
-    model.choose();
+    pickFirstTwo(model);
     expect(model.skipRun()).toBe(false);
     model.update(RUN_SKIP_AFTER - 0.05);
     expect(model.skipRun()).toBe(false);
     model.update(0.1);
     expect(model.skipRun()).toBe(true);
+    expect(model.state.phase).toBe('run'); // the second test
+    expect(model.state.running).toBe(1);
+    expect(model.current()).toBe(model.state.battery[1]);
+    expect(model.skipRun()).toBe(false); // its own half second
+    model.update(RUN_SKIP_AFTER + 0.05);
+    expect(model.skipRun()).toBe(true);
     expect(model.state.phase).toBe('printout');
 
     const full = modelWith(null);
-    full.startPick();
-    full.update(1);
-    full.choose();
+    pickFirstTwo(full);
     full.update(RUN_SECONDS - 0.1);
     expect(full.state.phase).toBe('run');
     full.update(0.2);
+    expect(full.state.running).toBe(1);
+    full.update(RUN_SECONDS);
     expect(full.state.phase).toBe('printout');
   });
 
   it('locks the printout for 0.35 s so a skip press cannot carry through it', () => {
     const model = modelWith(null);
-    model.startPick();
-    model.update(1);
-    model.choose();
+    pickFirstTwo(model);
+    model.update(RUN_SECONDS + 0.01);
     model.update(RUN_SECONDS + 0.01);
     expect(model.state.phase).toBe('printout');
     expect(model.canDecide()).toBe(false);
@@ -298,7 +332,8 @@ describe('the flow', () => {
 
   it('ignores choose, answer, skip and feedback calls made in the wrong phase', () => {
     const model = modelWith(rebookCheck);
-    model.choose();
+    expect(model.choose()).toBe('locked');
+    expect(model.unpick()).toBe(false);
     expect(model.state.phase).toBe('brief');
     expect(model.answer('run')).toBe(false);
     expect(model.skipRun()).toBe(false);
@@ -350,35 +385,47 @@ describe('the flow', () => {
 });
 
 describe('the printout', () => {
-  it('names the test, what it records and sends a right test to the Data Lab', () => {
-    const model = play(modelWith(runCheck), LT);
+  it('names each test, what it records, and sends both files to the Data Lab', () => {
+    const model = play(modelWith(runCheck), [LT, CS]);
     const p = model.printout();
     expect(p.title).toBe('LAB PRINTOUT');
-    expect(p.testName).toBe('LACTATE THRESHOLD TEST');
-    expect(p.records).toBe('RECORDS: LT1 AND LT2 PACES');
-    expect(p.verdictGood).toBe(true);
-    expect(p.verdict).toBe('SENT TO THE DATA LAB');
+    expect(p.testName).toBe('2 TESTS');
+    expect(p.tests).toEqual([
+      { name: 'LACTATE PROFILE', records: 'RECORDS: LT1 AND LT2 PACES', good: true },
+      { name: 'CRITICAL SPEED TEST', records: 'RECORDS: CS AND D PRIME', good: true },
+    ]);
+    expect(p.verdictTone).toBe('full');
+    expect(p.verdict).toBe('BOTH SENT TO THE DATA LAB');
     expect(p.shaky).toBeNull();
   });
 
-  it('says a wrong test is not what the athlete needs, by her name', () => {
-    const p = play(modelWith(runCheck), WINGATE).printout();
-    expect(p.verdictGood).toBe(false);
-    expect(p.verdict).toBe('NOT WHAT AISHA NEEDS');
-    expect(p.records).toBe('RECORDS: PEAK AND MEAN POWER');
+  it('says how many files a partial battery sends, and that a battery with no file sends none', () => {
+    const partial = play(modelWith(runCheck), [WINGATE, LT]).printout();
+    expect(partial.verdictTone).toBe('partial');
+    expect(partial.verdict).toBe('1 OF 2 TO THE DATA LAB');
+    expect(partial.tests.map(t => t.good)).toEqual([false, true]);
+    const none = play(modelWith(runCheck), [WINGATE, BEEP]).printout();
+    expect(none.verdictTone).toBe('none');
+    expect(none.verdict).toBe('NO FILE FOR THE DATA LAB');
+    expect(none.tests[0]!.records).toBe('RECORDS: PEAK AND MEAN POWER');
   });
 
-  it('flags shaky data only when the test ran on a day to re-book', () => {
-    expect(play(modelWith(rebookCheck), CS, 'run').printout().shaky).toBe('DATA QUALITY: SHAKY');
-    expect(play(modelWith(rebookCheck), CS, 'rebook').printout().shaky).toBeNull();
-    expect(play(modelWith(runCheck), CS, 'rebook').printout().shaky).toBeNull();
+  it('flags shaky data only when the battery ran on a day to re-book', () => {
+    expect(play(modelWith(rebookCheck), [CS, LT], 'run').printout().shaky).toBe('DATA QUALITY: SHAKY');
+    expect(play(modelWith(rebookCheck), [CS, LT], 'rebook').printout().shaky).toBeNull();
+    expect(play(modelWith(runCheck), [CS, LT], 'rebook').printout().shaky).toBeNull();
   });
 
-  it('gives the room result from the chosen test and the call', () => {
-    const model = play(modelWith(rebookCheck), LT, 'run');
-    expect(model.result()).toEqual({ dataQuality: 0.95 * 0.7, variableAccuracy: 1 });
-    const stat = statOf(model.result());
-    expect(stat).toBeCloseTo(0.866, 9);
+  it('gives the room result from the battery (in the order picked) and the call', () => {
+    const model = play(modelWith(rebookCheck), [CS, LT], 'run');
+    expect(model.result()).toEqual({
+      dataQuality: 0.925 * 0.7,
+      variableAccuracy: 1,
+      testing: { tests: [CS.name, LT.name], call: 'ranAnyway' },
+    });
+    expect(play(modelWith(rebookCheck), [LT, CS], 'rebook').result().testing?.call).toBe('right');
+    expect(play(modelWith(runCheck), [LT, CS], 'rebook').result().testing?.call).toBe('needlessRebook');
+    expect(play(modelWith(runCheck), [BEEP, WINGATE]).result().testing?.tests).toEqual([BEEP.name, WINGATE.name]);
   });
 });
 

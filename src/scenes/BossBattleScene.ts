@@ -2,6 +2,10 @@ import type { Scene } from '../engine/GameLoop';
 import type { Input } from '../engine/Input';
 import type { SceneManager } from '../engine/SceneManager';
 import { STAT_KEYS, showdownRating, type BoutResult, type GameState, type StatKey } from '../state/GameState';
+import { SCORE_LABEL, SCORE_SHORT, boutStat, boutType, rivalCeilingFor, showdownFocus } from '../systems/SupportScores';
+import { finaleContentFor } from '../rooms/content/finale-running';
+import { EV_BELL, EV_EMPTY, kickCall, unusedShare } from '../systems/RaceModel';
+import { prefersReducedMotion } from '../render/motion';
 import type { DialogueSystem } from '../systems/Dialogue';
 import type { PauseMenu } from '../systems/PauseMenu';
 import { GAME_W, GAME_H } from '../render/DialogueBox';
@@ -12,13 +16,13 @@ import { LEVEL_DATA } from '../data/sports';
 import { bossAthletesFor, type BossLook } from '../data/sprites';
 import { sfx } from '../audio/Sfx';
 import { announce } from '../ui/announce';
+import { rivalSpeaker } from '../data/speakers';
 import {
   HUD_COLORS,
-  MINIGAME_FOR_STAT,
+  MINIGAME_EVENT,
   MINIGAME_PROMPT,
   MINIGAME_RULES,
   MINIGAME_RULES_SHORT,
-  STAT_LABEL,
   boutWasIdle,
   createMinigameState,
   drawMeter,
@@ -30,7 +34,7 @@ import {
   type MinigameType,
 } from '../systems/BossMinigame';
 
-type BossPhase = 'intro' | 'precheck' | 'rules' | 'countdown' | 'minigame' | 'result';
+type BossPhase = 'intro' | 'precheck' | 'rules' | 'practice' | 'countdown' | 'minigame' | 'result';
 
 const COUNT_STEP = 0.7; // seconds per 3 / 2 / 1 / GO
 const RESULT_SFX_DELAY = 0.25; // lets the last hit sound finish before the jingle
@@ -121,20 +125,14 @@ const panelName = (name: string, maxW: number): string => {
   return surname.slice(0, Math.floor((maxW - PANEL_PAD) / CHAR_W));
 };
 
-// Rival ceilings scale with the level; strength and power get a small bonus
-const rivalCeilingFor = (level: number, stat: StatKey): number => {
-  const base = 0.4 + level * 0.1;
-  return stat === 'strength' || stat === 'power' ? base + 0.05 : base;
-};
-
 interface Setup {
   rivalName: string;
   rivalTaunt: string;
   rivalLoseLine: string;
   event: string;
-  focus: StatKey;
-  type: MinigameType;
-  room: string; // hub sign of the room that trains the focus stat
+  focus: StatKey; // the level's focus score (showdownFocus)
+  type: MinigameType; // the bout, from the sport's bossStat
+  room: string; // hub sign of the room that records the focus score
   rating: number; // player's showdown rating
   rivalCeiling: number;
   target: number; // rival's final minigame score
@@ -149,7 +147,7 @@ export const createBossBattleScene = (
   dialogue: DialogueSystem,
   onResult: (result: BoutResult) => void,
   pauseMenu: PauseMenu,
-): Scene => {
+): Scene & { debugBout(): { phase: string; bout: MinigameState | null } } => {
   let phase: BossPhase = 'intro';
   let setup: Setup | null = null;
   let minigame: MinigameState | null = null;
@@ -160,18 +158,20 @@ export const createBossBattleScene = (
   let resultSfxPlayed = false;
   let resultShown = false;
   const rulesSeen = new Set<MinigameType>(); // bout types already explained this session
+  const practised = new Set<MinigameType>(); // bout types with a practice (the race) already practised this session
 
   const buildSetup = (): Setup | null => {
     const sport = LEVEL_DATA[gameState.currentLevel];
     if (!sport) return null;
-    const focus = sport.bossStat;
-    const type = MINIGAME_FOR_STAT[focus];
-    const rivalCeiling = rivalCeilingFor(gameState.currentLevel, focus);
+    const level = gameState.currentLevel;
+    const focus = showdownFocus(level);
+    const type = boutType(level);
+    const rivalCeiling = rivalCeilingFor(level, boutStat(level));
     return {
       rivalName: sport.rivalName,
       rivalTaunt: sport.rivalTaunt,
       rivalLoseLine: sport.rivalLoseLine,
-      event: sport.bossEvent,
+      event: MINIGAME_EVENT[type] ?? sport.bossEvent,
       focus,
       type,
       room: roomLabelForStat(focus),
@@ -183,7 +183,7 @@ export const createBossBattleScene = (
     };
   };
 
-  const focusLine = (s: Setup): string => `FOCUS: ${STAT_LABEL[s.focus]} (${s.room} ROOM)`;
+  const focusLine = (s: Setup): string => `FOCUS: ${SCORE_LABEL[s.focus]} (${s.room} ROOM)`;
   const ratingLine = (s: Setup): string => `RATING ${pct(s.rating)}% VS TARGET ${pct(s.target)}%`;
 
   const startCountdown = (s: Setup) => {
@@ -205,23 +205,58 @@ export const createBossBattleScene = (
   // and the controls over two pages; after that a line is enough.
   const rulesPages = (s: Setup): string[] => {
     const target = pct(s.target);
+    const race = s.type === 'race' ? finaleContentFor(gameState.currentLevel)?.race : undefined;
+    if (race) {
+      const tokens = (t: string) =>
+        t.replace('{RATING}', String(pct(s.rating))).replace('{TARGET}', String(target)).replace('{FOCUS}', SCORE_LABEL[s.focus]);
+      return rulesSeen.has(s.type) ? [tokens(race.rulesShort)] : race.rules.map(tokens);
+    }
     if (rulesSeen.has(s.type)) return [`Beat ${target}% to win. ${MINIGAME_RULES_SHORT[s.type]}`];
     return [
-      `Your ${STAT_LABEL[s.focus]} rating is ${pct(s.rating)}%: that is the most your bar can reach. Finish above ${s.rivalName}'s target of ${target}% to win.`,
+      `Your showdown rating is ${pct(s.rating)}%, mostly from your ${SCORE_LABEL[s.focus]} score: that is the most your bar can reach. Finish above ${s.rivalName}'s target of ${target}% to win.`,
       MINIGAME_RULES[s.type],
     ];
   };
 
+  // The race's practice straight: before the first race of a session, after its rules card. It scores nothing.
+  const needsPractice = (s: Setup): boolean => s.type === 'race' && !practised.has(s.type);
+
+  const startPractice = (s: Setup) => {
+    phase = 'practice';
+    goTimer = COUNT_STEP; // no GO! on the practice straight
+    minigame = createMinigameState(s.type, s.rating, s.rivalCeiling, Math.random, true);
+    announce(input.fill('Practice straight. Hold {A} to surge, let go to settle.'));
+  };
+
+  const practiceDone = (s: Setup, mg: MinigameState) => {
+    practised.add(s.type);
+    const text = finaleContentFor(gameState.currentLevel)?.race.practice;
+    const r = mg.race;
+    const lines = !text || !r ? [] : !r.held ? text.idle : r.faded ? text.faded : !r.released ? text.neverReleased : text.done;
+    phase = 'rules';
+    if (lines.length === 0) {
+      startCountdown(s);
+      return;
+    }
+    dialogue.showSequence([...lines], () => startCountdown(s), leaveToHub, {
+      exitLabel: 'LEAVE ARENA',
+      nextLabel: 'READY',
+      lock: 0.5, // a hold carried over from the practice can't skip it
+    });
+  };
+
   const showRules = (s: Setup) => {
     phase = 'rules';
+    const practice = needsPractice(s);
     dialogue.showSequence(
       rulesPages(s),
       () => {
         rulesSeen.add(s.type); // only once the card has been read through
-        startCountdown(s);
+        if (practice) startPractice(s);
+        else startCountdown(s);
       },
       leaveToHub, // B: back to the hub
-      { exitLabel: 'LEAVE ARENA', nextLabel: 'READY' },
+      { exitLabel: 'LEAVE ARENA', nextLabel: practice ? 'PRACTICE' : 'READY' },
     );
   };
 
@@ -234,7 +269,7 @@ export const createBossBattleScene = (
     phase = 'precheck';
     const rival = s.rivalName.toUpperCase();
     dialogue.show(
-      `YOUR ${STAT_LABEL[s.focus]} RATING (${pct(s.rating)}%) CAN'T BEAT ${rival}'S ${pct(s.target)}%. REPLAY THE ${s.room} ROOM TO RAISE IT.`,
+      `YOUR RATING (${pct(s.rating)}%) CAN'T BEAT ${rival}'S ${pct(s.target)}%. IT IS MOSTLY YOUR ${SCORE_LABEL[s.focus]} SCORE: REPLAY THE ${s.room} ROOM TO RAISE IT.`,
       ['BACK TO HUB', 'FIGHT ANYWAY'],
       (choice) => {
         if (choice === 1) showRules(s);
@@ -247,9 +282,8 @@ export const createBossBattleScene = (
 
   const showResult = (s: Setup, mg: MinigameState) => {
     const won = mg.won;
-    const text = won
-      ? `${s.rivalName}: "${s.rivalLoseLine}"`
-      : 'Better data next time, {NAME}. The margins matter.';
+    // The rival speaks when beaten (name tab); a defeat is the game's own line
+    const text = won ? s.rivalLoseLine : 'Better data next time, {NAME}. The margins matter.';
     dialogue.show(
       text,
       undefined,
@@ -262,10 +296,19 @@ export const createBossBattleScene = (
           playerScore: mg.playerScore,
           rivalScore: mg.rivalScore,
           idle: boutWasIdle(mg),
+          race: mg.race
+            ? {
+              time: mg.race.time,
+              rivalTime: mg.race.rivalTime,
+              kick: kickCall(mg.race),
+              emptyToGo: Math.max(0, mg.race.emptyToGo),
+              unused: unusedShare(mg.race),
+            }
+            : undefined,
         });
       },
       undefined,
-      { lock: RESULT_LOCK, exitLabel: '' },
+      { lock: RESULT_LOCK, exitLabel: '', speaker: won ? rivalSpeaker(gameState.currentLevel) : undefined },
     );
   };
 
@@ -293,7 +336,7 @@ export const createBossBattleScene = (
       if (focusOnly && !isFocus) continue;
       const y0 = ROW_Y0 + slot * ROW_PITCH;
       slot++;
-      const label = STAT_LABEL[key];
+      const label = SCORE_SHORT[key]; // four letters: the full names would crowd the bars
       const labelW = measureText(label);
       const labelX = Math.round((GAME_W - labelW) / 2);
 
@@ -339,7 +382,7 @@ export const createBossBattleScene = (
     const tick = Math.floor(Date.now() / 250) % 2;
     let playerDrop = 0;
     let rivalDrop = 0;
-    if (phase === 'minigame') {
+    if (phase === 'minigame' || phase === 'practice') {
       playerDrop = tick;
       rivalDrop = 1 - tick;
     } else if (phase === 'result' && minigame) {
@@ -368,6 +411,13 @@ export const createBossBattleScene = (
       text = 'GO!';
       scale = goTimer < 0.12 ? 4 : 3;
       color = HUD_COLORS.good;
+    } else if (phase === 'practice') {
+      return; // no rival on the practice straight
+    } else if (minigame?.race?.bell && minigame.bellFlash > 0 && phase === 'minigame') {
+      // The bell: one lap to go
+      text = 'BELL';
+      scale = !prefersReducedMotion() && minigame.bellFlash > 1.38 ? 4 : 3;
+      color = HUD_COLORS.bad;
     }
     const w = measureText(text, scale);
     const y = ATHLETE_Y + 12 - Math.round((7 * scale) / 2);
@@ -394,11 +444,11 @@ export const createBossBattleScene = (
       }
 
       dialogue.show(
-        `${s.rivalName}: "${s.rivalTaunt}"`,
+        s.rivalTaunt,
         undefined,
         () => afterTaunt(s),
         leaveToHub, // B: not ready for this bout yet
-        { exitLabel: 'LEAVE ARENA' },
+        { exitLabel: 'LEAVE ARENA', speaker: rivalSpeaker(gameState.currentLevel) },
       );
     },
 
@@ -432,11 +482,22 @@ export const createBossBattleScene = (
           break;
         }
 
+        case 'practice': {
+          const mg = minigame;
+          if (!mg) break;
+          updateMinigame(mg, dt, inp);
+          if (mg.complete) practiceDone(s, mg);
+          break;
+        }
+
         case 'minigame': {
           const mg = minigame;
           if (!mg) break;
           goTimer += dt;
           updateMinigame(mg, dt, inp);
+          const ev = mg.race?.events ?? 0;
+          if (ev & EV_BELL) announce('Bell: one lap to go.');
+          if (ev & EV_EMPTY && !mg.complete) announce('The kick gauge is empty.');
           if (mg.complete) {
             phase = 'result';
             resultTimer = 0;
@@ -491,5 +552,8 @@ export const createBossBattleScene = (
       dialogue.render(ctx);
       pauseMenu.render(ctx);
     },
+
+    /** Tests: the phase and the bout being played (the practice straight's, during the practice). */
+    debugBout: () => ({ phase, bout: minigame }),
   };
 };

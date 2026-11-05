@@ -1,3 +1,5 @@
+import { LEVEL_DATA } from '../data/sports';
+
 export interface PlayerStats {
   speed: number;
   strength: number;
@@ -52,7 +54,26 @@ export interface MeetProgress {
   best: number;
   /** How many questions a visit allowed when `best` was set (0 until the room is finished). */
   of: number;
+  /** The needs chat with the Director has been read to the end: the TESTING room is open. */
+  needs: boolean;
+  /**
+   * The Director's check-in after each room has been heard to the end: the room after it (or the ARENA) is open.
+   * Cleared with the room progress when the level is won.
+   */
+  heard: RoomProgress;
+  /**
+   * The Testing Lab's last finished battery, for its check-in and the Data Lab's files: the tests' names in sports.ts
+   * (empty before any) and the test-day call.
+   */
+  tests: string[];
+  call: TestCall | '';
 }
+
+/** How the Testing Lab's test-day call went: the right one, ran on a day to re-book, or re-booked a ready athlete. */
+export type TestCall = 'right' | 'ranAnyway' | 'needlessRebook';
+
+/** What the Director has to say before the next room opens: the needs chat, or the check-in after a room. */
+export type CheckInKey = 'needs' | RoomKey;
 
 export interface GameState {
   playerName: string;
@@ -122,7 +143,16 @@ export const freshRoomProgress = (): RoomProgress => ({
 
 export const freshStats = (): PlayerStats => ({ speed: 0, strength: 0, endurance: 0, power: 0 });
 
-export const freshMeet = (): MeetProgress => ({ welcomed: false, met: false, best: 0, of: 0 });
+export const freshMeet = (): MeetProgress => ({
+  welcomed: false,
+  met: false,
+  best: 0,
+  of: 0,
+  needs: false,
+  heard: freshRoomProgress(),
+  tests: [],
+  call: '',
+});
 
 export const createInitialState = (): GameState => ({
   playerName: '',
@@ -173,25 +203,84 @@ export const roomsCompleted = (state: GameState): number =>
 export const allRoomsComplete = (state: GameState): boolean => roomsCompleted(state) === roomsTotal(state);
 
 /**
+ * What the Performance Director must say before the next room opens, in a visit with the ATHLETE room: the needs
+ * chat once the athlete is met, then the check-in after the first completion of each room. Null when nothing is due
+ * (and always in a visit without the ATHLETE room).
+ */
+export const checkInDue = (state: GameState): CheckInKey | null => {
+  if (!state.meetRoom) return null;
+  const meet = meetOf(state);
+  if (!meet.met) return null;
+  if (!meet.needs) return 'needs';
+  return ROOM_KEYS.find(k => state.roomProgress[k] && !meet.heard[k]) ?? null;
+};
+
+/** Tests (by name in sports.ts) of `level` that give the Data Lab a file: the ones sports.ts marks correct. */
+export const testGivesFile = (level: number, test: string): boolean =>
+  LEVEL_DATA[level]?.tests.some(t => t.name === test && t.correct) ?? false;
+
+/**
+ * In a visit with the ATHLETE room: the Testing Lab's last battery gave the Data Lab no file (no test in it that
+ * gives one), so DATA stays shut and the player goes back to TESTING. False before any battery is recorded.
+ */
+export const retestDue = (state: GameState): boolean => {
+  if (!state.meetRoom || !state.roomProgress.testSelection) return false;
+  const tests = meetOf(state).tests;
+  return tests.length > 0 && !tests.some(t => testGivesFile(state.currentLevel, t));
+};
+
+/** The room before `key` in order has been talked over with the Director (always true without the ATHLETE room). */
+const talkedOver = (state: GameState, key: RoomKey): boolean => {
+  if (!state.meetRoom) return true;
+  const meet = meetOf(state);
+  const prev = ROOM_KEYS[ROOM_KEYS.indexOf(key) - 1];
+  return prev ? meet.heard[prev] : meet.needs;
+};
+
+/**
  * Rooms are taken in order (ATHLETE when the visit has it, then TESTING, DATA, TRAINING, ANALYSIS): a room is open
- * once the room before it is done. A finished room always stays open for replays.
+ * once the room before it is done, and in a visit with the ATHLETE room once the Director has talked it over (the
+ * needs chat before TESTING, a check-in before each later room). A finished room always stays open for replays.
  */
 export const roomUnlocked = (state: GameState, key: RoomKey): boolean => {
   const i = ROOM_KEYS.indexOf(key);
   const prev = ROOM_KEYS[i - 1];
+  if (key === 'variableId' && retestDue(state)) return false; // no file to work on: even a finished DATA room waits
   if (state.roomProgress[key]) return true;
-  if (i <= 0) return athleteMet(state);
-  return prev !== undefined && state.roomProgress[prev];
+  if (i <= 0) return athleteMet(state) && talkedOver(state, key);
+  return prev !== undefined && state.roomProgress[prev] && talkedOver(state, key);
 };
 
-/** The next of the four rooms to do, in order, or null when all four are done (see nextDoor for the ATHLETE room). */
-export const nextRoom = (state: GameState): RoomKey | null => ROOM_KEYS.find(k => !state.roomProgress[k]) ?? null;
+/** The room before `key` is done, but it stays shut until the Director's check-in (or the needs chat) is heard. */
+export const waitingOnDirector = (state: GameState, key: RoomKey): boolean => {
+  if (roomUnlocked(state, key)) return false;
+  if (key === 'variableId' && retestDue(state)) return checkInDue(state) !== null; // after the check-in: re-test
+  const prev = ROOM_KEYS[ROOM_KEYS.indexOf(key) - 1];
+  return prev ? state.roomProgress[prev] : athleteMet(state);
+};
+
+/** Every room is done and talked over: the arena doors open. */
+export const arenaOpen = (state: GameState): boolean =>
+  allRoomsComplete(state) && (!state.meetRoom || meetOf(state).heard.performancePrediction) && !retestDue(state);
+
+/** The next of the four rooms to do, in order (TESTING again while a re-test is due), or null when all four are done (see nextDoor for the ATHLETE room). */
+export const nextRoom = (state: GameState): RoomKey | null =>
+  retestDue(state) ? 'testSelection' : (ROOM_KEYS.find(k => !state.roomProgress[k]) ?? null);
 
 /** The hub door to go to next: the ATHLETE room until the athlete is met, then the next room, then the arena. */
 export const nextDoor = (state: GameState): HubExit => {
   if (!athleteMet(state)) return 'meet';
   const next = nextRoom(state);
   return next ? ROOM_MAP[next] : 'boss';
+};
+
+/** Where to go next in the hub: the Director while a check-in is due, else the next door (see nextDoor). */
+export const nextStop = (state: GameState): HubExit | 'director' => (checkInDue(state) ? 'director' : nextDoor(state));
+
+/** The room that comes after `key` in order, as its hub sign ('ARENA' after the last). */
+export const labelAfter = (key: RoomKey): string => {
+  const next = ROOM_KEYS[ROOM_KEYS.indexOf(key) + 1];
+  return next ? ROOM_LABEL[next] : 'ARENA';
 };
 
 /** The sign label of a hub door ('ARENA' for the arena). */
@@ -228,6 +317,11 @@ export const clearActiveLevel = (state: GameState): void => {
   state.playerStats = freshStats();
   state.challengeResults = [];
   state.levelProgress[state.currentLevel] = null;
+  // The athlete stays met and the needs chat stays done, but each room's check-in comes again with the rooms
+  const meet = meetOf(state);
+  meet.heard = freshRoomProgress();
+  meet.tests = [];
+  meet.call = '';
 };
 
 // Calculate stat from challenge results
@@ -245,6 +339,20 @@ export interface BoutResult {
   rivalScore: number;
   /** The player made no valid input during the bout (e.g. pressed the wrong key), so say how to play. */
   idle: boolean;
+  /** The RACE TO THE LINE only (systems/RaceModel.ts): how it was run, for the defeat advice and the debrief. */
+  race?: RaceSummary;
+}
+
+/** How a RACE TO THE LINE went: finishing times in race seconds, and how the kick was timed. */
+export interface RaceSummary {
+  time: number;
+  rivalTime: number;
+  /** good: the gauge was spent by the line; early: it ran dry before it; late: some was left at the line. */
+  kick: 'good' | 'early' | 'late';
+  /** Metres to go when the gauge ran dry (0 if it never did). */
+  emptyToGo: number;
+  /** Share of the gauge left at the line, 0-1. */
+  unused: number;
 }
 
 export type LevelOutcome = 'win' | 'lose' | 'complete';

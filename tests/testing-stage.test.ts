@@ -124,19 +124,22 @@ describe('sounds and speech', () => {
     expect(spoken('PEAK AND MEAN POWER')).toBe('peak and mean power');
   });
 
-  it('reads the printout as a sentence, with her name only for a wrong test', () => {
-    const model = createTestingModel({ sport, content: { ...content, checks: [] }, rng: () => 0.5 });
-    model.startPick();
-    model.update(1);
-    model.moveCursor(model.state.order.findIndex(t => t.name === 'Lactate Threshold Test'));
-    model.choose();
-    expect(model.printoutSpoken()).toBe('Lab printout. Lactate Threshold Test. Records LT1 and LT2 paces. Sent to the Data Lab.');
-
-    const wrong = createTestingModel({ sport, content: { ...content, checks: [] }, rng: () => 0.5 });
-    wrong.startPick();
-    wrong.update(1);
-    wrong.moveCursor(wrong.state.order.findIndex(t => t.name === 'Wingate Test'));
-    wrong.choose();
-    expect(wrong.printoutSpoken()).toBe('Lab printout. Wingate Test. Records peak and mean power. Not what Aisha needs.');
+  it('reads the printout as a sentence: each test, whether it gives the Data Lab a file, and the verdict', () => {
+    const battery = (names: string[]) => {
+      const model = createTestingModel({ sport, content: { ...content, checks: [] }, rng: () => 0.5 });
+      model.startPick();
+      for (const name of names) {
+        model.update(1);
+        model.moveCursor(model.state.order.findIndex(t => t.name === name) - model.state.cursor);
+        model.choose();
+      }
+      return model.printoutSpoken();
+    };
+    expect(battery(['Lactate Profile', 'Critical Speed Test'])).toBe(
+      'Lab printout. Lactate Profile: records LT1 and LT2 paces. Critical Speed Test: records CS and D prime. Both sent to the Data Lab.',
+    );
+    expect(battery(['Wingate Test', 'Lactate Profile'])).toBe(
+      'Lab printout. Wingate Test: records peak and mean power, no file for the Data Lab. Lactate Profile: records LT1 and LT2 paces. 1 of 2 to the Data Lab.',
+    );
   });
 });

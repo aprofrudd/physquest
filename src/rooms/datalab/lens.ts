@@ -6,7 +6,7 @@ import type { Lens } from './model';
 import { PAPER, drawDot, drawDotted } from './chart';
 
 /** The lens frame in game pixels. */
-export const LENS_BOX = { x: 10, y: 121, w: 112, h: 36 } as const;
+export const LENS_BOX = { x: 146, y: 62, w: 98, h: 36 } as const;
 
 const EDGE = 4; // from the frame's edge to a value's text: the 2px border and 2px of air
 // The values sit in one row under the dots. When two neighbours' values would sit closer than GAP_BETWEEN_VALUES

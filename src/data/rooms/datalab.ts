@@ -2,6 +2,7 @@
 // with analysts on the left, server racks on the right, the athlete at the results desk beside the printer.
 // The tiles are in datalab-tiles.ts and everything that moves is in datalab-life.ts.
 import { T } from '../../render/TileMap';
+import { partsOf } from '../../rooms/datalab/names';
 import type { EquipData, MapData } from '../maps';
 import { DL } from './datalab-tiles';
 import { WALL_SCREEN_AT, dataLabLife } from './datalab-life';
@@ -43,9 +44,9 @@ look('room2_screen1', [[2, 4], [3, 4], [2, 5], [3, 5]]);
 look('room2_screen2', [[5, 4], [6, 4], [5, 5], [6, 5]]);
 look('room2_screen3', [[2, 8], [3, 8], [2, 9], [3, 9]]);
 look('room2_screen4', [[10, 5], [11, 5]]);
-// The results desk and the printer print the level's data line
+// The results desk and the printer (no numbers: see talk)
 look('datalab_data', [[10, 6], [11, 6], [12, 7]]);
-// Each wall screen names its variable
+// Each wall screen names its variable (no value: it would show a number from a test that may not have been run)
 for (let slot = 0; slot < 5; slot++) {
   look(`datalab_wall${slot}`, Object.entries(WALL_SCREEN_AT).filter(([, s]) => s === slot).map(([x]) => [Number(x), 2] as const));
 }
@@ -60,7 +61,8 @@ export const DATA_LAB: MapData = {
   doors: [{ x: 7, y: 12, target: 'hub' }],
   life: dataLabLife,
   talk: {
-    datalab_data: sport => [`Test data: ${sport.dataOutput}`],
+    // No numbers out here: the files depend on which tests were run, and the room shows only those (rooms/datalab)
+    datalab_data: () => ['Results desk: the files from your tests load here.'],
     datalab_wall0: sport => wallLine(sport.variables[0]?.name),
     datalab_wall1: sport => wallLine(sport.variables[1]?.name),
     datalab_wall2: sport => wallLine(sport.variables[2]?.name),
@@ -72,5 +74,5 @@ export const DATA_LAB: MapData = {
 };
 
 function wallLine(name: string | undefined): string[] {
-  return name ? [`Data screen: ${name}.`] : [];
+  return name ? [`Data screen: ${partsOf(name).words}.`] : [];
 }

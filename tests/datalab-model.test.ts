@@ -1,5 +1,5 @@
-// The Trace Desk's rules: the file each attempt builds, the clean-up verdicts, the numbers read off the cleaned
-// file, the pins, the reveal and the score bands (perfect, mistakes, random, worst).
+// The Trace Desk's rules: the files each attempt builds (one per test run that has a file), the clean-up verdicts,
+// the numbers read off the cleaned files, the key variables (only from the files present), the reveal and the score.
 import { describe, expect, it, vi } from 'vitest';
 import { LEVEL_DATA } from '../src/data/sports';
 import { RUNNING } from '../src/rooms/content/running';
@@ -7,14 +7,15 @@ import {
   ODD_NUMBER,
   crossing,
   createTraceDesk,
+  distanceTimeFit,
   fillSlots,
-  pinFullLine,
-  pinsPlacedLine,
-  speedKmh,
+  filesFor,
+  keyFullLine,
+  keysChosenLine,
   type Rng,
   type TraceDesk,
 } from '../src/rooms/datalab/model';
-import { paceOf } from '../src/rooms/datalab/names';
+import { partsOf } from '../src/rooms/datalab/names';
 import { DIALOGUE_BOX, wrapText } from '../src/render/DialogueBox';
 
 // wrapText lives beside the dialogue box, which pulls in the sound module: keep it silent and off the browser
@@ -22,8 +23,10 @@ vi.mock('../src/audio/Sfx', () => ({ sfx: { play: () => {} } }));
 
 const content = RUNNING.data;
 const sport = LEVEL_DATA[3]!;
+const LP = 'Lactate Profile';
+const CS = 'Critical Speed Test';
+const BATTERIES: readonly (readonly string[])[] = [[LP, CS], [LP, 'Wingate Test'], ['Beep Test', CS], [LP], [CS], []];
 
-/** A small seeded random source (mulberry32): the same seed always plays the same attempt. */
 const seeded = (seed: number): Rng => {
   let a = seed >>> 0;
   return () => {
@@ -35,531 +38,249 @@ const seeded = (seed: number): Rng => {
   };
 };
 
-const deskFor = (seed: number): TraceDesk => createTraceDesk(content, sport, seeded(seed));
+const deskFor = (seed: number, tests: readonly string[] = [LP, CS]): TraceDesk => createTraceDesk(content, sport, { tests, rng: seeded(seed) });
 
-/** The first seed whose attempt satisfies `want` (every scenario below turns up within a few hundred seeds). */
-const findDesk = (want: (desk: TraceDesk) => boolean): TraceDesk => {
-  for (let seed = 1; seed < 5000; seed++) {
-    const desk = deskFor(seed);
-    if (want(desk)) return desk;
-  }
-  throw new Error('no seed gives that attempt');
-};
+/** Every reading decided right (or all wrong). */
+const cleanUp = (desk: TraceDesk, right = true) => desk.suspects.forEach((s, i) => desk.decide(i, right ? !s.real : s.real));
 
-const kindsOf = (desk: TraceDesk) => desk.suspects.map(s => s.kind);
-const at = (desk: TraceDesk, kind: string) => desk.suspects.findIndex(s => s.kind === kind);
+describe('the clean files', () => {
+  const clean = content.lactate.stages.map(s => ({ kmh: s.kmh, mmol: s.mmol }));
 
-describe('the clean file', () => {
-  const clean = content.stages.map(s => ({ kmh: s.kmh, mmol: s.mmol }));
-
-  it('puts LT1 and LT2 exactly at 16.0 and 18.0 km/h, which is 3:45 and 3:20 per km', () => {
-    expect(crossing(clean, content.lt1Mmol)).toBe(16);
-    expect(crossing(clean, content.lt2Mmol)).toBe(18);
-    expect(paceOf(16)).toBe('3:45');
-    expect(paceOf(18)).toBe('3:20');
-  });
-
-  it('gives a best flying 30 m of 28 km/h and vVO2max of 20.6 km/h (2:55 per km)', () => {
-    const fastest = Math.min(...content.sprintTimes);
-    expect(Math.round(speedKmh(content.sprintMetres, fastest))).toBe(28);
-    expect(paceOf(content.vvo2maxKmh)).toBe('2:55');
-  });
-
-  it('interpolates between stages and never reaches a line above the data', () => {
-    expect(crossing(clean, 3)).toBeCloseTo(17 + (3 - 2.7) / (4.0 - 2.7), 6); // between 17 and 18 km/h
+  it('puts LT1 0.5 mmol/L above her lowest reading at 14.5 km/h, and LT2 at 4 mmol/L at 16.8 km/h', () => {
+    expect(crossing(clean, 1.0 + content.lactate.lt1Rise)).toBeCloseTo(14.5, 6);
+    expect(crossing(clean, content.lactate.lt2Mmol)).toBeCloseTo(16.82, 2);
     expect(crossing(clean, 20)).toBeNull();
-    expect(crossing([{ kmh: 14, mmol: 3 }], 2)).toBe(14); // already above the line at the first reading
+    expect(crossing([{ kmh: 14, mmol: 3 }], 2)).toBe(14);
+  });
+
+  it('fits critical speed (4.94 m/s, 17.8 km/h) and D prime (about 140 m) through the three trials', () => {
+    const fit = distanceTimeFit(content.trials.trials)!;
+    expect(fit.slope).toBeCloseTo(4.938, 3);
+    expect(fit.slope * 3.6).toBeCloseTo(17.8, 1);
+    expect(fit.intercept).toBeGreaterThan(135);
+    expect(fit.intercept).toBeLessThan(150);
+    expect(distanceTimeFit(content.trials.trials.slice(0, 1))).toBeNull();
   });
 });
 
-describe('building an attempt', () => {
-  it('always flags the knee (18 km/h) and the peak (20 km/h) as real, and 2 or 3 glitches', () => {
+describe('the files of an attempt', () => {
+  it('has one file per test run that has one, lactate first; an empty battery has both', () => {
+    expect(filesFor(content, [CS, LP])).toEqual(['lactate', 'trials']);
+    expect(filesFor(content, [LP, 'Wingate Test'])).toEqual(['lactate']);
+    expect(filesFor(content, ['Beep Test', CS])).toEqual(['trials']);
+    expect(filesFor(content, ['Beep Test', 'Wingate Test'])).toEqual([]);
+    expect(filesFor(content, [])).toEqual(['lactate', 'trials']);
+  });
+
+  it('flags the knee (17 km/h) and the peak (18 km/h) as real and 1 or 2 lactate glitches, numbered within the file', () => {
     for (let seed = 1; seed <= 300; seed++) {
-      const desk = deskFor(seed);
+      const desk = deskFor(seed, [LP]);
+      const kinds = desk.suspects.map(s => s.kind);
+      expect(kinds).toContain('knee');
+      expect(kinds).toContain('peak');
       const knee = desk.suspects.find(s => s.kind === 'knee')!;
-      const peak = desk.suspects.find(s => s.kind === 'peak')!;
-      expect(desk.stages[knee.place.index]!.kmh).toBe(18);
-      expect(desk.stages[peak.place.index]!.kmh).toBe(20);
-      expect(knee.real && peak.real).toBe(true);
+      expect(desk.stages[knee.place.index]!.kmh).toBe(17);
+      expect(desk.stages[desk.suspects.find(s => s.kind === 'peak')!.place.index]!.kmh).toBe(18);
       const glitches = desk.suspects.filter(s => !s.real);
-      expect([2, 3]).toContain(glitches.length);
-      expect(desk.suspects.length).toBe(2 + glitches.length);
-      expect(new Set(glitches.map(g => g.kind)).size).toBe(glitches.length); // each kind at most once
+      expect([1, 2]).toContain(glitches.length);
+      desk.suspects.forEach((s, i) => {
+        expect(s.number).toBe(i + 1);
+        expect(s.of).toBe(desk.suspects.length);
+        expect(s.file).toBe('lactate');
+      });
     }
   });
 
-  it('orders suspects left to right along the chart with the sprint last', () => {
+  it('puts a lactate glitch only where cleaning it out leaves the clean numbers as they were', () => {
     for (let seed = 1; seed <= 300; seed++) {
-      const desk = deskFor(seed);
-      const stageIdx = desk.suspects.filter(s => s.place.type === 'stage').map(s => s.place.index);
-      expect(stageIdx).toEqual([...stageIdx].sort((a, b) => a - b));
-      const sprintAt = desk.suspects.findIndex(s => s.place.type === 'sprint');
-      if (sprintAt >= 0) expect(sprintAt).toBe(desk.suspects.length - 1);
-    }
-  });
-
-  it('puts stage glitches at 15 or 17 km/h (never the stage that carries LT1), never next to each other, with the content\'s glitch values', () => {
-    for (let seed = 1; seed <= 500; seed++) {
-      const desk = deskFor(seed);
-      const stageGlitches = desk.suspects.filter(s => !s.real && s.place.type === 'stage');
-      for (const g of stageGlitches) {
+      const desk = deskFor(seed, [LP]);
+      for (const g of desk.suspects.filter(s => !s.real)) {
         const stage = desk.stages[g.place.index]!;
-        expect([15, 17]).toContain(stage.kmh);
-        const truth = content.stages[g.place.index]!.mmol;
-        if (g.kind === 'contaminated') expect(stage.mmol).toBeCloseTo(truth + content.contaminatedRise, 6);
+        const truth = content.lactate.stages[g.place.index]!.mmol;
+        if (g.kind === 'contaminated') expect(stage.mmol).toBeCloseTo(truth + content.lactate.contaminatedRise, 6);
         else expect(stage.mmol).toBe(0);
       }
-      if (stageGlitches.length === 2) {
-        expect(Math.abs(stageGlitches[0]!.place.index - stageGlitches[1]!.place.index)).toBeGreaterThan(1);
-      }
-      const misfire = desk.suspects.find(s => s.kind === 'misfire');
-      if (misfire) expect(desk.sprints[misfire.place.index]!.time).toBe(content.misfireTime);
-      // everything else in the file is the clean data
-      desk.stages.forEach((s, i) => {
-        if (!desk.suspects.some(x => x.place.type === 'stage' && x.place.index === i && !x.real)) expect(s.mmol).toBe(content.stages[i]!.mmol);
-      });
-    }
-  });
-
-  it('is the same attempt for the same seed and a different one for another (replays re-roll)', () => {
-    const a = deskFor(11);
-    const b = deskFor(11);
-    expect(kindsOf(a)).toEqual(kindsOf(b));
-    expect(a.order).toEqual(b.order);
-    const signatures = new Set<string>();
-    for (let seed = 1; seed <= 200; seed++) {
-      const d = deskFor(seed);
-      signatures.add(`${d.suspects.map(s => `${s.kind}@${s.place.index}`).join(',')}|${d.order.join('')}`);
-    }
-    expect(signatures.size).toBeGreaterThan(50);
-  });
-
-  it('reaches every glitch combination: each kind, each stage, each sprint', () => {
-    const seen = new Set<string>();
-    for (let seed = 1; seed <= 600; seed++) {
-      for (const s of deskFor(seed).suspects) if (!s.real) seen.add(`${s.kind}@${s.place.index}`);
-    }
-    for (const stage of [1, 3]) {
-      expect(seen.has(`contaminated@${stage}`)).toBe(true);
-      expect(seen.has(`failed@${stage}`)).toBe(true);
-    }
-    for (const sprint of [0, 1, 2]) expect(seen.has(`misfire@${sprint}`)).toBe(true);
-  });
-
-  it('shuffles the pin list per attempt and keeps every variable in it once', () => {
-    const orders = new Set<string>();
-    for (let seed = 1; seed <= 100; seed++) {
-      const d = deskFor(seed);
-      expect([...d.order].sort()).toEqual([0, 1, 2, 3, 4]);
-      orders.add(d.order.join(''));
-    }
-    expect(orders.size).toBeGreaterThan(10);
-  });
-
-  it('asks for as many pins as there are key variables in sports.ts', () => {
-    expect(deskFor(1).pinLimit).toBe(sport.variables.filter(v => v.correct).length);
-    expect(deskFor(1).pinLimit).toBe(3);
-  });
-});
-
-describe('what the player is shown', () => {
-  it('fills every slot of the content sentences and never leaves a brace behind', () => {
-    for (let seed = 1; seed <= 300; seed++) {
-      const desk = deskFor(seed);
-      desk.suspects.forEach((_, i) => {
-        const text = desk.seen(i);
-        expect(text).not.toMatch(/[{}]/);
-        expect(text.length).toBeGreaterThan(20);
-      });
-    }
-  });
-
-  it('describes a contaminated sample with the stage, the reading and the stages either side', () => {
-    const desk = findDesk(d => d.suspects.some(s => s.kind === 'contaminated' && s.place.index === 3));
-    const i = at(desk, 'contaminated');
-    expect(desk.seen(i)).toBe('At 17 km/h lactate reads 6.2 mmol/L. The stages either side read 2.0 and 4.0.');
-  });
-
-  it('describes a failed sample as 0.0 and names the neighbours', () => {
-    const desk = findDesk(d => d.suspects.some(s => s.kind === 'failed' && s.place.index === 1));
-    expect(desk.seen(at(desk, 'failed'))).toBe('At 15 km/h lactate reads 0.0 mmol/L. The stages either side read 1.1 and 2.0.');
-  });
-
-  it('describes a misfired sprint with its speed and the other two times', () => {
-    const desk = findDesk(d => d.suspects.some(s => s.kind === 'misfire' && s.place.index === 1));
-    expect(desk.seen(at(desk, 'misfire'))).toBe(
-      'Sprint 2 reads 3.21 s, which is 33.6 km/h. Her other two runs were 3.89 and 3.88 s.',
-    );
-  });
-
-  it('describes the real readings from the content', () => {
-    const desk = deskFor(5);
-    // The player meets the readings left to right: with the glitches before the knee taken out, it is a steep rise
-    const knee = at(desk, 'knee');
-    desk.suspects.forEach((s, i) => {
-      if (!s.real && s.place.type === 'stage' && s.place.index < desk.suspects[knee]!.place.index) desk.decide(i, true);
-    });
-    expect(desk.seen(knee)).toBe("At 18 km/h lactate jumps to 4.0 mmol/L, its steepest rise so far.");
-    expect(desk.seen(at(desk, 'peak'))).toBe('The last stage reads 9.1 mmol/L, the highest reading of the test.');
-  });
-
-  it('only calls the knee the steepest rise when the file as the player left it rises that way', () => {
-    // A contaminated reading kept at 17 km/h (6.2) leaves 18 km/h (4.0) as a fall: the lens then just says what it reads
-    const desk = findDesk(d => d.suspects.some(s => s.kind === 'contaminated' && s.place.index === 3));
-    const c = at(desk, 'contaminated');
-    desk.decide(c, false); // kept: the glitch stays in the file
-    expect(desk.seen(at(desk, 'knee'))).toBe('At 18 km/h lactate reads 4.0 mmol/L. The stages either side read 6.2 and 6.3.');
-    expect(content.kneePlain).toBe('At {kmh} km/h lactate reads {value} mmol/L. The stages either side read {before} and {after}.');
-  });
-
-  it('shows the lens as the suspect plus the readings around it, with an IF REMOVED line that skips the suspect', () => {
-    const desk = findDesk(d => d.suspects.some(s => s.kind === 'contaminated' && s.place.index === 3));
-    const lens = desk.lens(at(desk, 'contaminated'));
-    expect(lens.dots.length).toBe(5);
-    expect(lens.dots[lens.suspect]!.role).toBe('suspect');
-    expect(lens.repair).not.toContain(lens.suspect);
-    expect(lens.dots.map(d => d.text)).toContain('6.2');
-    // the repair line runs through the readings either side and the unflagged ones
-    for (const idx of lens.repair) expect(lens.dots[idx]!.role === 'normal' || Math.abs(idx - lens.suspect) === 1).toBe(true);
-  });
-
-  it('pushes the lens window along at the end of the file (the peak shows the stages before it)', () => {
-    const desk = deskFor(2);
-    const lens = desk.lens(at(desk, 'peak'));
-    expect(lens.dots.length).toBe(5);
-    expect(lens.suspect).toBe(4);
-    expect(lens.dots.map(d => d.at)).toEqual([16, 17, 18, 19, 20]);
-  });
-
-  it('marks other undecided flagged readings in a lens and keeps the far ones off the repair line', () => {
-    const desk = findDesk(d => d.suspects.filter(s => !s.real && s.place.type === 'stage').length === 2);
-    const first = desk.suspects.findIndex(s => !s.real && s.place.type === 'stage');
-    const lens = desk.lens(first);
-    const flagged = lens.dots.filter(d => d.role === 'flagged');
-    expect(flagged.length).toBeGreaterThan(0);
-    // a flagged reading further than one place away is not on the line; the readings either side always are
-    lens.dots.forEach((d, i) => {
-      const nextTo = Math.abs(i - lens.suspect) === 1;
-      if (i === lens.suspect) expect(lens.repair).not.toContain(i);
-      else if (nextTo) expect(lens.repair).toContain(i);
-      else expect(lens.repair.includes(i)).toBe(d.role === 'normal');
-    });
-  });
-
-  it('runs the IF REMOVED line through the real reading next door (the knee beside a glitch at 17 km/h)', () => {
-    const desk = findDesk(d => d.suspects.some(s => s.kind === 'contaminated' && s.place.index === 3));
-    const lens = desk.lens(at(desk, 'contaminated'));
-    const next = lens.dots[lens.suspect + 1]!;
-    expect(next.text).toBe('4.0'); // the knee, flagged too
-    expect(lens.repair).toContain(lens.suspect + 1);
-  });
-
-  it('keeps the picture the player saw after the file changes under it', () => {
-    const desk = findDesk(d => d.suspects.filter(s => !s.real && s.place.type === 'stage').length === 2);
-    const stageGlitch = desk.suspects.findIndex(s => !s.real && s.place.type === 'stage');
-    const before = desk.seen(stageGlitch);
-    const lensBefore = desk.lens(stageGlitch);
-    desk.decide(stageGlitch, true);
-    expect(desk.seen(stageGlitch)).toBe(before);
-    expect(desk.lens(stageGlitch)).toBe(lensBefore);
-  });
-
-  it('recomputes a later suspect from the cleaned file (a removed neighbour is skipped)', () => {
-    const desk = findDesk(d => d.suspects.some(s => s.kind === 'contaminated' && s.place.index === 3));
-    const c = at(desk, 'contaminated');
-    const k = at(desk, 'knee');
-    desk.decide(c, true); // 17 km/h gone
-    expect(desk.lens(k).dots.map(d => d.at)).not.toContain(17);
-    expect(desk.seen(k)).toContain('18 km/h');
-  });
-});
-
-describe('clean-up decisions', () => {
-  it('says what the content says about each of the four outcomes', () => {
-    const desk = findDesk(d => d.suspects.some(s => s.kind === 'contaminated') && d.suspects.some(s => s.kind === 'failed'));
-    const c = at(desk, 'contaminated');
-    const f = at(desk, 'failed');
-    const knee = at(desk, 'knee');
-    const peak = at(desk, 'peak');
-    expect(desk.decide(c, true)).toEqual({ right: true, result: 'Good catch: a glitch, not Aisha.', why: content.contaminated.why });
-    expect(desk.decide(f, false)).toEqual({ right: false, result: 'Missed: that glitch is still in the file.', why: content.failed.why });
-    expect(desk.decide(knee, false)).toEqual({ right: true, result: 'Right: that is real data.', why: content.knee.why });
-    expect(desk.decide(peak, true)).toEqual({
-      right: false,
-      result: 'That was real: you have clipped it from the file.',
-      why: content.peak.why,
-    });
-  });
-
-  it('removes a point only when A removes it, and counts decisions', () => {
-    const desk = deskFor(3);
-    expect(desk.decided()).toBe(0);
-    desk.decide(0, false);
-    expect(desk.stages.every(s => s.present)).toBe(true);
-    desk.decide(1, true);
-    const gone = desk.suspects[1]!;
-    const present = gone.place.type === 'stage' ? desk.stages[gone.place.index]!.present : desk.sprints[gone.place.index]!.present;
-    expect(present).toBe(false);
-    expect(desk.decided()).toBe(2);
-  });
-
-  it('refuses a second decision on the same suspect', () => {
-    const desk = deskFor(4);
-    expect(desk.decide(0, true)).not.toBeNull();
-    expect(desk.decide(0, false)).toBeNull();
-    expect(desk.suspects[0]!.decision).toBe('removed');
-  });
-
-  it('draws the sprint lens from the three runs and joins the other two', () => {
-    const desk = findDesk(d => d.suspects.some(s => s.kind === 'misfire' && s.place.index === 0));
-    const lens = desk.lens(at(desk, 'misfire'));
-    expect(lens.dots.map(d => d.text)).toEqual(['3.21', '3.86', '3.88']);
-    expect(lens.repair).toEqual([1, 2]);
-  });
-});
-
-describe('the file as cleaned', () => {
-  const perfect = (desk: TraceDesk) => desk.suspects.forEach((s, i) => desk.decide(i, !s.real));
-
-  it('reads exactly 16.0, 18.0 and 28 km/h again once every glitch is removed and every real reading kept', () => {
-    for (let seed = 1; seed <= 200; seed++) {
-      const desk = deskFor(seed);
-      perfect(desk);
+      cleanUp(desk);
       const d = desk.derived();
-      expect(d.lt1Kmh).toBe(16);
-      expect(d.lt2Kmh).toBe(18);
-      expect(d.lt1Pace).toBe('3:45');
-      expect(d.lt2Pace).toBe('3:20');
-      expect(Math.round(d.sprintKmh)).toBe(28);
-      expect(d.vvo2Kmh).toBe(content.vvo2maxKmh);
-      expect(desk.rows().every(r => !r.odd)).toBe(true);
-      expect(desk.rows().map(r => r.shown)).toEqual(desk.order.map(i => sport.variables[i]!.name));
+      expect([d.lt1Pace, d.lt2Pace, d.hrLt2]).toEqual(['4:08', '3:34', 176]);
     }
   });
 
-  it('pulls LT1 and LT2 both back to 14 km/h when a contaminated reading stays in at 15 km/h', () => {
-    const desk = findDesk(d => d.suspects.some(s => s.kind === 'contaminated' && s.place.index === 1));
-    desk.suspects.forEach((s, i) => desk.decide(i, !s.real && s.kind !== 'contaminated')); // keep that glitch
-    const d = desk.derived();
-    expect(d.lt1Kmh).toBeCloseTo(14 + (2.0 - 1.1) / (4.9 - 1.1), 6); // 14.237
-    expect(d.lt2Kmh).toBeCloseTo(14 + (4.0 - 1.1) / (4.9 - 1.1), 6); // 14.763
-    expect(d.lt1Pace).toBe('4:13');
-    const lt1 = desk.rows().find(r => r.feature === 'lt1')!;
-    expect(lt1.shown).toBe('LT1 Pace (4:13/km)?');
-    expect(lt1.odd).toBe(true);
-    expect(desk.rows().find(r => r.feature === 'lt2')!.odd).toBe(true);
+  it('flags the 1200 m trial as real and one mistimed trial (2400 m long, or 3600 m short) as a glitch', () => {
+    const seen = new Set<string>();
+    for (let seed = 1; seed <= 200; seed++) {
+      const desk = deskFor(seed, [CS]);
+      expect(desk.stages).toHaveLength(0);
+      expect(desk.suspects.map(s => s.kind)).toEqual(['fastest', 'mistimed']);
+      const m = desk.suspects[1]!;
+      const t = desk.trials[m.place.index]!;
+      const clean = content.trials.trials[m.place.index]!;
+      expect(t.seconds - clean.seconds).toBe(m.place.index === 1 ? 40 : -40);
+      seen.add(String(t.metres));
+      cleanUp(desk);
+      const d = desk.derived();
+      expect([d.csPace, d.dPrime, d.bestPace]).toEqual(['3:22', 140, '2:58']);
+    }
+    expect([...seen].sort()).toEqual(['2400', '3600']);
   });
 
-  it('leaves LT1 alone and pulls LT2 earlier when a contaminated reading stays in at 17 km/h', () => {
-    const desk = findDesk(d => d.suspects.some(s => s.kind === 'contaminated' && s.place.index === 3));
-    desk.suspects.forEach((s, i) => desk.decide(i, !s.real && s.kind !== 'contaminated'));
-    expect(desk.derived().lt1Kmh).toBe(16);
-    expect(desk.derived().lt2Kmh).toBeCloseTo(16 + (4.0 - 2.0) / (6.2 - 2.0), 6);
-    expect(desk.rows().find(r => r.feature === 'lt1')!.odd).toBe(false);
-    expect(desk.rows().find(r => r.feature === 'lt2')!.odd).toBe(true);
+  it('puts the lactate file first and the trials file second, each with its own count', () => {
+    const desk = deskFor(5);
+    expect(desk.files.map(f => f.kind)).toEqual(['lactate', 'trials']);
+    const [lac, tri] = desk.files;
+    expect(tri!.first).toBe(lac!.count);
+    expect(desk.suspects.length).toBe(lac!.count + tri!.count);
+    expect(desk.suspects[tri!.first]!.number).toBe(1);
+    expect(desk.fileIndexOf(tri!.first)).toBe(1);
+    expect(desk.fileIndexOf(0)).toBe(0);
+  });
+});
+
+describe('no value from a test that was not run', () => {
+  it('offers only the variables of the files present, grouped by file', () => {
+    for (const tests of BATTERIES) {
+      const desk = deskFor(3, tests);
+      const files = filesFor(content, tests);
+      const rows = desk.rows();
+      for (const r of rows) expect(files).toContain(content.features[r.name]!.file);
+      expect(rows.map(r => r.file)).toEqual([...rows.map(r => r.file)].sort((a, b) => files.indexOf(a) - files.indexOf(b)));
+      const offered = new Set(rows.map(r => r.name));
+      for (const v of sport.variables) expect(offered.has(v.name)).toBe(files.includes(content.features[v.name]!.file));
+    }
   });
 
-  it('reads LT2 off the line between the neighbours when the real knee is clipped from the file', () => {
-    const desk = deskFor(21);
-    desk.suspects.forEach((s, i) => desk.decide(i, !s.real || s.kind === 'knee'));
-    const d = desk.derived();
-    expect(d.lt2Kmh).not.toBe(18);
-    expect(d.lt2Kmh).toBe(crossing(desk.points(), content.lt2Mmol));
-    const row = desk.rows().find(r => r.feature === 'lt2')!;
-    expect(row.odd).toBe(true);
-    expect(row.shown.startsWith('LT2 Pace (')).toBe(true);
-    expect(row.shown.endsWith('/km)?')).toBe(true);
-    expect(row.shown).not.toBe('LT2 Pace (3:20/km)?');
+  it('asks for as many key variables as the files present have', () => {
+    expect(deskFor(1, [LP, CS]).pinLimit).toBe(4);
+    expect(deskFor(1, [LP, 'Beep Test']).pinLimit).toBe(2);
+    expect(deskFor(1, [CS, 'Wingate Test']).pinLimit).toBe(2);
   });
 
-  it('raises max sprint speed when the misfired time stays in the file', () => {
-    const desk = findDesk(d => d.suspects.some(s => s.kind === 'misfire'));
-    desk.suspects.forEach((s, i) => desk.decide(i, !s.real && s.kind !== 'misfire'));
-    expect(Math.round(desk.derived().sprintKmh)).toBe(34);
-    expect(desk.rows().find(r => r.feature === 'sprint')!.shown).toBe('Max Sprint Speed (34 km/h)?');
+  it('derives nothing from a file that is not there', () => {
+    const lactateOnly = deskFor(2, [LP]).derived();
+    expect([lactateOnly.csKmh, lactateOnly.csPace, lactateOnly.dPrime, lactateOnly.bestPace]).toEqual([null, null, null, null]);
+    const trialsOnly = deskFor(2, [CS]).derived();
+    expect([trialsOnly.lt1Kmh, trialsOnly.lt2Kmh, trialsOnly.hrLt2, trialsOnly.vo2max, trialsOnly.vvo2Kmh]).toEqual([null, null, null, null, null]);
   });
 
-  it('never changes VO2max or vVO2max whatever the clean-up does', () => {
-    for (const remove of [true, false]) {
-      const desk = deskFor(9);
-      desk.suspects.forEach((_, i) => desk.decide(i, remove));
-      for (const r of desk.rows()) {
-        if (r.feature === 'vo2max' || r.feature === 'vvo2max') expect(r.shown).toBe(r.name);
+  it('quotes no number of an untested file in the reveal: one file ends on its own insight', () => {
+    const only = deskFor(2, [LP]);
+    cleanUp(only);
+    expect(only.reveal().at(-1)!.text).toBe(content.lactate.insight);
+    expect(only.reveal().map(l => l.text).join(' ')).not.toMatch(/3:22|140 m|2:58/); // no number from the trials
+    const both = deskFor(2, [LP, CS]);
+    expect(both.reveal().at(-1)!.text).toBe(sport.variableInsight);
+  });
+});
+
+describe('what the software says about a reading', () => {
+  it('asks a plain question per reading, numbered within its file', () => {
+    const desk = deskFor(8);
+    desk.suspects.forEach((s, i) => {
+      const ask = desk.ask(i);
+      expect(ask.startsWith(`Reading ${s.number} of ${s.of}: `)).toBe(true);
+      expect(ask.endsWith('Real data, or a glitch?')).toBe(true);
+      if (s.file === 'lactate') expect(ask).toContain(`lactate at ${desk.stages[s.place.index]!.kmh} km/h`);
+      else expect(ask).toContain(`the ${desk.trials[s.place.index]!.metres} m trial`);
+    });
+  });
+
+  it('says the same neutral words about the real fastest trial and the mistimed one', () => {
+    expect(content.trials.fastest.seen).toBe(content.trials.mistimed.seen);
+  });
+
+  it('fits the question and what the software says in the prompt box, for every reading of every attempt', () => {
+    for (let seed = 1; seed <= 200; seed++) {
+      const desk = deskFor(seed);
+      desk.suspects.forEach((_, i) => {
+        const lines = wrapText(`${desk.ask(i)} ${desk.seen(i)}`);
+        expect(lines.length, `${desk.ask(i)} ${desk.seen(i)}`).toBeLessThanOrEqual(DIALOGUE_BOX.lines);
+        expect(desk.seen(i)).not.toMatch(/\{\w+\}/);
+      });
+    }
+  });
+
+  it('fills every slot, and leaves one with no value as written', () => {
+    expect(fillSlots('{a} and {b}', { a: '1' })).toBe('1 and {b}');
+  });
+});
+
+describe('decisions', () => {
+  it('scores a right call on a glitch (remove) and on real data (keep), with the content reason', () => {
+    const desk = deskFor(4);
+    desk.suspects.forEach((s, i) => {
+      const v = desk.decide(i, !s.real)!;
+      expect(v.right).toBe(true);
+      expect(v.why.length).toBeGreaterThan(10);
+      expect(desk.decide(i, s.real)).toBeNull(); // decided once
+    });
+    expect(desk.cleanScore()).toBe(1);
+    expect(desk.fileClean(0) && desk.fileClean(1)).toBe(true);
+  });
+
+  it('marks a kept glitch: the number on its row looks odd and carries a ?', () => {
+    for (let seed = 1; seed <= 100; seed++) {
+      const desk = deskFor(seed);
+      cleanUp(desk, false);
+      const odd = desk.rows().filter(r => r.odd);
+      expect(odd.length).toBeGreaterThan(0);
+      for (const r of odd) {
+        expect(r.shown.endsWith('?')).toBe(true);
+        expect(partsOf(r.shown.slice(0, -1)).value).not.toBe(partsOf(r.name).value);
       }
     }
   });
 
-  it('shows a placeholder when the line never reaches the threshold', () => {
-    const desk = findDesk(d => !d.suspects.some(s => s.kind === 'contaminated'));
-    desk.stages.forEach(s => {
-      if (s.kmh >= 17) s.present = false;
-    });
-    desk.decide(0, false); // a decision bumps the version, so the cached numbers are read again
-    const lt2 = desk.rows().find(r => r.feature === 'lt2')!;
-    expect(desk.derived().lt2Kmh).toBeNull();
-    expect(lt2.shown).toBe('LT2 Pace (--:--/km)?');
-  });
-});
-
-describe('pins, reveal and the odd-number hint', () => {
-  const keyIdx = sport.variables.map((v, i) => (v.correct ? i : -1)).filter(i => i >= 0);
-  const wrongIdx = sport.variables.map((v, i) => (v.correct ? -1 : i)).filter(i => i >= 0);
-
-  it('allows three pins, refuses a fourth, and unpins on a second press', () => {
-    const desk = deskFor(1);
-    expect(desk.togglePin(0)).toBe('pinned');
-    expect(desk.togglePin(1)).toBe('pinned');
-    expect(desk.togglePin(2)).toBe('pinned');
-    expect(desk.canLock()).toBe(true);
-    expect(desk.togglePin(3)).toBe('full');
-    expect(desk.pins()).toEqual([0, 1, 2]);
-    expect(desk.togglePin(1)).toBe('unpinned');
-    expect(desk.canLock()).toBe(false);
-    expect(desk.pins()).toEqual([0, 2]);
-  });
-
-  it('marks pinned rows and keeps the row objects stable between changes', () => {
-    const desk = deskFor(1);
-    const rows = desk.rows();
-    expect(desk.rows()).toBe(rows);
-    desk.togglePin(desk.order[0]!);
-    expect(desk.rows()[0]!.pinned).toBe(true);
-    expect(desk.rows()[1]!.pinned).toBe(false);
-  });
-
-  it('reveals pins in list order, then the key variables missed, then the insight, all from sports.ts', () => {
-    const desk = deskFor(8);
-    // pin one key variable and two wrong ones
-    const pins = [keyIdx[0]!, wrongIdx[0]!, wrongIdx[1]!];
-    pins.forEach(p => desk.togglePin(p));
-    const lines = desk.reveal();
-    const pinnedInOrder = desk.order.filter(i => pins.includes(i));
-    expect(lines.slice(0, 3).map(l => l.variable)).toEqual(pinnedInOrder);
-    for (const line of lines.slice(0, 3)) {
-      const v = sport.variables[line.variable]!;
-      expect(line.text).toBe(`${v.correct ? 'Correct!' : 'Not quite.'} ${v.explanation}`);
-      expect(line.good).toBe(v.correct);
-    }
-    const missed = lines.slice(3, 5);
-    expect(missed.every(l => l.kind === 'missed')).toBe(true);
-    expect(missed.map(l => l.variable).sort()).toEqual(keyIdx.filter(i => i !== keyIdx[0]).sort());
-    for (const m of missed) {
-      const v = sport.variables[m.variable]!;
-      expect(m.text).toBe(`Missed: ${v.name}. ${v.explanation}`);
-    }
-    expect(lines.at(-1)).toEqual({ text: sport.variableInsight, good: true, variable: -1, kind: 'insight' });
-    expect(lines.length).toBe(6);
-  });
-
-  it('has no missed lines when all three key variables are pinned', () => {
-    const desk = deskFor(8);
-    keyIdx.forEach(i => desk.togglePin(i));
-    const kinds = desk.reveal().map(l => l.kind);
-    expect(kinds).toEqual(['pinned', 'pinned', 'pinned', 'insight']);
-  });
-
-  it('carries the odd-number hint as plain wording', () => {
-    expect(ODD_NUMBER).toBe('That number looks odd. Did a glitch slip through?');
-  });
-
-  it('fills slots and leaves an unknown slot as written', () => {
-    expect(fillSlots('At {kmh} km/h {nope}', { kmh: '17' })).toBe('At 17 km/h {nope}');
-  });
-});
-
-describe('edge cases', () => {
-  it('scores nothing decided and nothing pinned as the floor: data quality 0.5, accuracy 0', () => {
-    const desk = deskFor(3);
-    expect(desk.decided()).toBe(0);
-    expect(desk.cleanScore()).toBe(0);
-    expect(desk.result()).toEqual({ dataQuality: 0.5, variableAccuracy: 0 });
-  });
-
-  it('reveals only the missed key variables and the insight when nothing is pinned', () => {
-    const desk = deskFor(3);
-    const lines = desk.reveal();
-    expect(lines.map(l => l.kind)).toEqual(['missed', 'missed', 'missed', 'insight']);
-    expect(lines.slice(0, 3).every(l => l.text.startsWith('Missed: '))).toBe(true);
-  });
-
-  it('ignores a suspect that does not exist', () => {
-    const desk = deskFor(3);
-    expect(desk.decide(-1, true)).toBeNull();
-    expect(desk.decide(desk.suspects.length, true)).toBeNull();
-    expect(desk.decided()).toBe(0);
-  });
-
-  it('reads the clean file when the glitches are removed in any order', () => {
-    const desk = deskFor(12);
-    [...desk.suspects.keys()].reverse().forEach(i => desk.decide(i, !desk.suspects[i]!.real));
-    expect(desk.derived().lt1Pace).toBe('3:45');
-    expect(desk.derived().lt2Pace).toBe('3:20');
-    expect(desk.cleanScore()).toBe(1);
-  });
-
-  it('can remove every flagged reading: the chart keeps the stages that were never flagged', () => {
-    const desk = deskFor(12);
-    desk.suspects.forEach((_, i) => desk.decide(i, true));
-    const kept = desk.stages.filter(s => s.present).map(s => s.kmh);
-    expect(kept.length).toBe(desk.stages.length - desk.suspects.filter(s => s.place.type === 'stage').length);
-    expect(kept).toContain(14);
-    expect(kept).toContain(16);
-    expect(desk.sprints.filter(r => r.present).length).toBeGreaterThanOrEqual(2);
-  });
-
-  it('keeps the same rows (by object) until a decision or a pin changes the file', () => {
-    const desk = deskFor(4);
-    const rows = desk.rows();
-    expect(desk.rows()).toBe(rows);
-    desk.decide(0, true);
-    expect(desk.rows()).not.toBe(rows);
-  });
-});
-
-describe('what the prompt box has to hold', () => {
-  const fits = (text: string) => wrapText(text).length <= DIALOGUE_BOX.lines;
-
-  it('fits every description, reason and pin line in the box (four lines of 38 characters)', () => {
-    const texts: string[] = [];
-    for (const k of ['contaminated', 'failed', 'misfire', 'knee', 'peak'] as const) texts.push(content[k].why);
-    for (const feature of Object.values(content.features)) texts.push(feature, `${feature} ${ODD_NUMBER}`);
-    texts.push(`Lock in your 3 pins and see how you did. ${ODD_NUMBER}`, pinFullLine(3), pinsPlacedLine(3).replace('{DOWN}', 'DOWN'));
-    for (let seed = 1; seed <= 200; seed++) {
-      const desk = deskFor(seed);
-      desk.suspects.forEach((_, i) => texts.push(desk.seen(i)));
-    }
-    const tooLong = texts.filter(t => !fits(t));
-    expect(tooLong).toEqual([]);
-  });
-
-  it('fits the verdict lines in the readout beside the lens (17 characters, 3 lines)', () => {
-    for (const result of ['Good catch: a glitch, not Aisha.', 'Right: that is real data.', 'That was real: you have clipped it from the file.', 'Missed: that glitch is still in the file.']) {
-      expect(wrapText(result, 17).length).toBeLessThanOrEqual(3);
-    }
-  });
-});
-
-describe('what the room writes can be drawn in the 5x7 font', () => {
-  // The glyphs PixelFont has (text is drawn in capitals); anything else would be skipped and leave a gap
-  const FONT = new Set([...'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,!?:-/()%+=><\'"&#*;_[]—✓★•…→←↑↓▼']);
-  // {slots} and {BUTTON} tokens are filled in before anything is drawn
-  const unsupported = (text: string): string[] => [...text.replace(/\{\w+\}/g, 'X').toUpperCase()].filter(ch => !FONT.has(ch));
-
-  it('has only drawable characters in the content, the sentences it fills in and the lines it adds', () => {
-    const texts: string[] = [content.fileTitle, content.protocol, ...content.rules, content.rulesShort, content.lensRule, content.reserveLabel];
-    for (const k of ['contaminated', 'failed', 'misfire', 'knee', 'peak'] as const) texts.push(content[k].seen, content[k].why);
-    texts.push(...Object.values(content.features), ...sport.variables.map(v => `${v.name} ${v.explanation}`), sport.variableInsight, ODD_NUMBER);
-    texts.push(pinFullLine(3), pinsPlacedLine(3));
+  it('gives each clean file the names exactly as sports.ts writes them', () => {
     for (let seed = 1; seed <= 100; seed++) {
       const desk = deskFor(seed);
-      desk.suspects.forEach((_, i) => texts.push(desk.seen(i)));
-      desk.suspects.forEach((_, i) => {
-        const v = desk.decide(i, i % 2 === 0);
-        if (v) texts.push(v.result, v.why);
-      });
-      texts.push(...desk.rows().map(r => r.shown), ...desk.reveal().map(l => l.text));
+      cleanUp(desk);
+      for (const r of desk.rows()) expect(r.shown).toBe(r.name);
     }
-    const bad = new Set(texts.flatMap(unsupported));
-    expect([...bad]).toEqual([]);
+  });
+
+  it('removes a reading from its file (the chart and the fit lose it)', () => {
+    const desk = deskFor(6);
+    const i = desk.suspects.findIndex(s => s.kind === 'mistimed');
+    const before = desk.trials.filter(t => t.present).length;
+    desk.decide(i, true);
+    expect(desk.trials.filter(t => t.present).length).toBe(before - 1);
+    const j = desk.suspects.findIndex(s => !s.real && s.file === 'lactate');
+    const points = desk.points().length;
+    desk.decide(j, true);
+    expect(desk.points().length).toBe(points - 1);
+  });
+});
+
+describe('key variables and the score', () => {
+  it('chooses up to the limit, refuses more, and locks only when full', () => {
+    const desk = deskFor(9);
+    const rows = desk.rows();
+    for (let k = 0; k < desk.pinLimit; k++) {
+      expect(desk.canLock()).toBe(false);
+      expect(desk.togglePin(rows[k]!.variable)).toBe('pinned');
+    }
+    expect(desk.canLock()).toBe(true);
+    expect(desk.togglePin(rows[desk.pinLimit]!.variable)).toBe('full');
+    expect(desk.togglePin(rows[0]!.variable)).toBe('unpinned');
+    expect(keyFullLine(4)).toBe('All 4 key variables are chosen. Take one out first.');
+    expect(keysChosenLine(4)).toBe('All 4 key variables chosen. {A}: LOCK IN, or {UP} to change one.');
+    expect(ODD_NUMBER).toContain('glitch');
+  });
+
+  it('scores 1 for the key variables, less for the others, and the clean-up into data quality', () => {
+    const desk = deskFor(10);
+    cleanUp(desk);
+    for (const r of desk.rows()) if (r.key) desk.togglePin(r.variable);
+    expect(desk.result()).toEqual({ dataQuality: 0.8, variableAccuracy: 1 });
+    const bad = deskFor(10);
+    cleanUp(bad, false);
+    for (const r of bad.rows().filter(x => !x.key).slice(0, bad.pinLimit)) bad.togglePin(r.variable);
+    expect(bad.result().dataQuality).toBe(0.5);
+    expect(bad.result().variableAccuracy).toBe(0);
+  });
+
+  it('names the key variables of the full battery: LT2, vVO2max, critical speed and D prime', () => {
+    const keys = deskFor(1).rows().filter(r => r.key).map(r => r.name.split(' (')[0]).sort();
+    expect(keys).toEqual(['Critical Speed', 'D Prime', 'LT2 Pace', 'vVO2max Pace']);
   });
 });

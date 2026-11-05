@@ -1,7 +1,7 @@
 // The ruler: one metric on an axis that always runs worse (left) to better (right). Everything here is drawn with
 // colours of its own (not the room's palette) so it reads on the cream panel, and every mark has a shape or a word
-// as well as a colour: the noise band is hatched, the worthwhile lines are dashed, the pin is a triangle, the retest a
-// ringed dot with whiskers.
+// as well as a colour: the noise band is hatched, the worthwhile lines are dashed, YOUR GUESS is a triangle with its
+// own label, the retest a ringed dot with whiskers.
 import { drawText, measureText } from '../../render/PixelFont';
 import { COLORS, clamp01 } from '../frame';
 import type { ReviewRow } from '../content/types';
@@ -101,7 +101,7 @@ const drawTrialDot = (ctx: CanvasRenderingContext2D, x: number, y: number) => {
   ctx.fillRect(x - 1, y - 1, 3, 3);
 };
 
-/** The forecast pin: a blue triangle pointing down at the axis, its tip at `tipY`. */
+/** YOUR GUESS: a blue triangle pointing down at the axis, its tip at `tipY`. */
 export const drawPin = (ctx: CanvasRenderingContext2D, x: number, tipY: number, color: string = PIN, ring: string = INK) => {
   for (let i = 0; i < 7; i++) {
     const w = 13 - i * 2;
@@ -111,7 +111,7 @@ export const drawPin = (ctx: CanvasRenderingContext2D, x: number, tipY: number, 
   rect(ctx, x, tipY, 1, 1, ring);
 };
 
-/** A ghost tick across the axis: where an earlier block's improvement landed (grey with a white core, so a pin above never hides it). */
+/** A ghost tick across the axis: where an earlier block's improvement landed (grey with a white core, so the guess above never hides it). */
 export const drawGhostTick = (ctx: CanvasRenderingContext2D, x: number, axisY: number) => {
   rect(ctx, x - 1, axisY - 5, 3, 11, GHOST);
   rect(ctx, x, axisY - 4, 1, 9, '#f8f8f0');
@@ -180,8 +180,8 @@ export const drawRuler = (
   // the smallest worthwhile change, either side, sliding out from the band's edge
   if (reveal.gold > 0) {
     const reachGold = row.te + (row.swc - row.te) * clamp01(reveal.gold);
-    drawDashesV(ctx, xOf(g, scale, -reachGold), top - 4, height + 8);
-    drawDashesV(ctx, xOf(g, scale, reachGold), top - 4, height + 8);
+    drawDashesV(ctx, xOf(g, scale, -reachGold), top - 2, height + 4);
+    drawDashesV(ctx, xOf(g, scale, reachGold), top - 2, height + 4);
   }
 
   // the axis grows from the left end, with an arrow at the better end
@@ -229,25 +229,33 @@ export const drawBracket = (ctx: CanvasRenderingContext2D, xa: number, xb: numbe
   rect(ctx, right, y - 3, 1, 4, color);
 };
 
-/** The legend's marks (each nine pixels tall, from y - 1 to y + 7), each with its word beside it. Each has a fixed place, so nothing shifts as the others appear. */
-export const LEGEND_X = { noise: 12, worth: 64, you: 131, retest: 190 } as const;
+/** The second row's legend marks (each nine pixels tall, from y - 1 to y + 7), each with its word beside it. Each has a fixed place, so nothing shifts as the others appear. */
+export const LEGEND_X = { noise: 12, worth: 64, retest: 190 } as const;
 
-export const drawLegend = (ctx: CanvasRenderingContext2D, y: number, noise: boolean, worth: boolean, you: boolean, retest: boolean) => {
-  if (noise) {
-    drawHatch(ctx, LEGEND_X.noise, y - 1, 9, 9);
-    drawText(ctx, 'NOISE', LEGEND_X.noise + 13, y, SOFT);
-  }
-  if (worth) {
-    drawDashesV(ctx, LEGEND_X.worth + 1, y - 1, 9);
-    drawDashesV(ctx, LEGEND_X.worth + 5, y - 1, 9);
-    drawText(ctx, 'WORTH IT', LEGEND_X.worth + 10, y, SOFT);
-  }
-  if (you) {
-    drawPin(ctx, LEGEND_X.you + 6, y + 6);
-    drawText(ctx, 'YOU', LEGEND_X.you + 16, y, SOFT);
-  }
-  if (retest) {
-    drawDot(ctx, LEGEND_X.retest + 4, y + 3, DOT);
-    drawText(ctx, 'RETEST', LEGEND_X.retest + 13, y, SOFT);
-  }
+/** The noise band's key: a hatched swatch and its words (NOISE, or NOISE: TYPICAL ERROR 0.6 S). Returns its width. */
+export const drawNoiseKey = (ctx: CanvasRenderingContext2D, x: number, y: number, text: string): number => {
+  drawHatch(ctx, x, y - 1, 9, 9);
+  drawText(ctx, text, x + 13, y, SOFT);
+  return 13 + measureText(text) - 1;
+};
+
+/** The worthwhile lines' key: two gold dashes and their words, in the lines' gold. Returns its width. */
+export const drawWorthKey = (ctx: CanvasRenderingContext2D, x: number, y: number, text: string): number => {
+  drawDashesV(ctx, x + 1, y - 1, 9);
+  drawDashesV(ctx, x + 5, y - 1, 9);
+  drawText(ctx, text, x + 10, y, GOLD);
+  return 10 + measureText(text) - 1;
+};
+
+/** The retest dot's key. */
+export const drawRetestKey = (ctx: CanvasRenderingContext2D, x: number, y: number) => {
+  drawDot(ctx, x + 4, y + 3, DOT);
+  drawText(ctx, 'RETEST', x + 13, y, SOFT);
+};
+
+/** The second row's legend: short words, each with its mark. */
+export const drawLegend = (ctx: CanvasRenderingContext2D, y: number, noise: boolean, worth: boolean, retest: boolean) => {
+  if (noise) drawNoiseKey(ctx, LEGEND_X.noise, y, 'NOISE');
+  if (worth) drawWorthKey(ctx, LEGEND_X.worth, y, 'WORTHWHILE');
+  if (retest) drawRetestKey(ctx, LEGEND_X.retest, y);
 };

@@ -79,7 +79,7 @@ describe('the ATHLETE room', () => {
     expect(seen.join(' ')).toMatch(/I'm 26 and I race the women's 5000 m/);
     expect(seen.join(' ')).not.toMatch(/\{NAME\}|\{A\}|\bCoach\b/);
     const meet = GS.meetOf(w.gameState);
-    expect(meet).toEqual({ welcomed: false, met: true, best: MEET_RUNNING.asks, of: MEET_RUNNING.asks });
+    expect(meet).toEqual({ ...GS.freshMeet(), welcomed: false, met: true, best: MEET_RUNNING.asks, of: MEET_RUNNING.asks });
     expect(w.gameState.playerStats, 'the four stats are untouched').toEqual(statsBefore);
     expect(w.gameState.roomProgress, 'no RoomKey is recorded').toEqual(GS.freshRoomProgress());
     expect(w.gameState.challengeResults).toEqual([]);
@@ -148,7 +148,7 @@ describe('the ATHLETE room', () => {
 });
 
 describe('the ATHLETE room gates TESTING (Distance Running only)', () => {
-  it('locks TESTING until the athlete is met, and points the arrow at the ATHLETE door first', () => {
+  it('locks TESTING until the athlete is met and the needs chat is done, and points the arrow at the ATHLETE door first', () => {
     const s = GS.createInitialState();
     GS.activateLevel(s, 3);
     s.meetRoom = true;
@@ -157,12 +157,20 @@ describe('the ATHLETE room gates TESTING (Distance Running only)', () => {
     expect(GS.roomsTotal(s)).toBe(5);
     expect(GS.allRoomsComplete(s)).toBe(false);
     GS.meetOf(s).met = true;
+    expect(GS.roomUnlocked(s, 'testSelection'), 'the needs chat comes first').toBe(false);
+    expect(GS.nextStop(s)).toBe('director');
+    GS.meetOf(s).needs = true;
     expect(GS.roomUnlocked(s, 'testSelection')).toBe(true);
     expect(GS.nextDoor(s)).toBe('room1');
+    expect(GS.nextStop(s)).toBe('room1');
     expect(GS.roomsCompleted(s)).toBe(1);
     for (const k of GS.ROOM_KEYS) s.roomProgress[k] = true;
     expect(GS.allRoomsComplete(s)).toBe(true);
     expect(GS.nextDoor(s)).toBe('boss');
+    expect(GS.arenaOpen(s), 'the check-ins are still to hear').toBe(false);
+    for (const k of GS.ROOM_KEYS) GS.meetOf(s).heard[k] = true;
+    expect(GS.arenaOpen(s)).toBe(true);
+    expect(GS.nextStop(s)).toBe('boss');
   });
 
   it('a visit without the ATHLETE room (classic levels, or a classic fallback) plays exactly as before', () => {
@@ -189,7 +197,7 @@ describe('the ATHLETE room gates TESTING (Distance Running only)', () => {
 });
 
 describe('save round-trip', () => {
-  it('saves the welcome and the meeting per level (v3), and loads v2 saves (a level under way counts as met, unscored)', async () => {
+  it('saves the welcome and the meeting per level (v4), and loads v2 saves (a level under way counts as met, unscored)', async () => {
     const { saveGame, loadSave, applySave } = await import('../../src/systems/SaveSystem');
     const s = GS.createInitialState();
     s.playerName = 'ALAN';
@@ -198,12 +206,13 @@ describe('save round-trip', () => {
     Object.assign(GS.meetOf(s), { welcomed: true, met: true, best: 4, of: 5 });
     expect(saveGame(s)).toBe(true);
     const save = loadSave()!;
-    expect(save.version).toBe(3);
-    expect(save.meet[3]).toEqual({ welcomed: true, met: true, best: 4, of: 5 });
+    expect(save.version).toBe(4);
+    const met = { ...GS.freshMeet(), welcomed: true, met: true, best: 4, of: 5 };
+    expect(save.meet[3]).toEqual(met);
     expect(save.meet[0]).toEqual(GS.freshMeet());
     const back = GS.createInitialState();
     applySave(back, save);
-    expect(back.meet[3]).toEqual({ welcomed: true, met: true, best: 4, of: 5 });
+    expect(back.meet[3]).toEqual(met);
     expect(back.meetRoom, 'set again when the level starts').toBe(false);
 
     // a v2 save (before the ATHLETE room): everything else kept; the level under way counts as welcomed and met
@@ -219,10 +228,16 @@ describe('save round-trip', () => {
       }),
     );
     const v2 = loadSave()!;
-    expect(v2.version).toBe(3);
+    expect(v2.version).toBe(4);
     expect(v2.currentLevel).toBe(3);
     expect(v2.levelProgress[3]?.playerStats.speed).toBe(0.8);
-    expect(v2.meet).toEqual([GS.freshMeet(), GS.freshMeet(), GS.freshMeet(), { welcomed: true, met: true, best: 0, of: 0 }]);
+    expect(v2.meet).toEqual([
+      GS.freshMeet(),
+      GS.freshMeet(),
+      GS.freshMeet(),
+      // its needs chat and the finished room's check-in count as heard
+      { ...GS.freshMeet(), welcomed: true, met: true, needs: true, heard: { ...GS.freshRoomProgress(), testSelection: true } },
+    ]);
     // ...so its finished rooms and arena are not locked behind the new ATHLETE room
     const resumed = GS.createInitialState();
     applySave(resumed, v2);
@@ -233,7 +248,7 @@ describe('save round-trip', () => {
     // a malformed meet entry reads as not done
     localStorage.setItem('physquest_save', JSON.stringify({ ...save, meet: [null, 'x', { met: 'yes', best: 99, of: 5 }, { welcomed: true, met: true, best: -3, of: NaN }] }));
     const odd = loadSave()!;
-    expect(odd.meet[2]).toEqual({ welcomed: false, met: false, best: 5, of: 5 });
-    expect(odd.meet[3]).toEqual({ welcomed: true, met: true, best: 0, of: 0 });
+    expect(odd.meet[2]).toEqual({ ...GS.freshMeet(), best: 5, of: 5 });
+    expect(odd.meet[3]).toMatchObject({ welcomed: true, met: true, best: 0, of: 0 });
   });
 });

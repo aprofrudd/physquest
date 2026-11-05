@@ -1,16 +1,19 @@
 // Reading a level's variable names (sports.ts) apart: which feature of the file each one is, and the
 // short label and value that go on a screen. Pure, so the map and the instrument share one parser.
 
-/** What a variable is on the speed ladder and the lactate curve. */
-export type FeatureKind = 'lt1' | 'lt2' | 'vo2max' | 'vvo2max' | 'sprint';
+/** What a variable is on its file. */
+export type FeatureKind = 'lt1' | 'lt2' | 'hrlt2' | 'vo2max' | 'vvo2max' | 'cs' | 'dprime' | 'besttrial';
 
 /** Names are matched by their start, so a changed number in brackets never breaks the match. */
 const PREFIXES: ReadonlyArray<readonly [string, FeatureKind]> = [
   ['LT1', 'lt1'],
   ['LT2', 'lt2'],
+  ['HR at LT2', 'hrlt2'],
   ['vVO2max', 'vvo2max'], // case matters: 'vVO2max' starts with a lower-case v, 'VO2max' with a capital
   ['VO2max', 'vo2max'],
-  ['Max Sprint', 'sprint'],
+  ['Critical Speed', 'cs'],
+  ['D Prime', 'dprime'],
+  ['Best Trial', 'besttrial'],
 ];
 
 /** The feature a variable name stands for, or undefined for a name this room does not know. */
@@ -35,7 +38,10 @@ export const partsOf = (name: string): NameParts => {
 };
 
 /** Words that say what kind of number it is, not which variable: dropped from short labels. */
-const FILLER = new Set(['pace', 'speed', 'max']);
+const FILLER = new Set(['pace', 'speed', 'max', 'at']);
+
+/** Names whose own words do not shorten well. */
+const SHORT: Readonly<Record<string, string>> = { 'Critical Speed': 'CS', 'D Prime': 'DPRIME', 'Best Trial Pace': 'BEST' };
 
 /** The longest label a video-wall screen has room for. */
 export const LABEL_MAX = 6;
@@ -45,6 +51,8 @@ export const LABEL_MAX = 6;
  * a trailing 'max' dropped when it would not fit ('vVO2max Pace' -> 'VVO2'). At most LABEL_MAX characters.
  */
 export const shortLabel = (name: string): string => {
+  const own = SHORT[partsOf(name).words];
+  if (own) return own;
   const kept = partsOf(name).words.split(' ').filter(word => !FILLER.has(word.toLowerCase()));
   let label = kept.join(' ');
   if (label.length > LABEL_MAX) label = label.replace(/max$/i, '');

@@ -13,6 +13,8 @@ import { sfx } from '../../audio/Sfx';
 import { announce } from '../../ui/announce';
 import { athleteColorsFor, athleteSpriteFor } from '../../data/sprites';
 import { athleteFirstName } from '../../data/rooms/meet';
+import { athleteSpeaker } from '../../data/speakers';
+import type { Speaker } from '../../render/DialogueBox';
 import type { MeetContent, MeetQuestion } from '../content/meet-types';
 import { meetContentFor } from '../content';
 import type { InstrumentFactory, RoomHost, RoomInstrument } from '../types';
@@ -41,6 +43,7 @@ export const createMeetInstrument = (host: RoomHost, content: MeetContent, rng: 
   const meet = createMeet(content, rng);
   const of = asksAllowed(content);
   const name = athleteFirstName(host.sport);
+  const athlete = athleteSpeaker(host.level); // her lines get her name tab
   const fill = (text: string): string => host.input.fill(text);
 
   let step: Step = 'intro';
@@ -80,11 +83,11 @@ export const createMeetInstrument = (host: RoomHost, content: MeetContent, rng: 
       { exitLabel: 'STAY' },
     );
 
-  /** Lines whose B asks the leave question; staying says them again from the first. */
-  const talk = (texts: readonly string[], onDone: () => void, nextLabel?: string): void =>
-    host.dialogue.showSequence([...texts], onDone, () => askLeave(() => talk(texts, onDone, nextLabel)), {
+  /** Lines whose B asks the leave question; staying says them again from the first. `speaker`: who says them (none: the game). */
+  const talk = (texts: readonly string[], onDone: () => void, speaker?: Speaker): void =>
+    host.dialogue.showSequence([...texts], onDone, () => askLeave(() => talk(texts, onDone, speaker)), {
       exitLabel: 'LEAVE',
-      nextLabel,
+      speaker,
     });
 
   // ---- the list ----
@@ -163,10 +166,14 @@ export const createMeetInstrument = (host: RoomHost, content: MeetContent, rng: 
     view.list = null;
     view.asked = q.ask;
     // her answer, then (as the note is written, or not) what the question was worth
-    talk(q.answer, () => {
-      writeNote(q);
-      talk(afterAnswer(q), () => (finished(meet) ? startDebrief() : startChoosing()));
-    });
+    talk(
+      q.answer,
+      () => {
+        writeNote(q);
+        talk(afterAnswer(q), () => (finished(meet) ? startDebrief() : startChoosing()));
+      },
+      athlete,
+    );
   };
 
   // ---- the end ----
@@ -175,10 +182,17 @@ export const createMeetInstrument = (host: RoomHost, content: MeetContent, rng: 
     step = 'debrief';
     view.asked = '';
     const good = goodAsked(meet);
-    talk([debriefFor(content, good), ...content.farewell], () => {
-      step = 'done';
-      host.complete({ dataQuality: 0, variableAccuracy: 0, overview: { good, of } });
-    });
+    // the game's verdict, then her goodbye in her own voice
+    talk([debriefFor(content, good)], () =>
+      talk(
+        content.farewell,
+        () => {
+          step = 'done';
+          host.complete({ dataQuality: 0, variableAccuracy: 0, overview: { good, of } });
+        },
+        athlete,
+      ),
+    );
   };
 
   // ---- the start ----
@@ -201,7 +215,7 @@ export const createMeetInstrument = (host: RoomHost, content: MeetContent, rng: 
   const start = () => {
     // she introduces herself until the room has been finished once; a replay goes straight to the rules
     if (host.replay) rules();
-    else host.sayAll([...content.athleteIntro], rules);
+    else host.sayAll([...content.athleteIntro], rules, { speaker: athlete });
   };
 
   const instrument: RoomInstrument = {

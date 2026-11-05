@@ -36,9 +36,11 @@ export interface AthleteCheck {
 export interface TestingContent {
   /** What the athlete needs from testing, after "<NAME> NEEDS:" (at most 28 characters). */
   needs: string;
+  /** How many tests the player picks for the battery (they all run on the same test day). */
+  battery: number;
   /** One per test in sports.ts, same names. */
   cards: readonly TestCard[];
-  /** One is picked at random per attempt. Empty: no readiness check. */
+  /** One is picked at random per attempt (one test day for the whole battery). Empty: no readiness check. */
   checks: readonly AthleteCheck[];
   /** dataQuality multiplier when the test ran on a day it should have been re-booked. */
   ranAnyway: number;
@@ -47,58 +49,103 @@ export interface TestingContent {
 }
 
 // ---- Room 2: Data Lab --------------------------------------------------------------------------
+// One file per test the Testing Lab ran (a test with no file here gives the Data Lab nothing). Each file has its
+// own flagged readings, and the variables it gives (by `features[name].file`).
 
-/** One stage of an incremental test: running speed and the blood lactate sampled at its end. */
+/** One stage of an incremental test: running speed, the blood lactate and the heart rate at its end. */
 export interface LactateStage {
   kmh: number;
   mmol: number;
+  hr: number;
 }
 
 /** A flagged reading's description ({...} filled from the file) and the reason for the right call. */
 export interface SuspectText {
-  /** What the lens shows, neutrally (no hint of the answer). */
+  /** What the software says about it, neutrally (no hint of the answer). */
   seen: string;
   /** Why it is a glitch, or why it is real: shown after the decision. */
   why: string;
 }
 
-export interface DataLabContent {
-  /** Chart title. */
-  fileTitle: string;
-  /** How the file was collected (shown once, in the brief). */
+/** What every file has. */
+interface FileContent {
+  /** The test's name in sports.ts. */
+  test: string;
+  /** The file's header after "FILE 1/2: " (at most 29 characters). */
+  title: string;
+  /** The heading of its variables in the key-variable list. */
+  group: string;
+  /** Said when the file comes up, after "First file:" / "Next file:" / "Her file:". */
+  intro: string;
+  /** How the file was collected (first visit only, after the intro). */
   protocol: string;
+  /** The question for each flagged reading. {i} {n} and the reading's own slots are filled in. */
+  ask: string;
+  /** The rule for telling a glitch from real data in this file (first visit, before its first decision). */
+  lensRule: string;
+  /** The last line of the reveal when this is the only file (with every file, sports.ts variableInsight). */
+  insight: string;
+}
+
+export interface LactateFile extends FileContent {
   /** The clean file. */
   stages: readonly LactateStage[];
-  /** Blood lactate (mmol/L) that marks each threshold. */
-  lt1Mmol: number;
+  /** LT1: where lactate first rises this far (mmol/L) above her lowest reading. */
+  lt1Rise: number;
+  /** LT2: the fixed blood lactate (mmol/L). */
   lt2Mmol: number;
-  /** Flying sprint times (s), clean, and the distance (m). */
-  sprintTimes: readonly number[];
-  sprintMetres: number;
-  /** Speed at VO2max (km/h), shown on the speed ladder. */
+  /** From the final ramp to exhaustion. */
+  vo2max: number;
   vvo2maxKmh: number;
+  hrMax: number;
   /** How much a contaminated sample reads above the true value (mmol/L). */
   contaminatedRise: number;
-  /** A misfired sprint time (s). */
-  misfireTime: number;
-  /** Glitch kinds. {kmh} {value} {before} {after} {n} {time} {speed} {others} are filled in. */
+  /** Glitches and real readings. {kmh} {value} {before} {after} are filled in. */
   contaminated: SuspectText;
   failed: SuspectText;
-  misfire: SuspectText;
-  /** Real readings the software flags too. */
-  knee: SuspectText; // the steepest rise so far, at the second threshold
-  /** What the lens says at the knee when the player's own file no longer rises most steeply into it (a kept glitch). */
+  /** Real: the steepest rise so far, at the second threshold. */
+  knee: SuspectText;
+  /** What it says at the knee when the player's own file no longer rises most steeply into it (a kept glitch). */
   kneePlain: string;
-  peak: SuspectText; // the last stage, the highest reading
-  /** How-to pages for the first visit, and the one line after. */
+  /** Real: the last stage, the highest reading. */
+  peak: SuspectText;
+}
+
+/** One all-out time trial. */
+export interface TimeTrial {
+  metres: number;
+  seconds: number;
+}
+
+export interface TrialsFile extends FileContent {
+  /** The clean trials, shortest first. */
+  trials: readonly TimeTrial[];
+  /** The ways a trial can be mistimed: which trial (index) and how many seconds out it reads. One is picked per attempt. */
+  mistimings: readonly { trial: number; seconds: number }[];
+  /** {m} {time} {pace} {others} are filled in. */
+  mistimed: SuspectText;
+  /** Real: the shortest trial is the fastest per km. */
+  fastest: SuspectText;
+}
+
+export type DataFileKind = 'lactate' | 'trials';
+
+export interface DataLabContent {
+  lactate: LactateFile;
+  trials: TrialsFile;
+  /** How-to pages for the first visit (a worked example and the controls), and the one line after. */
   rules: readonly string[];
   rulesShort: string;
-  /** The rule the lens teaches, said once when the clean-up starts. */
-  lensRule: string;
-  /** What each variable is on the file (by its name in sports.ts). */
-  features: Readonly<Record<string, string>>;
-  /** The gap on the speed ladder between vVO2max and max sprint speed. */
-  reserveLabel: string;
+  /** The two answers for a flagged reading: keep it (real), remove it (glitch). */
+  options: readonly [string, string];
+  /** Said once the files are clean, before the key variables are chosen. {N} is how many. */
+  chooseIntro: string;
+  /** First visit: what makes a variable key, from another sport so it gives nothing away. */
+  keyExample: string;
+  /** Asked before the key variables are locked in. {N} is how many. */
+  lockAsk: string;
+  /** Each variable (by its name in sports.ts): the file it comes from and what it is on that file. */
+  features: Readonly<Record<string, { file: DataFileKind; about: string }>>;
 }
 
 // ---- Room 3: Training Floor --------------------------------------------------------------------
@@ -110,6 +157,10 @@ export interface WeekCard {
   label: string;
   /** The zone in the athlete's own numbers. */
   target: string;
+  /** The tests (names in sports.ts) the target's numbers come from. */
+  uses?: readonly string[];
+  /** The target in words, for a battery without one of those tests (no number from a test that was not run). */
+  plain?: string;
   /** key: one of the week's quality sessions (needs fresh legs). support: volume and recovery. */
   role: 'key' | 'support';
 }
@@ -164,7 +215,15 @@ export interface ReviewRow {
   /** Typical error and smallest worthwhile change, in the metric's units. */
   te: number;
   swc: number;
+  /** The metric as said in a sentence ("last 400 m", "VO2max"). */
+  name: string;
+  /** Words for a change in the better and the worse direction (FASTER / SLOWER, HIGHER / LOWER). */
+  betterWord: string;
+  worseWord: string;
 }
+
+/** What each page of the Analysis Room's first-visit walk-through points at on the board, in order. */
+export type TourMark = 'before' | 'noise' | 'worth' | 'guess';
 
 export interface AnalysisContent {
   /** The trained metric: the one the player forecasts. */
@@ -185,8 +244,15 @@ export interface AnalysisContent {
   noiseWhy: string;
   smallWhy: string;
   worthWhy: string;
+  /** The first visit's walk-through of the board, one page per element, each pointing at `tour[i]`. */
   rules: readonly string[];
+  tour: readonly TourMark[];
+  /** Later visits: one line instead. */
   rulesShort: string;
+  /** The forecast prompt ({LEFT} {RIGHT} {A} filled for the player's device). */
+  forecastAsk: string;
+  /** The verdict question. {name} {before} {after} {unit} filled from the row. */
+  judgeAsk: string;
 }
 
 export interface RoomsContent {

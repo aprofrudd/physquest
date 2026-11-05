@@ -36,7 +36,7 @@ const shuffle = <T>(items: readonly T[], rng: Rng): T[] => {
 /** One scripted attempt on seed `seed`: the stat it earns. */
 const play = (seed: number, cleaner: Cleaner, pinner: Pinner): number => {
   const rng = seeded(seed * 7919 + 13);
-  const desk: TraceDesk = createTraceDesk(content, sport, seeded(seed));
+  const desk: TraceDesk = createTraceDesk(content, sport, { tests: ['Lactate Profile', 'Critical Speed Test'], rng: seeded(seed) });
   desk.suspects.forEach((s, i) => {
     let remove: boolean;
     if (cleaner === 'perfect') remove = !s.real;
@@ -51,7 +51,7 @@ const play = (seed: number, cleaner: Cleaner, pinner: Pinner): number => {
   let chosen: number[];
   if (pinner === 'key') chosen = rows.filter(r => r.key).map(r => r.variable);
   else if (pinner === 'worst') chosen = [...rows.filter(r => !r.key), ...rows.filter(r => r.key)].map(r => r.variable);
-  else if (pinner === 'typical') chosen = [...rows.filter(r => r.key).slice(0, 2), ...rows.filter(r => !r.key)].map(r => r.variable); // two right, one wrong
+  else if (pinner === 'typical') chosen = [...rows.filter(r => r.key).slice(0, desk.pinLimit - 1), ...rows.filter(r => !r.key)].map(r => r.variable); // all right but one
   else chosen = shuffle(rows.map(r => r.variable), rng);
   for (const v of chosen) desk.togglePin(v);
   const { dataQuality, variableAccuracy } = desk.result();
@@ -74,7 +74,7 @@ const summary = (cleaner: Cleaner, pinner: Pinner): Summary => {
 
 const ROWS: ReadonlyArray<readonly [string, Cleaner, Pinner]> = [
   ['perfect (clean-up right, pins right)', 'perfect', 'key'],
-  ['typical mistakes (4 in 5 decisions right, 2 of 3 pins)', 'typical', 'typical'],
+  ['typical mistakes (4 in 5 decisions right, 3 of 4 key variables)', 'typical', 'typical'],
   ['perfect clean-up, random pins', 'perfect', 'random'],
   ['random clean-up, perfect pins', 'random', 'key'],
   ['always KEEP, random pins', 'keep', 'random'],
@@ -125,11 +125,10 @@ describe('the stat this room gives', () => {
     expect(table[3]!.mean).toBeLessThan(0.89);
   });
 
-  it('floors the worst play at 0.2-0.4 (a wrong pin set still has one key variable in it)', () => {
+  it('floors the worst play at 0.2 (every decision wrong, four variables that are not key)', () => {
     const worst = table[7]!;
-    expect(worst.min).toBeGreaterThanOrEqual(0.4 - 1e-9);
-    expect(worst.max).toBeLessThanOrEqual(0.4 + 1e-9);
-    // all three pins wrong is impossible (only two variables are not key), so 0.2 is the floor of the formula, not of play
+    expect(worst.min).toBeCloseTo(0.2, 9);
+    expect(worst.max).toBeCloseTo(0.2, 9);
     expect(0.4 * dataQualityFor(0)).toBeCloseTo(0.2, 10);
   });
 });

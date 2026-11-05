@@ -20,12 +20,16 @@ import {
   doorLabel,
   MEET_MAP,
   meetOf,
+  testGivesFile,
   nextDoor,
+  nextStop,
   roomKeyForMap,
   ROOM_MAP,
   ROOM_STAT,
 } from '../state/GameState';
+import { DIRECTOR_SPEAKER } from '../data/speakers';
 import { sfx } from '../audio/Sfx';
+import { SCORE_LABEL } from '../systems/SupportScores';
 
 type ChallengePhase = 'intro' | 'challenge' | 'feedback' | 'complete';
 type RoomType = 'room1' | 'room2' | 'room3' | 'room4' | 'meet';
@@ -71,6 +75,7 @@ export const createRoomChallengeScene = (
   let dataQuality = 0;
   let variableAccuracy = 0;
   let overview: { good: number; of: number } | null = null; // the ATHLETE room's result
+  let testing: RoomResult['testing'] | null = null; // the Testing Lab's test and test-day call, for the Director
   let headerText = '';
   let instrument: RoomInstrument | null = null; // a redesigned room runs the challenge instead of the lists below
   let clock = 0; // seconds since the room opened, for the background's animation
@@ -158,7 +163,8 @@ export const createRoomChallengeScene = (
       level: gameState.currentLevel,
       input,
       dialogue,
-      say: (text, choices, onDone, options) => say(text, choices, onDone, options),
+      // A speaker on its own (or any option without exitLabel) keeps the room's QUIT hint
+      say: (text, choices, onDone, options) => say(text, choices, onDone, options ? { exitLabel: 'QUIT', ...options } : undefined),
       sayAll: (texts, onDone, options = { exitLabel: 'QUIT' }) =>
         dialogue.showSequence(texts, onDone, leave, { exitLabel: 'QUIT', ...options }),
       quit: leave,
@@ -168,6 +174,7 @@ export const createRoomChallengeScene = (
         dataQuality = result.dataQuality;
         variableAccuracy = result.variableAccuracy;
         overview = result.overview ?? null;
+        testing = result.testing ?? null;
         if (roomType === MEET_MAP) completeMeet();
         else completeRoom();
       },
@@ -176,6 +183,7 @@ export const createRoomChallengeScene = (
         rulesRead.add(seenKey);
       },
       replay: wasComplete,
+      tests: [...meetOf(gameState).tests],
     };
   };
 
@@ -194,6 +202,7 @@ export const createRoomChallengeScene = (
     dataQuality = 0;
     variableAccuracy = 0;
     overview = null;
+    testing = null;
     headerText = HEADERS[roomType];
     clock = 0;
     instrument = null;
@@ -308,6 +317,8 @@ export const createRoomChallengeScene = (
 
   /** What to do next, once this room is recorded: the next door, or the arena. */
   const nextLine = (): string => {
+    // In a visit with the ATHLETE room, the Performance Director talks each room over before the next one opens
+    if (nextStop(gameState) === 'director') return `Next: talk to ${DIRECTOR_SPEAKER.name} in the hub.`;
     const next = nextDoor(gameState);
     if (next === 'boss' || allRoomsComplete(gameState)) {
       // classic visits keep their old wording; a level with an ATHLETE room has five rooms
@@ -340,12 +351,24 @@ export const createRoomChallengeScene = (
     if (!roomKey) return;
     phase = 'complete';
     gameState.roomProgress[roomKey] = true;
+    const meet = meetOf(gameState);
+    if (!gameState.meetRoom) meet.heard[roomKey] = true; // no Director in this visit: nothing to talk over later
+    if (testing) {
+      // The latest battery is the one the Director talks over and the Data Lab works on. A battery that gives the
+      // Data Lab no file, or the first one after such a battery, gets its check-in again (the send-back, the re-test)
+      const level = gameState.currentLevel;
+      const gaveFile = (tests: readonly string[]) => tests.some(t => testGivesFile(level, t));
+      const again = gameState.meetRoom && wasComplete && (!gaveFile(testing.tests) || (meet.tests.length > 0 && !gaveFile(meet.tests)));
+      meet.tests = [...testing.tests];
+      meet.call = testing.call;
+      if (again) meet.heard.testSelection = false;
+    }
 
     const statValue = calcStat(dataQuality, variableAccuracy);
     gameState.challengeResults.push({ dataQuality, variableAccuracy });
 
     const statKey = ROOM_STAT[roomKey];
-    const label = statKey.toUpperCase();
+    const label = SCORE_LABEL[statKey]; // what the player sees: the score grades their work in this room
     const previous = gameState.playerStats[statKey];
     // A replay can only raise the stat, never lower it
     const best = wasComplete ? Math.max(previous, statValue) : statValue;
@@ -354,11 +377,11 @@ export const createRoomChallengeScene = (
     let message: string;
     if (!wasComplete) {
       // This room is recorded, so the next door is what is left: the room to do next, or the arena
-      message = `Room complete! Your ${label} stat is now ${percent(statValue)}%. ${nextLine()}`;
+      message = `Room complete! Your ${label} score is now ${percent(statValue)}%. ${nextLine()}`;
     } else if (percent(statValue) > percent(previous)) {
       message = `New best! ${label} now ${percent(best)}%`;
     } else {
-      message = `Your best stays at ${percent(best)}%`;
+      message = `Your best ${label} score stays at ${percent(best)}%`;
     }
 
     say(message, undefined, finish, { exitLabel: '' }); // B just finishes here, like A
