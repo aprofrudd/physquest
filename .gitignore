@@ -2,3 +2,7 @@ node_modules
 dist
 *.local
 .claude/launch.json
+
+# Alan's paper (kept local, not in the repo)
+Ruddock-ConsiderationsScientificSupport(AM).pdf
+docs/reference/
