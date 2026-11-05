@@ -19,10 +19,10 @@ const pick = (rng: () => number): Button => {
 describe('canvas creation', () => {
   it('stops after warm-up', async () => {
     const perVisit: Record<string, number[]> = {};
-    for (const room of ['room1', 'room2', 'room3', 'room4']) {
+    for (const room of ['meet', 'room1', 'room2', 'room3', 'room4']) {
       perVisit[room] = [];
       for (let visit = 0; visit < 25; visit++) {
-        const rng = H.seeded(visit * 313 + room.charCodeAt(4));
+        const rng = H.seeded(visit * 313 + (room.charCodeAt(4) || 77));
         vi.spyOn(Math, 'random').mockImplementation(rng);
         const w = await H.makeWorld(3);
         const before = created;

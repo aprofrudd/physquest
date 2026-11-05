@@ -3,7 +3,8 @@
 import { drawSprite } from '../../render/SpriteSheet';
 import { drawText } from '../../render/PixelFont';
 import { renderTileMap, T } from '../../render/TileMap';
-import { COACH_DOWN, COACH_RIGHT, SPRITE_COLORS } from '../../data/sprites';
+import { AISHA_SPRITE } from '../../data/sprites';
+import { AISHA_SPRITE_COLORS, RUN_SPRITES } from '../testing/people';
 import type { SessionStyle, Phase } from './style';
 import { LOOK, type DayCell, type LegsLines } from './look';
 import {
@@ -93,7 +94,7 @@ export interface StripView {
   fast: boolean;
 }
 
-const ATHLETE = SPRITE_COLORS['npc_athlete'] ?? [];
+const ATHLETE = AISHA_SPRITE_COLORS; // Aisha: ponytail, red racing vest, shorts
 const ATHLETE_X = Math.round(STRIP.x + STRIP.w / 2 - 8);
 const FEET_Y = STRIP.y + 19; // the track's surface under the athlete's feet
 const SPRITE_Y = FEET_Y - 16;
@@ -232,11 +233,14 @@ export const drawStrip = (ctx: CanvasRenderingContext2D, v: StripView) => {
   const running = gait.cadence > 0 && v.style !== 'away';
   let sprite: number[][] | undefined;
   let lift = 0;
-  if (running || v.style === 'away') {
-    sprite = COACH_RIGHT[cycle % 2];
+  if (running) {
+    sprite = RUN_SPRITES[cycle % RUN_SPRITES.length]; // stride, pass, flight, pass (the flight frame is lifted in the art)
+    lift = 0;
+  } else if (v.style === 'away') {
+    sprite = RUN_SPRITES[1]; // walking off with her suitcase: upright, bobbing
     lift = cycle % 2 === 0 ? 0 : -1;
   } else {
-    sprite = COACH_DOWN[0];
+    sprite = AISHA_SPRITE;
     lift = Math.floor(v.t * 1.5) % 2 === 0 ? 0 : -1; // breathing
   }
 

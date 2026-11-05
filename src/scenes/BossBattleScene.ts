@@ -9,7 +9,7 @@ import { CHAR_W, drawText, measureText } from '../render/PixelFont';
 import { drawPokemonBox, drawSprite } from '../render/SpriteSheet';
 import { PALETTES } from '../render/Palettes';
 import { LEVEL_DATA } from '../data/sports';
-import { ATHLETE_SPRITE, SPRITE_COLORS } from '../data/sprites';
+import { bossAthletesFor, type BossLook } from '../data/sprites';
 import { sfx } from '../audio/Sfx';
 import { announce } from '../ui/announce';
 import {
@@ -31,9 +31,6 @@ import {
 } from '../systems/BossMinigame';
 
 type BossPhase = 'intro' | 'precheck' | 'rules' | 'countdown' | 'minigame' | 'result';
-
-// Mirrored once, not every frame
-const RIVAL_SPRITE = ATHLETE_SPRITE.map(row => [...row].reverse());
 
 const COUNT_STEP = 0.7; // seconds per 3 / 2 / 1 / GO
 const RESULT_SFX_DELAY = 0.25; // lets the last hit sound finish before the jingle
@@ -142,6 +139,7 @@ interface Setup {
   rivalCeiling: number;
   target: number; // rival's final minigame score
   rivalStats: number[]; // per STAT_KEYS, for the comparison rows
+  look: { player: BossLook; rival: BossLook }; // the level's athletes on the platforms (shared, not copied)
 }
 
 export const createBossBattleScene = (
@@ -181,6 +179,7 @@ export const createBossBattleScene = (
       rivalCeiling,
       target: rivalFinalScore(type, rivalCeiling),
       rivalStats: STAT_KEYS.map(k => rivalCeilingFor(gameState.currentLevel, k)),
+      look: bossAthletesFor(gameState.currentLevel),
     };
   };
 
@@ -226,7 +225,7 @@ export const createBossBattleScene = (
     );
   };
 
-  // The coach warns when even perfect play can't beat the rival
+  // A warning when even perfect play can't beat the rival
   const afterTaunt = (s: Setup) => {
     if (s.rating > s.target) {
       showRules(s);
@@ -250,7 +249,7 @@ export const createBossBattleScene = (
     const won = mg.won;
     const text = won
       ? `${s.rivalName}: "${s.rivalLoseLine}"`
-      : 'Better data next time, Coach. The margins matter.';
+      : 'Better data next time, {NAME}. The margins matter.';
     dialogue.show(
       text,
       undefined,
@@ -351,8 +350,8 @@ export const createBossBattleScene = (
     drawPlatform(ctx, PLAYER_CX, platY, 40, 6, pal.colors[3], pal.colors[1]);
     drawPlatform(ctx, RIVAL_CX, platY, 40, 6, pal.colors[3], pal.colors[1]);
     // The 32px sprite's figure spans columns 5..24 (7..26 mirrored): offset so it is centred on its column
-    drawSprite(ctx, ATHLETE_SPRITE, PLAYER_CX - 15, ATHLETE_Y + playerDrop, SPRITE_COLORS['boss_player']!);
-    drawSprite(ctx, RIVAL_SPRITE, RIVAL_CX - 16, ATHLETE_Y + rivalDrop, SPRITE_COLORS['boss_rival']!);
+    drawSprite(ctx, s.look.player.sprite, PLAYER_CX - 15, ATHLETE_Y + playerDrop, s.look.player.colors);
+    drawSprite(ctx, s.look.rival.sprite, RIVAL_CX - 16, ATHLETE_Y + rivalDrop, s.look.rival.colors);
   };
 
   const drawCentre = (ctx: CanvasRenderingContext2D) => {

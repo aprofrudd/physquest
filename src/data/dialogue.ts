@@ -8,7 +8,7 @@ export interface DialogueLine {
 export const DIALOGUES: Record<string, DialogueLine[]> = {
   // Hub NPC. {SELECT} and {B} are filled in with the player's button names by the dialogue system
   hub_athlete: [
-    { text: 'Hey Coach! Welcome to the Sports Performance Centre.' },
+    { text: 'Hey {NAME}! Welcome to the Sports Performance Centre.' },
     { text: 'Take the rooms in order: TESTING, DATA, TRAINING, then ANALYSIS. The arrow shows where to go next.' },
     { text: 'Each room raises one of my stats. Finish all four and the ARENA opens: beat the rival there to clear this sport.' },
     { text: 'Tip: press {SELECT} to see your objectives, and hold {B} to run. {B} also leaves any chat.' },
@@ -22,7 +22,7 @@ export const DIALOGUES: Record<string, DialogueLine[]> = {
 
   // Room 1 placeholders (replaced by challenge system)
   room1_athlete: [
-    { text: 'Coach, my performance has plateaued. What test should we run?' },
+    { text: 'My performance has plateaued. What test should we run?' },
   ],
   room1_equip1: [{ text: 'Testing equipment: Treadmill with gas analyser.' }],
   room1_equip2: [{ text: 'Testing equipment: Cycle ergometer.' }],
@@ -40,7 +40,7 @@ export const DIALOGUES: Record<string, DialogueLine[]> = {
 
   // Room 3
   room3_athlete: [
-    { text: 'Now we know the numbers. How should I train, Coach?' },
+    { text: 'Now we know the numbers. How should I train?' },
   ],
   room3_equip1: [{ text: 'Training zone calculator.' }],
   room3_equip2: [{ text: 'Periodisation planner.' }],

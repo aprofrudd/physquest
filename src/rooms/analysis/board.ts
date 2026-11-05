@@ -3,7 +3,7 @@
 // instrument decides what to show and when.
 import { drawText, measureText } from '../../render/PixelFont';
 import { drawSprite } from '../../render/SpriteSheet';
-import { getCoachSprite, SPRITE_COLORS } from '../../data/sprites';
+import { AISHA_SPRITE_COLORS, RUN_SPRITES } from '../testing/people';
 import { PALETTES } from '../../render/Palettes';
 import { COLORS, STAGE, clamp01, drawChip, drawCentred, drawCross, drawPanel, drawTick, chipWidth } from '../frame';
 import { BAD, GOOD, INK, PIN, SOFT, drawBracket, xOf, type RulerGeometry } from './ruler';
@@ -148,9 +148,9 @@ export const drawBlock = (ctx: CanvasRenderingContext2D, weeks: number, done: nu
     ctx.fillRect(x + 1, STRIP.y + 1, STRIP.cell - 2, 8);
   }
   // the athlete, side on, running along the top of the strip
-  const runner = getCoachSprite('right', Math.floor(t * 8) % 2);
+  const runner = RUN_SPRITES[Math.floor(t * 8) % RUN_SPRITES.length] ?? [];
   const x = Math.round(STRIP.x + clamp01(progress) * (end - STRIP.x - 14));
-  drawSprite(ctx, runner, x, STRIP.y - 17, SPRITE_COLORS['npc_athlete'] as string[]);
+  drawSprite(ctx, runner, x, STRIP.y - 17, AISHA_SPRITE_COLORS);
   // the RETEST flag on its pole at the end of the strip
   ctx.fillStyle = INK;
   ctx.fillRect(end + 6, STRIP.y - 17, 2, 28);

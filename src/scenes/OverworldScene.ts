@@ -2,17 +2,21 @@ import type { Scene } from '../engine/GameLoop';
 import type { Input } from '../engine/Input';
 import type { SceneManager } from '../engine/SceneManager';
 import {
+  MEET_MAP,
   ROOM_KEYS,
   ROOM_LABEL,
-  ROOM_MAP,
   ROOM_STAT,
   allRoomsComplete,
-  nextRoom,
+  athleteMet,
+  doorLabel,
+  meetOf,
+  nextDoor,
   roomKeyForMap,
   roomUnlocked,
   roomsCompleted,
+  roomsTotal,
   type GameState,
-  type HubDoor,
+  type HubExit,
   type RoomKey,
 } from '../state/GameState';
 import type { DialogueSystem } from '../systems/Dialogue';
@@ -40,7 +44,10 @@ import { mapFor } from '../data/rooms';
 import { LEVEL_DATA } from '../data/sports';
 import { ambientTime, prefersReducedMotion } from '../render/motion';
 import { DIALOGUES } from '../data/dialogue';
-import { getCoachSprite, NPC_SPRITE, SPRITE_COLORS } from '../data/sprites';
+import { athleteColorsFor, athleteSpriteFor, getCoachSprite, getDirectorSprite, SPRITE_COLORS } from '../data/sprites';
+import { DIRECTOR_KEY, MEET_RETURN } from '../data/meetDoor';
+import { meetContentFor } from '../rooms/content';
+import { saveGame } from '../systems/SaveSystem';
 import { checkInteraction, checkStandingOnDoor, findOpenNeighbour } from '../systems/Collision';
 import { PALETTES } from '../render/Palettes';
 import { sfx } from '../audio/Sfx';
@@ -53,8 +60,8 @@ const BANNER_TIME_LONG = BANNER_TIME + 1; // a banner that says what to do (or b
 const BANNER_FADE = 0.4;
 const A_BUFFER = 0.25; // an A press while stepping is kept this long and used when the step ends
 
-const HUB_DOORS: readonly HubDoor[] = ['room1', 'room2', 'room3', 'room4', 'boss'];
-const asHubDoor = (target: string): HubDoor | null => HUB_DOORS.find(d => d === target) ?? null;
+const HUB_DOORS: readonly HubExit[] = ['meet', 'room1', 'room2', 'room3', 'room4', 'boss'];
+const asHubDoor = (target: string): HubExit | null => HUB_DOORS.find(d => d === target) ?? null;
 
 // Banner lines name buttons as tokens; they are filled in for the player's device when the banner is drawn
 const TALK_HINT = '{A}: TALK TO THE ATHLETE'; // third line of a room's banner while its challenge is open
@@ -96,6 +103,18 @@ export const createOverworldScene = (
   let metHubAthlete = false; // the hub athlete's "!" stays until the first chat with it
   let panelSeen = false; // the SELECT hint stays until the objectives panel has been opened
   const arenaNoted = new Set<number>(); // levels whose "arena is open" banner has shown
+  // Welcomes already offered this session, keyed by the level's progress object (a new game makes new ones)
+  const welcomeOffered = new WeakSet<object>();
+  let directorDir: 'up' | 'down' | 'left' | 'right' = 'down'; // the Director turns to whoever they are talking to
+
+  /** Turn the Director toward the player (the larger of the two gaps decides; ties face down/up). */
+  const faceDirector = () => {
+    const npc = currentMap.npcs.find(n => n.dialogueKey === DIRECTOR_KEY);
+    if (!npc) return;
+    const dx = gameState.playerPos.x - npc.x;
+    const dy = gameState.playerPos.y - npc.y;
+    directorDir = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : dy < 0 ? 'up' : 'down';
+  };
 
   const isHub = () => currentMapId === 'hub';
 
@@ -119,7 +138,7 @@ export const createOverworldScene = (
     bannerTimer = 0;
     // A room whose challenge is still open also says how to start it
     const roomKey = roomKeyForMap(mapId);
-    const toDo = roomKey !== null && !gameState.roomProgress[roomKey];
+    const toDo = roomKey !== null ? !gameState.roomProgress[roomKey] : mapId === MEET_MAP && !meetOf(gameState).met;
     if (withBanner) {
       const lines = [map.name, levelLine(gameState)];
       if (toDo) lines.push(TALK_HINT);
@@ -130,7 +149,7 @@ export const createOverworldScene = (
     announce(withBanner && toDo ? `${ended} ${input.fill(TALK_HINT)}` : described);
   };
 
-  const hubSpawn = (door: HubDoor | null): Spawn => (door ? HUB_RETURN[door] : HUB_START);
+  const hubSpawn = (door: HubExit | null): Spawn => (door === 'meet' ? MEET_RETURN : door ? HUB_RETURN[door] : HUB_START);
 
   const say = (
     text: string,
@@ -150,7 +169,7 @@ export const createOverworldScene = (
   };
 
   /** Fade through a hub door; remembers which door so the hub puts the player back outside it. */
-  const goThrough = (door: HubDoor, apply: () => void) => {
+  const goThrough = (door: HubExit, apply: () => void) => {
     gameState.returnDoor = door;
     startTransition(apply);
   };
@@ -194,6 +213,23 @@ export const createOverworldScene = (
     );
   };
 
+  /** The ATHLETE room, once the athlete has been met: a chat again can only raise the best overview. */
+  const promptReplayMeet = () => {
+    const meet = meetOf(gameState);
+    say(
+      !meet.of
+        ? 'YOU HAVE MET THE ATHLETE. CHAT AGAIN?' // met in an older save, before overviews were scored
+        : `YOU HAVE MET THE ATHLETE (BEST OVERVIEW ${meet.best}/${meet.of}). ${meet.best >= meet.of ? 'CHAT AGAIN?' : 'CHAT AGAIN TO RAISE IT?'}`,
+      ['YES', 'NO'],
+      choice => {
+        if (choice === 0) enterRoomMap(MEET_MAP);
+        else stepBack();
+      },
+      stepBack, // B: same as NO
+      { exitLabel: 'NO' },
+    );
+  };
+
   const handleArrival = () => {
     const standing = checkStandingOnDoor(gameState, currentMap);
     const target = standing.target;
@@ -205,11 +241,17 @@ export const createOverworldScene = (
         return;
       }
       if (!isHub()) return;
+      if (target === MEET_MAP) {
+        if (meetOf(gameState).met) promptReplayMeet();
+        else enterRoomMap(MEET_MAP);
+        return;
+      }
       const roomKey = roomKeyForMap(target);
       if (!roomKey) return;
-      const prev = ROOM_KEYS[ROOM_KEYS.indexOf(roomKey) - 1]; // rooms are taken in order: finish this one first
-      if (prev && !roomUnlocked(gameState, roomKey)) {
-        refuseDoor(`FINISH THE ${ROOM_LABEL[prev]} ROOM FIRST.`);
+      // rooms are taken in order: finish the one before first (the ATHLETE room before TESTING)
+      const prev = ROOM_KEYS[ROOM_KEYS.indexOf(roomKey) - 1];
+      if (!roomUnlocked(gameState, roomKey)) {
+        refuseDoor(`FINISH THE ${prev ? ROOM_LABEL[prev] : doorLabel(MEET_MAP)} ROOM FIRST.`);
       } else if (gameState.roomProgress[roomKey]) {
         promptReplay(roomKey, target);
       } else {
@@ -222,16 +264,52 @@ export const createOverworldScene = (
       if (allRoomsComplete(gameState)) {
         goThrough('boss', onEnterBoss);
       } else {
-        const next = nextRoom(gameState);
-        const nextLine = next ? ` NEXT: THE ${ROOM_LABEL[next]} ROOM.` : '';
-        refuseDoor(`THE ARENA OPENS WHEN ALL 4 ROOMS ARE DONE (${roomsCompleted(gameState)}/4).${nextLine}`);
+        const next = nextDoor(gameState);
+        const nextLine = next !== 'boss' ? ` NEXT: THE ${doorLabel(next)} ROOM.` : '';
+        const total = roomsTotal(gameState);
+        refuseDoor(`THE ARENA OPENS WHEN ALL ${total} ROOMS ARE DONE (${roomsCompleted(gameState)}/${total}).${nextLine}`);
       }
+    }
+  };
+
+  /**
+   * The Performance Director's welcome (by name). It is remembered in the save only once its last page has
+   * been read: it carries the how-to-play pages, so a player who leaves it with B hears all of it again
+   * when they next talk to the Director (it does not start by itself again this session).
+   */
+  const welcome = () => {
+    const content = meetContentFor(gameState.currentLevel);
+    if (!content) return;
+    welcomeOffered.add(meetOf(gameState));
+    faceDirector();
+    const heard = () => {
+      if (meetOf(gameState).welcomed) return;
+      meetOf(gameState).welcomed = true;
+      saveGame(gameState);
+    };
+    dialogue.showSequence([...content.directorWelcome], heard, () => {});
+  };
+
+  /** Talking to the Director: the welcome if it has not been given, else a reminder, or once the athlete is met the after lines. */
+  const talkToDirector = () => {
+    const content = meetContentFor(gameState.currentLevel);
+    if (!content) return;
+    sfx.play('select');
+    if (!meetOf(gameState).welcomed) welcome();
+    else {
+      faceDirector();
+      dialogue.showSequence([...(athleteMet(gameState) ? content.directorAfter : content.directorReminder)]);
     }
   };
 
   const interact = () => {
     const hit = checkInteraction(gameState, currentMap);
     if ((hit.type !== 'npc' && hit.type !== 'equipment') || !hit.dialogueKey) return;
+
+    if (hit.type === 'npc' && isHub() && hit.dialogueKey === DIRECTOR_KEY) {
+      talkToDirector();
+      return;
+    }
 
     // A room's athlete starts that room's challenge
     if (hit.type === 'npc' && !isHub()) {
@@ -291,7 +369,15 @@ export const createOverworldScene = (
       // the player). Otherwise a fresh level: start in the middle of the hub and greet it with the banner,
       // unless every room is already done: then the banner would sit on the arena arrow, the thing to look at.
       const door = gameState.returnDoor;
-      applyMap('hub', hubSpawn(door), door === null && !allRoomsComplete(gameState));
+      // The first hub entry of a level with a Performance Director: the welcome starts at once (no banner under it)
+      const welcoming =
+        gameState.meetRoom &&
+        !meetOf(gameState).welcomed &&
+        !welcomeOffered.has(meetOf(gameState)) &&
+        meetContentFor(gameState.currentLevel) !== undefined;
+      directorDir = 'down';
+      applyMap('hub', hubSpawn(door), door === null && !allRoomsComplete(gameState) && !welcoming);
+      if (welcoming) welcome();
       // The first time the hub is seen with every room done (per level), say the arena is open. The banner
       // goes at the top, over the north sign plates: clear of the arrow and the player.
       if (allRoomsComplete(gameState) && !arenaNoted.has(gameState.currentLevel)) {
@@ -384,9 +470,8 @@ export const createOverworldScene = (
       // so nothing can hide it. It steps aside for a player standing right in front of that door, who would
       // only cover it and leave a stray pixel showing.
       if (isHub()) {
-        const next = nextRoom(gameState);
-        const door: HubDoor = next ? ROOM_MAP[next] : 'boss';
-        const front = HUB_RETURN[door]; // the tile just outside the door
+        const door = nextDoor(gameState);
+        const front = hubSpawn(door); // the tile just outside the door
         const inFront =
           door !== 'boss' && Math.round(gameState.playerPos.x) === front.x && Math.round(gameState.playerPos.y) === front.y;
         if (!inFront) drawDoorArrow(ctx, door);
@@ -402,8 +487,13 @@ export const createOverworldScene = (
 
       // NPCs breathe: 1px up for half a second, then back down
       const bob = !prefersReducedMotion() && Math.floor(Date.now() / 500) % 2 === 1 ? 1 : 0;
+      const level = gameState.currentLevel;
       for (const npc of currentMap.npcs) {
-        drawSprite(ctx, NPC_SPRITE, npc.x * TILE_SIZE, npc.y * TILE_SIZE - bob, SPRITE_COLORS['npc_athlete']!);
+        if (npc.dialogueKey === DIRECTOR_KEY) {
+          drawSprite(ctx, getDirectorSprite(directorDir), npc.x * TILE_SIZE, npc.y * TILE_SIZE - bob, SPRITE_COLORS['npc_director']!);
+        } else {
+          drawSprite(ctx, athleteSpriteFor(level), npc.x * TILE_SIZE, npc.y * TILE_SIZE - bob, athleteColorsFor(level));
+        }
       }
 
       // Player
@@ -419,11 +509,14 @@ export const createOverworldScene = (
 
       // Markers above characters. An athlete's "!" or star gives way to the "A" prompt while it is faced.
       const roomKey = roomKeyForMap(currentMapId);
+      const inMeet = currentMapId === MEET_MAP;
       for (const npc of currentMap.npcs) {
         if (prompt && prompt.x === npc.x && prompt.y === npc.y) continue;
-        if (roomKey) {
-          if (gameState.roomProgress[roomKey]) drawDoneStar(ctx, npc.x, npc.y);
+        if (roomKey || inMeet) {
+          if (roomKey ? gameState.roomProgress[roomKey] : meetOf(gameState).met) drawDoneStar(ctx, npc.x, npc.y);
           else drawAlertBubble(ctx, npc.x, npc.y);
+        } else if (npc.dialogueKey === DIRECTOR_KEY) {
+          if (!meetOf(gameState).welcomed) drawAlertBubble(ctx, npc.x, npc.y); // until the welcome has been heard
         } else if (!metHubAthlete) {
           drawAlertBubble(ctx, npc.x, npc.y); // the hub athlete, until the first chat
         }

@@ -6,20 +6,28 @@ import { drawPokemonBox } from './SpriteSheet';
 import { GAME_W, GAME_H } from './DialogueBox';
 import { TILE_SIZE } from './TileMap';
 import { prefersReducedMotion } from './motion';
+import { spokenName } from '../engine/nameToken';
 import { HUB_SIGNS } from '../data/maps';
+import { MEET_SIGN } from '../data/meetDoor';
 import { LEVEL_DATA } from '../data/sports';
 import {
   ROOM_KEYS,
   ROOM_LABEL,
   ROOM_STAT,
   STAT_KEYS,
+  MEET_LABEL,
   allRoomsComplete,
+  athleteMet,
+  doorLabel,
+  meetOf,
+  nextDoor,
   nextRoom,
   roomKeyForMap,
   roomUnlocked,
   roomsCompleted,
+  roomsTotal,
   type GameState,
-  type HubDoor,
+  type HubExit,
   type RoomKey,
   type StatKey,
 } from '../state/GameState';
@@ -125,11 +133,14 @@ export const drawHubLabels = (ctx: CanvasRenderingContext2D, state: GameState) =
       drawLabelPlate(ctx, 'ARENA', sign.cx * TILE_SIZE, sign.cy * TILE_SIZE, allRoomsComplete(state) ? null : 'lock');
     }
   }
+  // The ATHLETE room's door, in a visit that has one: never locked, ticked once the athlete has been met
+  if (state.meetRoom) drawLabelPlate(ctx, MEET_LABEL, MEET_SIGN.cx * TILE_SIZE, MEET_SIGN.cy * TILE_SIZE, meetOf(state).met ? 'check' : null);
 };
 
 // Where each hub door's arrow stands: its centre x and the tile edge it faces (both in tiles), and which way it
 // points. The north doors (row 2) are entered from below, so their arrow points up; the others are entered from above.
-const DOOR_ARROWS: Record<HubDoor, { x: number; edge: number; up: boolean }> = {
+const DOOR_ARROWS: Record<HubExit, { x: number; edge: number; up: boolean }> = {
+  meet: { x: 3.5, edge: 12, up: false }, // the ATHLETE door (3,12), in the bottom wall like the arena's
   room1: { x: 5.5, edge: 3, up: true },
   room2: { x: 10.5, edge: 3, up: true },
   room3: { x: 5.5, edge: 8, up: false },
@@ -138,7 +149,7 @@ const DOOR_ARROWS: Record<HubDoor, { x: number; edge: number; up: boolean }> = {
 };
 
 /** Bobbing gold arrow in front of a hub door: the next room's, or the arena's once every room is done. */
-export const drawDoorArrow = (ctx: CanvasRenderingContext2D, door: HubDoor) => {
+export const drawDoorArrow = (ctx: CanvasRenderingContext2D, door: HubExit) => {
   const { x, edge, up } = DOOR_ARROWS[door];
   // 0..4, towards the door and back (still, at its nearest, for players who asked for reduced motion)
   const bob = prefersReducedMotion() ? 4 : Math.round((Math.sin(Date.now() / 220) + 1) * 2);
@@ -228,10 +239,10 @@ const BADGE_Y = 2;
 const BADGE_H = 13;
 const BADGE_GAP = 4; // from the screen edge, and between the badge and its hint
 
-const badgeLabel = (state: GameState): string => `ROOMS ${roomsCompleted(state)}/${ROOM_KEYS.length}`;
+const badgeLabel = (state: GameState): string => `ROOMS ${roomsCompleted(state)}/${roomsTotal(state)}`;
 const badgeX = (state: GameState): number => GAME_W - BADGE_GAP - (textWidth(badgeLabel(state)) + 10);
 
-/** Hub badge, top right: how many of the four rooms are done. */
+/** Hub badge, top right: how many of the hub's rooms are done. */
 export const drawRoomsBadge = (ctx: CanvasRenderingContext2D, state: GameState) => {
   const label = badgeLabel(state);
   const x = badgeX(state);
@@ -272,9 +283,12 @@ const NEXT_BLUE = '#2858a8';
 const percent = (v: number): number => Math.max(0, Math.min(100, Math.round(v * 100)));
 
 export const objectivesHint = (state: GameState): string => {
-  const next = nextRoom(state);
-  return next ? `NEXT: VISIT THE ${ROOM_LABEL[next]} ROOM` : 'ALL ROOMS DONE - HEAD TO THE ARENA!';
+  const next = nextDoor(state);
+  return next !== 'boss' ? `NEXT: VISIT THE ${doorLabel(next)} ROOM` : 'ALL ROOMS DONE - HEAD TO THE ARENA!';
 };
+
+/** The ATHLETE room's row: its sign name and what it gives (no stat: the overview). */
+const MEET_ROW = `${MEET_LABEL} (OVERVIEW)`;
 
 /** A room's row in the panel: its sign name and the stat it raises, e.g. "TRAINING (ENDURANCE)". */
 const roomRowLabel = (key: RoomKey): string => `${ROOM_LABEL[key]} (${STAT_NAME[ROOM_STAT[key]]})`;
@@ -287,9 +301,14 @@ export const objectivesSummary = (state: GameState, closeName = 'SELECT'): strin
       : roomUnlocked(state, k) ? 'not done' : 'locked';
     return `${ROOM_LABEL[k]} raises ${STAT_NAME[ROOM_STAT[k]].toLowerCase()}, ${status}`;
   }).join('. ');
+  const meet = meetOf(state);
+  const athlete = state.meetRoom
+    ? `${MEET_LABEL} gives the athlete overview, ${meet.met ? (meet.of ? `${meet.best} of ${meet.of}` : 'done') : 'not done'}. `
+    : '';
   const hint = objectivesHint(state);
   const hintEnd = /[.!?]$/.test(hint) ? '' : '.';
-  return `Objectives. Coach ${state.playerName}. ${levelLine(state)}. ${rooms}. ${hint}${hintEnd} ${closeName} closes.`;
+  const who = state.playerName ? `${spokenName(state.playerName)}, sport scientist. ` : '';
+  return `Objectives. ${who}${levelLine(state)}. ${athlete}${rooms}. ${hint}${hintEnd} ${closeName} closes.`;
 };
 
 /** `footer` is the close hint in the player's button names, e.g. "SELECT: CLOSE". */
@@ -305,16 +324,31 @@ export const drawObjectivesPanel = (ctx: CanvasRenderingContext2D, state: GameSt
     ctx.fillRect(left, y, right - left, 1);
   };
 
-  const coach = `COACH ${state.playerName}`.trimEnd();
-  drawText(ctx, coach, left, 16, TEXT, 2);
+  drawText(ctx, state.playerName, left, 16, TEXT, 2);
+  drawText(ctx, 'SPORT SCIENTIST', right - textWidth('SPORT SCIENTIST'), 20, DIM);
   drawText(ctx, levelLine(state), left, 33, '#303030');
   divider(45);
 
-  // Rooms
+  // Rooms (five rows when the ATHLETE room is there, a little closer together)
   drawText(ctx, 'ROOMS', left, 50, DIM);
-  const next = nextRoom(state);
+  const next = athleteMet(state) ? nextRoom(state) : null;
+  const pitch = state.meetRoom ? 11 : 13;
+  const first = state.meetRoom ? 1 : 0;
+  if (state.meetRoom) {
+    const meet = meetOf(state);
+    const y = 61;
+    drawText(ctx, MEET_ROW, left, y, TEXT);
+    if (meet.met) {
+      const score = meet.of ? `${meet.best}/${meet.of}` : 'DONE'; // of 0: met before overviews were scored
+      const sw = textWidth(score);
+      drawText(ctx, score, right - sw, y, TEXT);
+      plot(ctx, CHECK, right - sw - CHECK_W - 4, y + 1, GREEN);
+    } else {
+      drawText(ctx, 'NEXT', right - textWidth('NEXT'), y, NEXT_BLUE);
+    }
+  }
   ROOM_KEYS.forEach((key, i) => {
-    const y = 61 + i * 13;
+    const y = 61 + (i + first) * pitch;
     const done = state.roomProgress[key];
     drawText(ctx, roomRowLabel(key), left, y, done || key === next ? TEXT : DIM);
     if (done) {

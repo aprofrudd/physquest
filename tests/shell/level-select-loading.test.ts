@@ -74,6 +74,7 @@ vi.mock('../../src/rooms/loader', () => ({
   roomsFailed: () => false,
   commitLevel: () => {},
   newRoomsFor: () => null,
+  meetRoomFor: () => false,
   loadRooms: () =>
     (H.shared ??= new Promise<boolean>(resolve => {
       H.resolveChunk = ok => {

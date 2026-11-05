@@ -69,7 +69,7 @@ const play = async (room: string, seed: number, device: 'console' | 'keyboard') 
 describe('text fits the screen and the font', () => {
   it('every drawn string, both label sets', async () => {
     for (const device of ['console', 'keyboard'] as const)
-      for (const room of ['room1', 'room2', 'room3', 'room4'])
+      for (const room of ['meet', 'room1', 'room2', 'room3', 'room4'])
         for (let seed = 1; seed <= 25; seed++) await play(room, seed, device);
     const over: string[] = [];
     const missing = new Map<string, string>();

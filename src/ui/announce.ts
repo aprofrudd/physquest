@@ -1,5 +1,6 @@
 // Mirrors in-game text into a visually hidden live region so screen readers can follow the
 // dialogue (the game itself is a canvas, which assistive tech can't read).
+import { fillName } from '../engine/nameToken';
 
 let region: HTMLElement | null = null;
 let lastText = '';
@@ -37,8 +38,9 @@ const getRegion = (): HTMLElement | null => {
  * reported twice), but a prompt that genuinely appears again is read again. Lines from the same game step are
  * read together.
  */
-export const announce = (text: string): void => {
-  if (!text) return;
+export const announce = (raw: string): void => {
+  if (!raw) return;
+  const text = fillName(raw); // a line may name the player as {NAME}
   const now = performance.now();
   if (text === lastText && now - lastAt < 250) return;
   lastText = text;

@@ -8,11 +8,13 @@ import { drawText, measureText } from '../render/PixelFont';
 import { drawPokemonBox, drawSprite } from '../render/SpriteSheet';
 import { GAME_W, GAME_H } from '../render/DialogueBox';
 import { PALETTES } from '../render/Palettes';
-import { NPC_SPRITE, SPRITE_COLORS, getCoachSprite } from '../data/sprites';
+import { SPRITE_COLORS, getCoachSprite } from '../data/sprites';
 import { sfx } from '../audio/Sfx';
 import { announce } from '../ui/announce';
 
-type Phase = 'dialogue' | 'nameEntry';
+// Name entry comes first; then one line by name, and on to the level select (the Performance Director shows the
+// player round the centre in the level itself)
+type Phase = 'nameEntry' | 'welcome';
 type CellKind = 'char' | 'del' | 'done';
 
 interface Cell {
@@ -66,34 +68,30 @@ const NAME_BOX_Y = 28;
 const SHAKE_TIME = 0.3;
 const FLASH_TIME = 1.2;
 
-// Typed characters, A, B and START are ignored for this long once name entry opens, so the presses that
-// carried the player through the coach's speech (a mashed A, a key held down) can't land in the name.
+// Typed characters, A, B and START are ignored for this long once name entry opens, so the press that left the
+// title screen (a mashed A, a key held down) can't land in the name.
 const ENTRY_LOCK = 0.4;
+// The welcome line ignores A and B this long, so the press that finished the name can't skip it unread
+const WELCOME_LOCK = 0.3;
 
 // Dark enough to read on the cream background (6.5:1)
 const WARN_COLOR = '#a01818';
 const ACTION_PLATE = '#dfe6f3';
 
-// Coach briefing: the coach and an athlete stand on a faint floor above the dialogue box and shift their
-// weight, so the pages are more than text on an empty screen.
+// The welcome: the player (a sport scientist) stands on a faint floor above the dialogue box and shifts their
+// weight, so the line is more than text on an empty screen.
 const HEADER_Y = 20; // top of the 3x title (same as the title screen)
 const STAGE_SCALE = 2;
-const STAGE_SIZE = 16 * STAGE_SCALE; // both sprites are 16x16 cells
-const STAGE_GAP = 20; // between the two sprites
-const STAGE_Y = 90; // top of the sprites; their feet are at STAGE_Y + STAGE_SIZE
+const STAGE_SIZE = 16 * STAGE_SCALE; // the sprite is 16x16 cells
+const STAGE_Y = 90; // top of the sprite; its feet are at STAGE_Y + STAGE_SIZE
 const STAGE_STEP = 0.5; // seconds per idle pose
 const FLOOR_END_Y = 160; // clear of the dialogue box (y = 164)
 const FLOOR_LINE = '#e2d8c0'; // a shade darker than the cream background
 const FLOOR_SHADOW = '#d3c8ae';
 
-// The room names are the hub signs' (ROOM_LABEL). Button tokens are filled in for the player's device
-// as each line opens (see DialogueSystem).
-const COACH_LINES = [
-  'Welcome, Coach. Your job is to guide athletes through science-based training.',
-  'Each sport has four rooms: TESTING, DATA, TRAINING and ANALYSIS. Do them in order: walk through a door and press {A} to talk to the athlete.',
-  'Every answer counts: good answers raise your athlete\'s stats. Finish all four rooms to open the ARENA, then beat the rival scientist there.',
-  'Press {SELECT} for your objectives and {START} to pause. {B} leaves any chat. Progress saves automatically.',
-];
+// The one line after name entry. {NAME} is filled with the typed name (see DialogueSystem); how to play is the
+// Performance Director's to explain, in the level's hub.
+export const WELCOME_LINE = "Welcome, {NAME}. You're the new sport scientist at the Sports Performance Centre. Pick a sport to start.";
 
 // Under the name grid: console buttons, or the keyboard (where letters type straight into the name)
 const FOOTER_CONSOLE = 'A: ADD   B: DELETE   START: DONE';
@@ -105,20 +103,14 @@ const drawStage = (ctx: CanvasRenderingContext2D, t: number) => {
   for (let y = STAGE_Y + STAGE_SIZE + 8; y < FLOOR_END_Y; y += 6) ctx.fillRect(3, y, GAME_W - 6, 1);
 
   const pose = Math.floor(t / STAGE_STEP) % 2; // 0 = standing, 1 = weight shifted
-  const left = Math.round((GAME_W - (STAGE_SIZE * 2 + STAGE_GAP)) / 2);
-  const people = [
-    { x: left, sprite: getCoachSprite('down', pose), colors: SPRITE_COLORS['default']!, dip: pose },
-    { x: left + STAGE_SIZE + STAGE_GAP, sprite: NPC_SPRITE, colors: SPRITE_COLORS['npc_athlete']!, dip: 1 - pose },
-  ];
-  for (const person of people) {
-    // Shadow first, so the feet stand on it
-    const cx = person.x + STAGE_SIZE / 2;
-    ctx.fillStyle = FLOOR_SHADOW;
-    ctx.fillRect(cx - 10, STAGE_Y + STAGE_SIZE - 1, 20, 1);
-    ctx.fillRect(cx - 13, STAGE_Y + STAGE_SIZE, 26, 2);
-    ctx.fillRect(cx - 10, STAGE_Y + STAGE_SIZE + 2, 20, 1);
-    drawSprite(ctx, person.sprite, person.x, STAGE_Y + person.dip * STAGE_SCALE, person.colors, STAGE_SCALE);
-  }
+  const x = Math.round((GAME_W - STAGE_SIZE) / 2);
+  // Shadow first, so the feet stand on it
+  const cx = x + STAGE_SIZE / 2;
+  ctx.fillStyle = FLOOR_SHADOW;
+  ctx.fillRect(cx - 10, STAGE_Y + STAGE_SIZE - 1, 20, 1);
+  ctx.fillRect(cx - 13, STAGE_Y + STAGE_SIZE, 26, 2);
+  ctx.fillRect(cx - 10, STAGE_Y + STAGE_SIZE + 2, 20, 1);
+  drawSprite(ctx, getCoachSprite('down', pose), x, STAGE_Y + pose * STAGE_SCALE, SPRITE_COLORS['default']!, STAGE_SCALE);
 };
 
 export const createIntroScene = (
@@ -127,7 +119,7 @@ export const createIntroScene = (
   gameState: GameState,
   dialogue: DialogueSystem,
 ): Scene => {
-  let phase: Phase = 'dialogue';
+  let phase: Phase = 'nameEntry';
   let name = '';
   let cursorRow = 0;
   let cursorIdx = 0; // index into GRID[cursorRow]
@@ -215,7 +207,12 @@ export const createIntroScene = (
     gameState.playerName = name;
     saveGame(gameState); // first save of a new game: this is where it replaces any old one
     sfx.play('select');
-    sceneManager.switchTo('levelSelect');
+    // One line by name, then the level select (A or B goes on)
+    phase = 'welcome';
+    blinkTimer = 0;
+    input.setTextMode(false);
+    const onward = () => sceneManager.switchTo('levelSelect');
+    dialogue.show(WELCOME_LINE, undefined, onward, onward, { exitLabel: '', nextLabel: 'GO', lock: WELCOME_LOCK });
     return true;
   };
 
@@ -230,7 +227,7 @@ export const createIntroScene = (
 
   return {
     onEnter() {
-      phase = 'dialogue';
+      phase = 'nameEntry';
       name = '';
       cursorRow = 0;
       cursorIdx = 0;
@@ -239,24 +236,13 @@ export const createIntroScene = (
       shakeTimer = 0;
       flashText = '';
       flashTimer = 0;
-      entryLock = 0;
-      input.setTextMode(false);
-
-      // Start coach dialogue sequence (B skips it straight to name entry)
-      dialogue.showSequence(
-        COACH_LINES,
-        () => {
-          phase = 'nameEntry';
-          entryLock = ENTRY_LOCK;
-          input.setTextMode(true); // from here on letters and digits type into the name
-          announce(
-            input.lastDevice() === 'keyboard'
-              ? `Enter your name, up to ${MAX_NAME} characters. Type it, Backspace deletes, Enter when done.`
-              : `Enter your name, up to ${MAX_NAME} characters. D-pad moves, A adds, B deletes, Start when done.`,
-          );
-        },
-        undefined,
-        { exitLabel: 'SKIP' },
+      entryLock = ENTRY_LOCK;
+      dialogue.reset();
+      input.setTextMode(true); // from here on letters and digits type into the name
+      announce(
+        input.lastDevice() === 'keyboard'
+          ? `Enter your name, up to ${MAX_NAME} characters. Type it, Backspace deletes, Enter when done.`
+          : `Enter your name, up to ${MAX_NAME} characters. D-pad moves, A adds, B deletes, Start when done.`,
       );
     },
 
@@ -271,7 +257,7 @@ export const createIntroScene = (
       shakeTimer = Math.max(0, shakeTimer - dt);
       flashTimer = Math.max(0, flashTimer - dt);
 
-      if (phase === 'dialogue') {
+      if (phase === 'welcome') {
         dialogue.update(dt, inp);
         return;
       }
@@ -316,8 +302,8 @@ export const createIntroScene = (
       ctx.fillRect(0, 0, 3, GAME_H);
       ctx.fillRect(GAME_W - 3, 0, 3, GAME_H);
 
-      if (phase === 'dialogue') {
-        // The title screen's header, so the briefing carries on from it: the name with its navy drop
+      if (phase === 'welcome') {
+        // The title screen's header, so the welcome carries on from it: the name with its navy drop
         // shadow (gold alone is only ~2:1 on cream), the tagline, and the rule under them
         const title = 'PHYSQUEST';
         const titleX = (GAME_W - measureText(title, 3)) / 2;

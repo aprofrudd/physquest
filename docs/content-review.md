@@ -39,3 +39,60 @@ The biggest open questions: D1 (the running test file includes VO2max, vVO2max a
 - Q1: build Room 1's "run the test yourself" timekeeper step? (not built)
 - Q2: rename the ANALYSIS sign or the PERFORMANCE PREDICTION header? (unchanged)
 - Q3: switch the new room looks on for the other three sports before their tasks are ready? (no)
+
+## New: Performance Director and the ATHLETE room (provisional)
+
+Added on 5 November 2026 and not yet reviewed by Alan. The player is now a sport scientist addressed by the name typed at name entry (`{NAME}`), not "Coach". All of this content is in `src/rooms/content/meet-running.ts` (types in `src/rooms/content/meet-types.ts`); comments in the file carry the same ids. The questions follow Phase 1 (Athlete overview) of Ruddock, Boyd, Winter and Ranchordas (2018), IJSPP, Table 1 (`docs/reference/scientific-support-process.txt`). Aisha's physiology is unchanged from `sports.ts` and `running.ts`; only biographical detail is new (goals, job, coach "Pete", club physio, funding, track access, 80-90 km weeks, a stress fracture at 22, sleep and refuelling). The meet room's OVERVIEW score does not feed the showdown rating or the four stats.
+
+| Ids | Where | Content | Field | Table 1 row |
+|---|---|---|---|---|
+| P0 | Hub | The Director's name and role: DR ELLIS, PERFORMANCE DIRECTOR (gender-neutral; they/them) | `director` | - |
+| P1-P5 | Hub | First welcome, by name: who they are, the player's job, the rooms in order (ATHLETE, TESTING, DATA, TRAINING, ANALYSIS, then ARENA), doors and {A} to talk, arrow, {SELECT}/{START}/{B}, room work raises her stats for the showdown, autosave, the request to meet Aisha. P4 is now two pages (P4a: doors, {A}, arrow, {SELECT}; P4b: {START}, {B}, stats, autosave), carrying the old coach tutorial's how-to-play lines. Counted as given only once its last page is read | `directorWelcome` | - |
+| P6 | Hub | Reminder before Aisha is met | `directorReminder` | - |
+| P7, P8 | Hub | After Aisha is met: TESTING is open | `directorAfter` | - |
+| M1-M3 | ATHLETE room | Aisha introduces herself (26, "I race the women's 5000 m", good aerobic base, outkicked on the last lap) | `athleteIntro` | - |
+| M4, M5 | ATHLETE room | How the chat works; one-line reminder on later visits | `rules`, `rulesShort` | - |
+| M6 | ATHLETE room | Good: "What are your goals?" (note GOAL: NATIONALS FINAL) | `questions` `goals` | Goals: short, medium, long term; SMART; how far away |
+| M7 | ATHLETE room | Good: "Why do you want our support?" (EXPECTS: EVIDENCE + PLAN) | `why` | Why seek scientific support; expectations |
+| M8 | ATHLETE room | Good: "Who has supported you so far?" (COACH PETE, CLUB PHYSIO) | `support` | Previous support; coaching team; multidisciplinary team |
+| M9 | ATHLETE room | Good: "What do you think you need?" (SAYS: NO FINISHING KICK) | `improve` | What do they think they need to improve |
+| M10 | ATHLETE room | Good: "What else fills your week?" (WORKS 30 H; SELF-FUNDED) | `life` | Lifestyle demands; financial or logistical constraints |
+| M11 | ATHLETE room | Good: "Training history? Injuries?" (OLD FOOT STRESS FRACTURE) | `history` | Training history; injuries |
+| M12 | ATHLETE room | Good: "How is your training set out?" (NO SPRINTS; NO RPE LOG) | `week` | Typical training year, week and day; training load assessment |
+| M13 | ATHLETE room | Good: "How are your sleep and food?" (SLEEP 7 H; LATE REFUEL) | `basics` | Basic/foundational good practices |
+| M14 | ATHLETE room | Weaker: "Can we do a VO2max test now?" (a test before the needs are known) | `test-now` | Premature: Phase 2 (choice of tests) |
+| M15 | ATHLETE room | Weaker: "Shall I write your new plan?" (a plan before the needs analysis, without the coach) | `plan-now` | Premature: Phase 3 (intervention planning) |
+| M16 | ATHLETE room | Weaker: "You just need more miles, eh?" (a leading question) | `more-miles` | Not in Table 1: leading question |
+| M17 | ATHLETE room | Weaker: "Which shoes do you race in?" ("Kit comes up in the needs analysis, not yet.") | `shoes` | Premature: Phase 2 (Table 2 asks how clothing or equipment influences performance) |
+| M18 | ATHLETE room | Debrief by how many good questions were asked (0 to 5 of 5 asks). With 4 weaker questions and 5 asks at least 1 is always good, so the 0 entry is a safety line that cannot show today | `debrief` | - |
+| M19, M20 | ATHLETE room | Aisha's farewell, setting up TESTING. M19 is now neutral ("Thanks for the chat, {NAME}. Good to meet you.") because it follows every debrief, including a poor one | `farewell` | - |
+| M21 | ATHLETE room | After each answer, two pages: the note said aloud in sentence case (good, e.g. "Noted: her goal is the nationals final."; the notebook keeps the capitals) or the short reason (weaker), then the why | `said`, `note`, `why` | - |
+
+Other new or reworded player-facing lines from this change (outside `meet-running.ts`):
+
+| Ids | Where | Content | File |
+|---|---|---|---|
+| P9 | Intro, after name entry | "Welcome, {NAME}. You're the new sport scientist at the Sports Performance Centre. Pick a sport to start." | `src/scenes/IntroScene.ts` (`WELCOME_LINE`) |
+| R1 | ATHLETE room | Notebook: "Your notebook. What you learn about Aisha goes in here." | `src/data/rooms/meet.ts` |
+| R2 | ATHLETE room | Chair: "A comfy chair. Talk to Aisha to start the chat." | `src/data/rooms/meet.ts` |
+| R3 | ATHLETE room | Window: "The track outside, under a big sky." | `src/data/rooms/meet.ts` |
+| R4 | ATHLETE room | Whiteboard: "PHASE 1, ATHLETE OVERVIEW. Goals, support, needs, life, history, training, the basics." This lists the good-question topics on screen: a deliberate hint, or should it go? | `src/data/rooms/meet.ts` |
+| R5 | ATHLETE room | Clock: "There is time for a proper chat." | `src/data/rooms/meet.ts` |
+| R6 | ATHLETE room | Kit shelf: "A kit shelf: racing spikes, a foam roller, a medal, a bottle and a stopwatch." | `src/data/rooms/meet.ts` |
+| R7 | ATHLETE room | Bib: "A framed race bib." | `src/data/rooms/meet.ts` |
+| R8 | ATHLETE room | Screen-reader description of the room (`describe`) | `src/data/rooms/meet.ts` |
+| D1 | Hub (classic) | `hub_athlete` line 1: "Hey {NAME}! Welcome to the Sports Performance Centre." | `src/data/dialogue.ts` |
+| D2, D3 | Rooms (classic) | `room1_athlete` and `room3_athlete`: "Coach" dropped, otherwise unchanged | `src/data/dialogue.ts` |
+| B1 | Showdown, defeat | "Better data next time, {NAME}. The margins matter." | `src/scenes/BossBattleScene.ts` |
+| H1 | Room complete, last room | "Every room is done: the ARENA is open!" on a level with an ATHLETE room ("All four rooms are done: the ARENA is open!" kept on classic visits) | `src/scenes/RoomChallengeScene.ts` |
+| L1 | Level select, objectives panel | Labels SPORT SCIENTIST <name>, ATHLETE (OVERVIEW) | `src/scenes/LevelSelectScene.ts`, `src/render/OverworldHud.ts` |
+| S1 | Hub, ATHLETE door replay | "YOU HAVE MET THE ATHLETE (BEST OVERVIEW n/5). CHAT AGAIN TO RAISE IT?" ("CHAT AGAIN?" at 5/5) | `src/scenes/OverworldScene.ts` |
+
+Questions for Alan from the review of this change:
+- M6 (goals): Table 1 asks whether the goals are SMART. Should the why mention it (e.g. "...and whether they are specific and measurable...")? Her short-term goal ("stop losing races on the last lap") could be made measurable with the existing last-400 m figure (62 s to 60 s), no new numbers.
+- M8 (support) vs the Testing Lab: `running.ts` checks speak of "her last test" and "same shoes ... as my last test" as a routine, while M8 says her only lab test was one at university. Should M8 allow for earlier tests (e.g. "a couple of lab tests"), or the checks change?
+- M10 (life): now "once or twice a week" at the track, to match M12's one track session (Tuesday). Or should M12 add a second track session?
+- M15 (plan-now) and M17 (shoes) were reworded so the note and the why no longer repeat each other, and M17 now follows Table 2 (equipment belongs in the needs analysis). Please confirm.
+- M5 (rules page 2) now says "Some questions can wait, and some don't help at all." so it also covers the leading question (M16).
+
+Open questions: whether 5 asks from 12 (8 good) is the right balance; whether training load monitoring (M12) and lifestyle with money and logistics (M10) should be separate questions, as in Table 1; whether Aisha's biographical details (teaching assistant, self-funded, track once or twice a week) suit the case.

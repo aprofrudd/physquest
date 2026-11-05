@@ -3,7 +3,7 @@
 // changes nothing until the next visit, so a level is never half redesigned.
 import type * as Bundle from './bundle';
 import { roomsRedesigned } from './preview';
-import { contentFor } from './content';
+import { contentFor, meetContentFor } from './content';
 
 let bundle: typeof Bundle | null = null;
 let loading: Promise<boolean> | null = null;
@@ -46,3 +46,10 @@ export const commitLevel = (level: number): void => {
 
 /** The loaded chunk, if the current visit to `level` plays it; null for the classic rooms. */
 export const newRoomsFor = (level: number): typeof Bundle | null => (committed.has(level) ? bundle : null);
+
+/**
+ * Whether the current visit to `level` has the ATHLETE room and the Performance Director in the hub: it plays the
+ * redesigned rooms and the level has meet content. A visit that fell back to the classic rooms (the chunk late or
+ * failed) has neither, and plays exactly as before: the classic hub, its athlete, TESTING open from the start.
+ */
+export const meetRoomFor = (level: number): boolean => newRoomsFor(level) !== null && meetContentFor(level) !== undefined;

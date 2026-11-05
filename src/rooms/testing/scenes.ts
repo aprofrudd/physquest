@@ -255,8 +255,8 @@ const drawCycleScene = (ctx: CanvasRenderingContext2D, a: Area, s: SceneClock): 
   const y0 = ground - 31;
   const spin = motion(s, angle * (s.seconds / PREVIEW_SECONDS)) + (s.calm ? 0.6 : 0);
   if (s.large) drawTech(ctx, x0 - 30, ground, s);
-  const legColor = AISHA_COLORS[5] ?? '#303848';
-  const farLeg = '#202838';
+  const legColor = AISHA_COLORS[2] ?? '#e0b088'; // bare legs below her shorts, as in her other frames
+  const farLeg = '#a87850'; // the far leg in shadow
 
   // far leg behind the machine, the machine, then the near leg
   const hx = x0 + saddle.x;
@@ -286,6 +286,8 @@ const drawCycleScene = (ctx: CanvasRenderingContext2D, a: Area, s: SceneClock): 
   const shoulderX = x0 + saddle.x + 6;
   const shoulderY = y0 + saddle.y - 6 + bob;
   thickLine(ctx, hx, hy, shoulderX, shoulderY, 4, AISHA_COLORS[3] ?? '#c83030');
+  ctx.fillStyle = AISHA_COLORS[5] ?? '#303848'; // her shorts, at the hip over the top of the thigh
+  ctx.fillRect(Math.round(hx), Math.round(hy), 4, 3);
   drawLimb(ctx, shoulderX, shoulderY + 1, x0 + grips.x, y0 + grips.y, 5, 5, -1, 2, AISHA_COLORS[2] ?? '#e0b088');
   paintGrid(ctx, HEAD_RIGHT, Math.round(shoulderX - 6), Math.round(shoulderY - 9), AISHA_COLORS);
   if (power > 0.6 && !s.calm) {

@@ -187,7 +187,7 @@ export const createLevelSelectScene = (
       const headerW = measureText(header, 2);
       drawText(ctx, header, (GAME_W - headerW) / 2, HEADER_Y, pal.colors[0], 2);
 
-      // Subline: coach name, or a celebration once every sport is cleared
+      // Subline: the player's name (a sport scientist), or a celebration once every sport is cleared
       if (gameState.gameComplete) {
         const text = 'ALL LEVELS COMPLETE';
         const textW = measureText(text) - 1; // visible width, minus the trailing gap
@@ -198,7 +198,7 @@ export const createLevelSelectScene = (
         drawText(ctx, text, startX + starW + gap, SUBLINE_Y, pal.colors[2]);
         drawStar(ctx, startX + starW + gap + textW + gap, SUBLINE_Y, pal.colors[1], pal.colors[5]);
       } else if (gameState.playerName) {
-        const nameText = `COACH ${gameState.playerName}`;
+        const nameText = `SPORT SCIENTIST ${gameState.playerName}`;
         drawText(ctx, nameText, (GAME_W - measureText(nameText)) / 2, SUBLINE_Y, pal.colors[2]);
       }
 

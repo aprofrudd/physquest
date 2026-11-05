@@ -1,19 +1,13 @@
 // The people of the Testing Lab, as 16x16 pixel art: Aisha in the poses the tests need (running, standing,
-// hands on hips, spent) and the technician with a clipboard. Drawn from text so each frame can be read and
-// edited as a picture. Letters: k outline, h hair, s skin, r top, y trim, d shorts and legs, w shoes. Her
+// hands on hips, spent; a ponytail with a yellow tie, a racing vest, shorts, bare legs) and the technician with a
+// clipboard. Drawn from text so each frame can be read and edited as a picture. Letters: k outline, h hair, s skin,
+// r vest, y trim, d shorts, w shoes. Her
 // riding pose is built in scenes.ts from the head cut-out below and drawn limbs.
-import { createPixels, type Grid } from './pixels';
+import { AISHA_PALETTE } from '../../data/sprites';
+import { createPixels, toSprite, type Grid } from './pixels';
 
-/** Aisha's colours (the same as the athlete in the overworld: dark hair, red top, yellow trim). */
-export const AISHA_COLORS: readonly string[] = [
-  '#080808', // 0 outline
-  '#583828', // 1 hair
-  '#e0b088', // 2 skin
-  '#c83030', // 3 top
-  '#f0d040', // 4 trim
-  '#303848', // 5 shorts and legs
-  '#f8f8f0', // 6 shoes
-];
+/** Aisha's colours, shared with her overworld sprites (AISHA_PALETTE): dark hair, red vest, yellow trim. */
+export const AISHA_COLORS: readonly string[] = AISHA_PALETTE.slice(0, 7); // outline, hair, skin, vest, trim, shorts, shoes
 
 /** The technician's colours: white coat, fair hair, a brown clipboard. */
 export const TECH_COLORS: readonly string[] = [
@@ -45,7 +39,7 @@ const RUN_STRIDE = art([
   '......kkkkk.....',
   '.....khhhhhk....',
   '...kkhhhhhhhk...',
-  '..khhhhhhssksk..',
+  '..khhyhhhssksk..',
   '..kkhhhhsssssk..',
   '....kkkhsskssk..',
   '.....kkkksssk...',
@@ -55,8 +49,8 @@ const RUN_STRIDE = art([
   '....kkkrrrrkssk.',
   '.....kkddddkkk..',
   '....kkdddddkk...',
-  '...kdddk.kddk...',
-  '..kddkk...kdwk..',
+  '...ksssk.kssk...',
+  '..ksskk...kswk..',
   '..kwwk....kwwwk.',
 ]);
 
@@ -65,7 +59,7 @@ const RUN_PASS = art([
   '.....khhhhhk....',
   '....khhhhhhhk...',
   '..kkhhhhhssksk..',
-  '.khhhhhhsssssk..',
+  '.khhhyhhsssssk..',
   '..kkkkhhsskssk..',
   '.....kkkksssk...',
   '....kkrrrrrkk...',
@@ -74,8 +68,8 @@ const RUN_PASS = art([
   '....kkrrrrrkk...',
   '.....kkddddk....',
   '.....kddddddk...',
-  '.....kddkkddk...',
-  '.....kddk.kdk...',
+  '.....ksskkssk...',
+  '.....kssk.ksk...',
   '....kwwwk.kwwk..',
 ]);
 
@@ -84,7 +78,7 @@ const RUN_FLIGHT = art([
   '......kkkkk.....',
   '.....khhhhhk....',
   '..kkkhhhhhhhk...',
-  '.khhhhhhhssksk..',
+  '.khhhyhhhssksk..',
   '..kkkhhhsssssk..',
   '....kkkhsskssk..',
   '.....kkkksssk...',
@@ -93,8 +87,8 @@ const RUN_FLIGHT = art([
   '..kkkkrrrrrksk..',
   '.....kkdddkkssk.',
   '....kkdddddkkk..',
-  '..kkdddk.kddkk..',
-  '.kwwkkk...kddwk.',
+  '..kksssk.ksskk..',
+  '.kwwkkk...ksswk.',
   '.kwk.......kwwk.',
 ]);
 
@@ -104,7 +98,7 @@ const STAND = art([
   '.....khhhhhk....',
   '....khhhhhhhk...',
   '..kkhhhhhssksk..',
-  '.khhhhhhsssssk..',
+  '.khhhyhhsssssk..',
   '..kkkkhhsskssk..',
   '.....kkkksssk...',
   '....kkrrrrrkk...',
@@ -113,8 +107,8 @@ const STAND = art([
   '....kkrrrrrkk...',
   '.....kkddddk....',
   '.....kddddddk...',
-  '.....kddkkddk...',
-  '.....kddk.kdk...',
+  '.....ksskkssk...',
+  '.....kssk.ksk...',
   '....kwwwk.kwwk..',
 ]);
 
@@ -125,7 +119,7 @@ const HIPS = [
     '.....khhhhhk....',
     '....khhhhhhhk...',
     '..kkhhhhhssksk..',
-    '.khhhhhhsssssk..',
+    '.khhhyhhsssssk..',
     '..kkkkhhsskssk..',
     '.....kkkksssk...',
     '....kkrrrrrkk...',
@@ -134,8 +128,8 @@ const HIPS = [
     '...kkkrrrrrrk...',
     '.....kkddddk....',
     '.....kddddddk...',
-    '.....kddkkddk...',
-    '.....kddk.kdk...',
+    '.....ksskkssk...',
+    '.....kssk.ksk...',
     '....kwwwk.kwwk..',
   ]),
   art([
@@ -143,7 +137,7 @@ const HIPS = [
     '.....khhhhhk....',
     '....khhhhhhhk...',
     '..kkhhhhhssksk..',
-    '.khhhhhhsssssk..',
+    '.khhhyhhsssssk..',
     '..kkkkhhsskssk..',
     '.....kkkksssk...',
     '....kkrrrrrkk...',
@@ -152,8 +146,8 @@ const HIPS = [
     '...kkkrrrrrrk...',
     '.....kkddddk....',
     '.....kddddddk...',
-    '.....kddkkddk...',
-    '.....kddk.kdk...',
+    '.....ksskkssk...',
+    '.....kssk.ksk...',
     '....kwwwk.kwwk..',
   ]),
 ];
@@ -174,8 +168,8 @@ const SPENT = [
     '..krrrrrrkskk...',
     '...kkddddkssk...',
     '...kddkkddkk....',
-    '...kddk.kddk....',
-    '...kddk..kdk....',
+    '...kssk.kssk....',
+    '...kssk..ksk....',
     '..kwwwk.kwwk....',
   ]),
   art([
@@ -192,8 +186,8 @@ const SPENT = [
     '..krrrrrrkskk...',
     '...kkddddkssk...',
     '...kddkkddkk....',
-    '...kddk.kddk....',
-    '...kddk..kdk....',
+    '...kssk.kssk....',
+    '...kssk..ksk....',
     '..kwwwk.kwwk....',
   ]),
 ];
@@ -206,6 +200,11 @@ export const RUN_FRAMES_LEFT: readonly Grid[] = RUN_FRAMES.map(mirror);
 export const STAND_RIGHT: Grid = STAND;
 export const HIPS_RIGHT: readonly Grid[] = HIPS;
 export const SPENT_RIGHT: readonly Grid[] = SPENT;
+
+/** Her running frames as drawSprite sprites (0 = see-through), for rooms that draw with drawSprite. Made once. */
+export const RUN_SPRITES: readonly number[][][] = RUN_FRAMES.map(toSprite);
+/** Colours for RUN_SPRITES (and for AISHA_SPRITE in data/sprites). */
+export const AISHA_SPRITE_COLORS: string[] = ['', ...AISHA_PALETTE];
 
 // ---- the technician (facing right, clipboard at the chest) --------------------------------------------------------
 

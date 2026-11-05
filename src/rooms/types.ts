@@ -7,6 +7,11 @@ import type { DialogueSystem } from '../systems/Dialogue';
 export interface RoomResult {
   dataQuality: number;
   variableAccuracy: number;
+  /**
+   * The ATHLETE room only: good questions asked out of the asks allowed. The scene records it (best kept) instead of
+   * a stat; dataQuality and variableAccuracy are then ignored.
+   */
+  overview?: { good: number; of: number };
 }
 
 /**

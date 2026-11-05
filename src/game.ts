@@ -22,7 +22,8 @@ import { createLevelClearScene } from './scenes/LevelClearScene';
 import { GAME_W, GAME_H } from './render/DialogueBox';
 import { mountConsole } from './ui/console';
 import { sfx } from './audio/Sfx';
-import { commitLevel, levelHasNewRooms, loadRooms, roomsFailed, roomsLoaded } from './rooms/loader';
+import { commitLevel, levelHasNewRooms, loadRooms, meetRoomFor, roomsFailed, roomsLoaded } from './rooms/loader';
+import { setNameSource } from './engine/nameToken';
 import { announce } from './ui/announce';
 import { newRoomsOn } from './rooms/preview';
 import { LEVELS, allPlayableCleared } from './data/levels';
@@ -39,6 +40,7 @@ export const startGame = (root: HTMLElement) => {
   ctx.imageSmoothingEnabled = false;
 
   const gameState = createInitialState();
+  setNameSource(() => gameState.playerName); // {NAME} in any line is the name typed at name entry
   // A level pick waiting for the redesigned rooms' chunk goes stale when a newer pick, a cursor move on the level
   // select or any scene change comes first
   let pick = 0;
@@ -88,6 +90,7 @@ export const startGame = (root: HTMLElement) => {
     commitLevel(levelIndex); // this visit plays the redesigned rooms only if they are ready now
     stashLevel(gameState); // keep any unfinished progress in the level we're leaving
     activateLevel(gameState, levelIndex);
+    gameState.meetRoom = meetRoomFor(levelIndex); // the Performance Director and the ATHLETE room, with the new rooms
     saveGame(gameState);
     sceneManager.switchTo('overworld');
   };

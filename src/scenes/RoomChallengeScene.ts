@@ -14,13 +14,24 @@ import { mapFor } from '../data/rooms';
 import { LEVEL_DATA, type SportData } from '../data/sports';
 import { instrumentFor } from '../rooms';
 import type { RoomHost, RoomInstrument, RoomResult } from '../rooms/types';
-import { calcStat, nextRoom, roomKeyForMap, ROOM_LABEL, ROOM_MAP, ROOM_STAT } from '../state/GameState';
+import {
+  allRoomsComplete,
+  calcStat,
+  doorLabel,
+  MEET_MAP,
+  meetOf,
+  nextDoor,
+  roomKeyForMap,
+  ROOM_MAP,
+  ROOM_STAT,
+} from '../state/GameState';
 import { sfx } from '../audio/Sfx';
 
 type ChallengePhase = 'intro' | 'challenge' | 'feedback' | 'complete';
-type RoomType = 'room1' | 'room2' | 'room3' | 'room4';
+type RoomType = 'room1' | 'room2' | 'room3' | 'room4' | 'meet';
 
 const HEADERS: Record<RoomType, string> = {
+  meet: 'ATHLETE OVERVIEW',
   room1: 'TEST SELECTION',
   room2: 'VARIABLE IDENTIFICATION',
   room3: 'TRAINING PRESCRIPTION',
@@ -54,11 +65,12 @@ export const createRoomChallengeScene = (
 ): Scene & { setRoom(room: string): void; debug(): unknown; inProgress(): boolean } => {
   let phase: ChallengePhase = 'intro';
   let roomType: RoomType = 'room1';
-  let roomKey: RoomKey = 'testSelection';
+  let roomKey: RoomKey | null = 'testSelection'; // null in the ATHLETE room, which raises no stat
   let wasComplete = false; // finished before this visit: a replay can only raise the stat
   let sport: SportData = LEVEL_DATA[0]!;
   let dataQuality = 0;
   let variableAccuracy = 0;
+  let overview: { good: number; of: number } | null = null; // the ATHLETE room's result
   let headerText = '';
   let instrument: RoomInstrument | null = null; // a redesigned room runs the challenge instead of the lists below
   let clock = 0; // seconds since the room opened, for the background's animation
@@ -155,7 +167,9 @@ export const createRoomChallengeScene = (
         done = true;
         dataQuality = result.dataQuality;
         variableAccuracy = result.variableAccuracy;
-        completeRoom();
+        overview = result.overview ?? null;
+        if (roomType === MEET_MAP) completeMeet();
+        else completeRoom();
       },
       firstVisit: !rulesRead.has(seenKey),
       rulesRead: () => {
@@ -167,17 +181,19 @@ export const createRoomChallengeScene = (
 
   const startRoom = (room: string) => {
     const key = roomKeyForMap(room);
-    if (!key) {
+    const meet = room === MEET_MAP;
+    if (!key && !meet) {
       sceneManager.switchTo('overworld');
       return;
     }
     roomKey = key;
-    roomType = ROOM_MAP[key];
-    wasComplete = gameState.roomProgress[key];
+    roomType = key ? ROOM_MAP[key] : MEET_MAP;
+    wasComplete = key ? gameState.roomProgress[key] : meetOf(gameState).met;
     sport = LEVEL_DATA[gameState.currentLevel] ?? LEVEL_DATA[0]!;
     phase = 'intro';
     dataQuality = 0;
     variableAccuracy = 0;
+    overview = null;
     headerText = HEADERS[roomType];
     clock = 0;
     instrument = null;
@@ -186,6 +202,11 @@ export const createRoomChallengeScene = (
     if (make) {
       phase = 'challenge';
       instrument = make(makeHost());
+      return;
+    }
+    if (meet) {
+      // The ATHLETE room only exists in a visit that plays the redesigned rooms, so this is never reached in play
+      sceneManager.switchTo('overworld');
       return;
     }
 
@@ -285,7 +306,38 @@ export const createRoomChallengeScene = (
     );
   };
 
+  /** What to do next, once this room is recorded: the next door, or the arena. */
+  const nextLine = (): string => {
+    const next = nextDoor(gameState);
+    if (next === 'boss' || allRoomsComplete(gameState)) {
+      // classic visits keep their old wording; a level with an ATHLETE room has five rooms
+      return gameState.meetRoom ? 'Every room is done: the ARENA is open!' : 'All four rooms are done: the ARENA is open!';
+    }
+    return `Next up: the ${doorLabel(next)} room. You can replay any room to raise its score.`;
+  };
+
+  /** The ATHLETE room: the athlete is met (TESTING opens) and the best overview is kept. No stat changes. */
+  const completeMeet = () => {
+    phase = 'complete';
+    const record = meetOf(gameState);
+    const good = overview?.good ?? 0;
+    const of = overview?.of ?? 0;
+    const firstTime = !record.met;
+    const better = firstTime || good > record.best || record.of === 0; // of 0: met before overviews were scored
+    record.met = true;
+    if (better) {
+      record.best = good;
+      record.of = of;
+    }
+    let message: string;
+    if (firstTime) message = `Room complete! Your athlete overview: ${good}/${of}. ${nextLine()}`;
+    else if (better) message = `New best! Overview now ${good}/${of}.`;
+    else message = `Your best overview stays at ${record.best}/${record.of}.`;
+    say(message, undefined, finish, { exitLabel: '' });
+  };
+
   const completeRoom = () => {
+    if (!roomKey) return;
     phase = 'complete';
     gameState.roomProgress[roomKey] = true;
 
@@ -301,12 +353,8 @@ export const createRoomChallengeScene = (
 
     let message: string;
     if (!wasComplete) {
-      // This room is recorded, so nextRoom is what is left: the room to do next, or nothing, which opens the arena
-      const next = nextRoom(gameState);
-      const what = next
-        ? `Next up: the ${ROOM_LABEL[next]} room. You can replay any room to raise its score.`
-        : 'All four rooms are done: the ARENA is open!';
-      message = `Room complete! Your ${label} stat is now ${percent(statValue)}%. ${what}`;
+      // This room is recorded, so the next door is what is left: the room to do next, or the arena
+      message = `Room complete! Your ${label} stat is now ${percent(statValue)}%. ${nextLine()}`;
     } else if (percent(statValue) > percent(previous)) {
       message = `New best! ${label} now ${percent(best)}%`;
     } else {

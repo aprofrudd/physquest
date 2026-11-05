@@ -5,6 +5,7 @@
 // A press that starts and ends between two read() calls still reports as
 // pressed AND held for one step, so quick taps are never lost.
 
+import { fillName } from './nameToken';
 export type Button = 'up' | 'down' | 'left' | 'right' | 'a' | 'b' | 'start' | 'select';
 
 export const BUTTONS: readonly Button[] = ['up', 'down', 'left', 'right', 'a', 'b', 'start', 'select'];
@@ -152,9 +153,9 @@ export const consoleLabel: ButtonLabel = button => CONSOLE_LABEL[button];
 // Prompt text names buttons as {A}, {B}, {START}, {SELECT}, {DPAD} or one direction ({UP}, {DOWN}, {LEFT}, {RIGHT})
 const BUTTON_TOKEN = /\{(A|B|START|SELECT|DPAD|UP|DOWN|LEFT|RIGHT)\}/g;
 
-/** Replace the button tokens in `text` with the names `name` gives them. */
+/** Replace the button tokens in `text` with the names `name` gives them, and {NAME} with the player's name. */
 export const fillButtonNames = (text: string, name: ButtonLabel): string =>
-  text.replace(BUTTON_TOKEN, (_, key: string) => name(key === 'DPAD' ? 'dpad' : (key.toLowerCase() as Button)));
+  fillName(text).replace(BUTTON_TOKEN, (_, key: string) => name(key === 'DPAD' ? 'dpad' : (key.toLowerCase() as Button)));
 
 export const createInput = () => {
   const sources = record(() => new Set<string>());
