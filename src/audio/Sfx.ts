@@ -109,10 +109,13 @@ const createSfx = (): Sfx => {
     if (idleTimer !== undefined) clearTimeout(idleTimer);
     idleTimer = setTimeout(suspend, IDLE_SUSPEND_MS);
   };
-  const wake = (then: SfxName | null) => {
+  // `gesture`: called from inside a user-gesture handler. A gesture always issues its own resume(): one asked for
+  // without activation (a touch pointerdown, or a sound after an interruption) can stay pending for ever, and
+  // waiting on it would leave every later tap unable to start the audio.
+  const wake = (then: SfxName | null, gesture = false) => {
     if (!ctx) return;
     pending = then ?? pending;
-    if (resuming) return;
+    if (resuming && !gesture) return;
     resuming = true;
     void ctx
       .resume()
@@ -137,8 +140,8 @@ const createSfx = (): Sfx => {
 
   const play = (name: SfxName) => {
     if (muted || !ctx || !master) return;
-    if (ctx.state === 'suspended' && started) {
-      wake(name); // asleep after a quiet spell: the sound plays as soon as it is awake
+    if (ctx.state !== 'running' && ctx.state !== 'closed' && started) {
+      wake(name); // asleep after a quiet spell (or 'interrupted' on iOS): the sound plays as soon as it is awake
       return;
     }
     if (ctx.state !== 'running') return;
@@ -190,7 +193,7 @@ const createSfx = (): Sfx => {
     unlock() {
       const c = ensureContext();
       if (!c) return;
-      if (c.state !== 'running') wake(null);
+      if (c.state !== 'running') wake(null, true);
       else {
         started = true;
         armIdle();
