@@ -17,6 +17,7 @@ const { objectivesSummary } = await import('../src/render/OverworldHud');
 const { DIRECTOR_HUB } = await import('../src/data/rooms/hub');
 const { HUB_MAP } = await import('../src/data/maps');
 const { BOARD_KEY, BOARD_RECT, BOARD_SPOTS } = await import('../src/data/supportBoard');
+const { isSolid } = await import('../src/render/TileMap');
 
 const running = () => {
   const s = GS.createInitialState();
@@ -83,7 +84,7 @@ describe('the SUPPORT BOARD', () => {
     for (const spot of BOARD_SPOTS) {
       expect(DIRECTOR_HUB.equipment).toContainEqual(spot);
       expect(GS.ROOM_KEYS).toBeDefined();
-      expect(DIRECTOR_HUB.tiles[spot.y + 1]![spot.x], 'a floor tile to stand on').toBe(1);
+      expect(isSolid(DIRECTOR_HUB.tiles[spot.y + 1]![spot.x]!), 'a floor tile to stand on').toBe(false);
     }
     expect(HUB_MAP.equipment.some(e => e.dialogueKey === BOARD_KEY)).toBe(false);
     // on the wall over tiles 1-3, clear of the corner tile and the SELECT hint (x 68 or more)

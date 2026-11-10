@@ -15,6 +15,7 @@ vi.mock('../../src/render/TileMap', async importOriginal => {
 });
 
 await import('../../src/data/rooms');
+await import('../../src/rooms/bundle'); // the redesigned rooms' tiles register when their chunk loads
 const { PALETTES } = await import('../../src/render/Palettes');
 
 const PALETTE_OF: Record<number, number> = { 1: 6, 2: 6, 3: 6, 4: 6 }; // palette colours for tiles without their own

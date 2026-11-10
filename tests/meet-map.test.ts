@@ -77,10 +77,21 @@ describe('the ATHLETE room map', () => {
 });
 
 describe('the Distance Running hub', () => {
-  it('is the classic hub plus the ATHLETE door and its walls, with the Director where the athlete stood', () => {
-    let diffs = 0;
-    for (let y = 0; y < 14; y++) for (let x = 0; x < 16; x++) if (DIRECTOR_HUB.tiles[y]![x] !== HUB_MAP.tiles[y]![x]) diffs++;
-    expect(diffs).toBe(3); // wall, door, wall on the bottom row
+  it('walks like the classic hub plus the ATHLETE door and its walls, with the Director where the athlete stood', () => {
+    expect(DIRECTOR_HUB.tiles.length).toBe(HUB_MAP.tiles.length);
+    // The lobby has its own tiles, but what can be walked on differs from the classic hub only where intended: the
+    // ATHLETE door's two walls on the bottom row (the door itself stays walkable), and the two equipment stations, now solid furniture
+    const diffs: string[] = [];
+    for (let y = 0; y < 14; y++) {
+      expect(DIRECTOR_HUB.tiles[y]!.length).toBe(HUB_MAP.tiles[y]!.length);
+      for (let x = 0; x < 16; x++) {
+        if (isSolid(DIRECTOR_HUB.tiles[y]![x]!) !== isSolid(HUB_MAP.tiles[y]![x]!)) diffs.push(`${x},${y}`);
+      }
+    }
+    expect(diffs).toEqual(['2,7', '13,7', '2,12', '4,12']);
+    // the engine finds doors and the NPC by their classic ids
+    for (const d of HUB_MAP.doors) expect(DIRECTOR_HUB.tiles[d.y]![d.x]).toBe(HUB_MAP.tiles[d.y]![d.x]);
+    expect(DIRECTOR_HUB.tiles[5]![7]).toBe(T.NPC);
     expect(DIRECTOR_HUB.tiles[MEET_DOOR.y]![MEET_DOOR.x]).toBe(T.DOOR);
     expect(DIRECTOR_HUB.npcs).toEqual([{ x: 7, y: 5, dialogueKey: DIRECTOR_KEY }]);
     const open = reachable(DIRECTOR_HUB.tiles, { x: 7, y: 7 });

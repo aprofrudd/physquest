@@ -26,7 +26,7 @@ const { mapFor } = await import('../../src/data/rooms');
 const { MEET_RUNNING } = await import('../../src/rooms/content/meet-running');
 const { loadSave } = await import('../../src/systems/SaveSystem');
 const { MEET_DOOR, MEET_RETURN } = await import('../../src/data/meetDoor');
-const { T } = await import('../../src/render/TileMap');
+const { T, isSolid } = await import('../../src/render/TileMap');
 
 beforeAll(() => {
   H.installFakeDom();
@@ -165,7 +165,7 @@ describe('the Distance Running hub', () => {
     expect(hub.npcs.map(n => n.dialogueKey)).toEqual(['hub_director']);
     expect(hub.doors).toContainEqual({ x: MEET_DOOR.x, y: MEET_DOOR.y, target: 'meet' });
     expect(hub.tiles[MEET_DOOR.y]![MEET_DOOR.x]).toBe(T.DOOR);
-    expect(hub.tiles[MEET_RETURN.y]![MEET_RETURN.x]).toBe(T.FLOOR);
+    expect(isSolid(hub.tiles[MEET_RETURN.y]![MEET_RETURN.x]!), 'a floor tile outside the ATHLETE door').toBe(false);
     expect(hub.describe).toMatch(/ATHLETE/);
     expect(mapFor('meet', 3)?.name).toBe('Athlete Room');
     for (const level of [0, 1, 2]) expect(mapFor('hub', level)?.npcs.map(n => n.dialogueKey)).toEqual(['hub_athlete']);
