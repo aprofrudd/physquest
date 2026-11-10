@@ -466,11 +466,16 @@ export const createOverworldScene = (
   };
 
   /** The queued talk (the ending): each speaker's pages in turn. B leaves it at once; it is not offered again. */
-  const playTalk = (parts: TalkPart[], index = 0) => {
+  const playTalk = (parts: TalkPart[], index = 0, fromEnd = false) => {
     const part = parts[index];
     if (!part) return;
     if (part.speaker === DIRECTOR_SPEAKER) faceDirector();
-    dialogue.showSequence([...part.pages], () => playTalk(parts, index + 1), () => {}, { speaker: part.speaker });
+    // LEFT on a part's first page goes back to the previous speaker's last page
+    dialogue.showSequence([...part.pages], () => playTalk(parts, index + 1), () => {}, {
+      speaker: part.speaker,
+      onBack: index > 0 ? () => playTalk(parts, index - 1, true) : undefined,
+      fromEnd,
+    });
   };
 
   const interact = () => {

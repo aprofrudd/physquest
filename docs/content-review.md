@@ -270,10 +270,10 @@ Added on 5 November 2026, not yet reviewed by Alan; the race model was retuned t
 | F7-F8 | Debrief: what worked (the SUPPORT BOARD) | "...your strongest score was X at NN%, and your weakest Y at NN%." (or all level) | `win.director.board`, `boardEven` |
 | F9-F10 | Debrief: was the change real (by EVALUATION, 70% or more is strong) | Last 400 m beat the typical error and the smallest worthwhile change; VO2max real but too small; the weak version: "claim with care... one race is not proof" | `win.director.real` |
 | F11 | Debrief: honest reflection, next steps (Table 4: what do you still need to know?) | "We never measured her D prime again, so we are inferring it grew... retest her critical speed and D prime" / track her last 400 m over several races, report to her coach in plain numbers, work on the weakest score | `win.director.next` |
-| F12 | Debrief: thanks | "Thank you, {NAME}... And thank you, Aisha, for trusting the process." / the rooms stay open, the ARENA for a rematch | `win.director.thanks` |
+| F12 | Debrief: thanks | "Thanks, {NAME}... And thanks to Aisha for putting her trust in us." / the rooms stay open, the ARENA for a rematch | `win.director.thanks` |
 | F13-F16 | Hub, Aisha (after a defeat, when the player picks BACK TO HUB) | too early, too late, rating too low, no A | `lose.athlete` |
-| F17-F21 | Hub, Dr Ellis (after a defeat) | rating too low (replay the TRAINING room) or "the timing of the kick"; the board's strongest and weakest; "The rooms are open..." | `lose.director` |
-| F22 | Dr Ellis when talked to after the case is won | "The case study is done, {NAME}..." | `directorAfter` |
+| F17-F21 | Hub, Dr Ellis (after a defeat) | rating too low (replay the TRAINING room) or "the timing of the kick"; the board's best and lowest; "The rooms are all still open..." | `lose.director` |
+| F22 | Dr Ellis when talked to after the case is won | "That's Aisha's case study done, {NAME}..." | `directorAfter` |
 
 Questions for Alan:
 - Answered (5 Nov): the rival's last lap is 72 s (20 km/h) with no earlier kick (Filipas et al. 2019, Figure 3), and the gauge refills depending on speed. Still to check: fading to 90% of CS and running with the pace again once a quarter has refilled; the recovery time constant (Skiba's, with DCP = share below CS x 250 W, about 12 min at 90% of CS); her kick at 5.7 + 0.3 x rating m/s (67-68 s laps).

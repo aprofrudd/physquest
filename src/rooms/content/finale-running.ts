@@ -138,39 +138,39 @@ export const FINALE_RUNNING: FinaleContent = {
     director: {
       // F5 (Table 4: were the aims and objectives achieved?)
       opening: [
-        "Congratulations, {NAME}. That's the case study done, so let's debrief, as we would after any block.",
-        'Our aim was a finish she can trust. She won the race to the line, but one race is one result: what else do we know?',
+        "Well done, {NAME}! That's the case study finished. Let's debrief it like we would after any training block.",
+        "We wanted her to have a finish she could rely on. She won the race to the line, but that's one race. What else can we actually say?",
       ],
       // F6 (Table 4: what were the main findings?)
       found: [
-        'The overview and needs analysis said her base was good but her finish let her down. The critical speed trials agreed: a D prime of only about 140 m.',
-        'So the plan put fast reps on fresh legs to build it. After the block her last 400 m went from 72 s to 70 s.',
+        'From the overview and needs analysis, her base was good and her finish let her down. The critical speed trials agreed, with a D prime of about 140 m.',
+        'So the plan put fast reps on fresh legs to build it, and after the block her last 400 m came down from 72 s to 70 s.',
       ],
       // F7 (Table 4: what worked and what did not?)
-      board: 'On the SUPPORT BOARD your strongest score was {STRONG} at {STRONG_PCT}%, and your weakest {WEAK} at {WEAK_PCT}%.',
+      board: 'Looking at the SUPPORT BOARD, your best score was {STRONG} at {STRONG_PCT}% and your lowest was {WEAK} at {WEAK_PCT}%.',
       // F8
-      boardEven: 'On the SUPPORT BOARD all four of your scores were level, at {STRONG_PCT}%.',
+      boardEven: 'On the SUPPORT BOARD, all four of your scores came out level at {STRONG_PCT}%.',
       real: {
         // F9 (Table 4: were the changes practically meaningful?)
         strong: [
-          'And you judged the change well: her last 400 m beat the typical error and the smallest worthwhile change. Real, and worth having.',
-          'Her VO2max rise was real but too small to matter. The finish was what changed.',
+          "You judged the change well, too. Her last 400 m beat both the typical error and the smallest worthwhile change, so it's real and it's worth having.",
+          'Her VO2max went up, but not by enough to matter. It was her finish that changed.',
         ],
         // F10
         weak: [
-          'Your EVALUATION was {EVAL_PCT}%, so claim with care. Her last 400 m did beat the typical error and the smallest worthwhile change.',
-          'But one race is not proof, and her VO2max rise was real but too small to matter. Judge each change against both before you report it.',
+          'Your EVALUATION was {EVAL_PCT}%, so be careful what you claim. Her last 400 m did beat the typical error and the smallest worthwhile change.',
+          "But one race doesn't prove much, and the VO2max rise was real but too small to matter. Check every change against both before you report it.",
         ],
       },
       // F11 (Table 4: what do you still need to know? How does it influence future practice?)
       next: [
-        'Honestly? We never measured her D prime again, so we are inferring it grew from her finish. Next block, retest her critical speed and D prime.',
-        'Then track her last 400 m over several races, write it up for her coach in plain numbers, and work on your weakest score.',
+        "One gap, though. We never re-measured her D prime, so we're guessing it grew from how she finished. Next block, retest her critical speed and D prime.",
+        'After that, track her last 400 m over a few races, write it up for her coach in plain numbers, and work on your weakest score.',
       ],
       // F12
       thanks: [
-        'Thank you, {NAME}. Good support, start to finish. And thank you, Aisha, for trusting the process.',
-        'The rooms stay open if you want to sharpen a score, and the ARENA is there for a rematch.',
+        "Thanks, {NAME}. That was proper support from start to finish. And thanks to Aisha for putting her trust in us.",
+        "The rooms are still open if you want to improve a score, and the ARENA's there if you fancy a rematch.",
       ],
     },
   },
@@ -189,22 +189,22 @@ export const FINALE_RUNNING: FinaleContent = {
     director: {
       // F17
       rating: [
-        "Not today, {NAME}. Her rating couldn't beat the TARGET, and it is mostly your {FOCUS} score: replay the {ROOM} room to raise it.",
+        "Not this time, {NAME}. Her rating couldn't beat the TARGET, and that's mostly your {FOCUS} score. Replay the {ROOM} room to bring it up.",
       ],
       // F18
-      kick: ['Not today, {NAME}, but a race is data too. The science was good enough: it was the timing of the kick.'],
+      kick: ["Not this time, {NAME}, but we'll learn from it. The science was good enough. It was the timing of the kick that cost her."],
       // F19
-      board: 'On the SUPPORT BOARD your strongest score is {STRONG} at {STRONG_PCT}%, and your weakest {WEAK} at {WEAK_PCT}%.',
+      board: 'On the SUPPORT BOARD, your best score is {STRONG} at {STRONG_PCT}% and your lowest is {WEAK} at {WEAK_PCT}%.',
       // F20
-      boardEven: 'On the SUPPORT BOARD all four of your scores are level, at {STRONG_PCT}%.',
+      boardEven: 'On the SUPPORT BOARD, all four of your scores are level at {STRONG_PCT}%.',
       // F21
-      stay: ['The rooms are open. Sharpen a score or rethink the kick, then take her back to the ARENA.'],
+      stay: ['The rooms are all still open. Work on a score or rethink when she kicks, then take her back to the ARENA.'],
     },
   },
 
   // F22
   directorAfter: [
-    "The case study is done, {NAME}. The rooms stay open if you want to sharpen a score, and the ARENA is there for a rematch.",
+    "That's Aisha's case study done, {NAME}. The rooms are still open if you want to improve a score, and the ARENA's there if you fancy a rematch.",
   ],
 };
 

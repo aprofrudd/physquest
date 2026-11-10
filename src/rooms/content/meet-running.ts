@@ -12,23 +12,23 @@ export const MEET_RUNNING: MeetContent = {
 
   // P1-P5 (P4 is now two pages, P4a and P4b, so {A} and the stats fit)
   directorWelcome: [
-    "Welcome, {NAME}. I'm Dr Ellis, Performance Director here at the Sports Performance Centre. Glad to have you with us.",
-    "You're our new sport scientist. Your first athlete is Aisha, a 5000 m runner, and the rooms here are where you'll support her.",
-    'Take them in order: ATHLETE, TESTING, DATA, TRAINING, then ANALYSIS. Finish all five and the ARENA opens for the showdown.',
-    'Walk through a door to enter a room, and press {A} to talk. The arrow points to the next door. {SELECT} shows objectives.',
-    '{START} pauses and {B} leaves any chat. Good work in each room raises your support scores on the board. Your work saves as you go.',
-    'Aisha is waiting in the ATHLETE room. Go and meet her, and get to know her before you test anything.',
+    "Ah, {NAME}, welcome! I'm Dr Ellis, the Performance Director here at the Sports Performance Centre. Really glad you made it.",
+    "You'll be starting with Aisha. She runs the 5000 m, and these rooms are where you'll do your work with her.",
+    'Go through them in order: ATHLETE, TESTING, DATA, TRAINING, then ANALYSIS. Get all five done and the ARENA opens for the showdown.',
+    'Walk through a door to go into a room, and press {A} to talk to people. The arrow shows the next door, and {SELECT} brings up your objectives.',
+    "{START} pauses and {B} gets you out of any chat. The better you do in each room, the higher your scores on the board. It all saves as you go.",
+    "Aisha's in the ATHLETE room waiting for you. Go and say hello, and get to know her a bit before you think about testing anything.",
   ],
 
   // P6
   directorReminder: [
-    'Aisha is waiting in the ATHLETE room, {NAME}. Get to know her first: her goals, her history, her week. Tests can wait.',
+    "Aisha's still waiting in the ATHLETE room, {NAME}. Have a proper chat with her first. Testing can wait.",
   ],
 
   // P7, P8 ({ROOM} is the next room's hub sign; it can be the ARENA, so the line never says "the {ROOM} room")
   directorAfter: [
-    'Good work so far, {NAME}. Next stop: {ROOM}. The arrow points the way.',
-    '{SELECT} shows your objectives any time.',
+    "You're getting on well, {NAME}. {ROOM} is next, just follow the arrow.",
+    'And {SELECT} brings up your objectives if you lose track.',
   ],
 
   // N1-N9: the needs chat (Phase 2, needs analysis; Ruddock et al. 2018, Table 2). It names no test: choosing
@@ -36,43 +36,43 @@ export const MEET_RUNNING: MeetContent = {
   needs: {
     // N1
     intro: [
-      "Good to see you again, {NAME}. You've met Aisha, so before any testing, let's work out what she needs.",
-      "First the event, then Aisha herself, then what testing must tell us. I'll ask, you answer.",
+      "Good to see you again, {NAME}. Now you've met Aisha, let's have a think about what she actually needs before anyone runs a test.",
+      "I've got a few questions for you. We'll start with the race itself, then Aisha, then what we want testing to find out.",
     ],
     questions: [
       {
         // N2, Table 2: physiological demands of the sport; external and internal demands
         id: 'demands',
-        ask: ['Start with the event. What does a 5000 m race demand most?'],
+        ask: ["Let's start with the race itself. What does a 5000 m mostly come down to?"],
         options: [
           {
             text: 'Mostly aerobic, fast finish',
             good: true,
             reply: [
-              'Yes. Most of the energy comes from aerobic metabolism, at a high share of her VO2max for the whole race.',
-              'And races are often won on the last lap, so the finish matters too.',
-              'We can describe it as external demands, like pace, and internal ones, like heart rate, VO2 and lactate.',
+              "That's right. It's mostly aerobic, and she's working at a high percentage of her VO2max the whole way round.",
+              'But a lot of races get decided on the last lap, so the finish counts too.',
+              'You can think of it as external demands, like pace, and internal ones, like heart rate, VO2 and lactate.',
             ],
           },
           {
             text: 'Mostly sprint power',
             good: false,
             reply: [
-              'Not quite. A 5000 m lasts a quarter of an hour, so most of the energy is aerobic. Speed matters at the finish, on top of a big aerobic engine.',
+              "Not really. A 5000 m takes about a quarter of an hour, so most of the energy is aerobic. Speed matters at the end, but she needs a big engine first.",
             ],
           },
           {
             text: 'Strength and muscle size',
             good: false,
             reply: [
-              'Strength helps keep her robust, but a 5000 m is decided by her aerobic engine and her finish, not by how much she can lift.',
+              "Strength work helps keep her robust, but it won't decide a 5000 m. That comes down to her aerobic engine and her finish.",
             ],
           },
           {
             text: 'A steady pace, no surges',
             good: false,
             reply: [
-              'Not in her races. Championship 5000 m races often surge, and many are won on the last lap. She needs a high steady pace and a fast finish.',
+              "Not the races she's in. Championship 5000s often surge, and plenty are won on the last lap. She has to hold a high pace and still have a finish.",
             ],
           },
         ],
@@ -80,35 +80,35 @@ export const MEET_RUNNING: MeetContent = {
       {
         // N3, Table 2: strengths and areas for improvement (from the athlete overview, Table 1)
         id: 'strengths',
-        ask: ['Now Aisha. From your first meeting, where is she strong, and where do races slip away?'],
+        ask: ["Right, Aisha. From your chat with her, where's she strong, and where are races getting away from her?"],
         options: [
           {
             text: 'Good base; loses the last lap',
             good: true,
             reply: [
-              "That's my reading too. Years of 80 to 90 km weeks have given her a good aerobic base.",
-              'She holds the pace all race, then gets outkicked in the final 400 m.',
+              "I'd agree. Years of 80 to 90 km weeks have given her a good aerobic base.",
+              "She can hold the pace all race, then someone kicks in the last 400 m and she can't go with them.",
             ],
           },
           {
             text: 'Weak base; fades mid-race',
             good: false,
             reply: [
-              "Not from what she told you. She holds the pace all race on 80 to 90 km a week. It's the last lap where races slip away.",
+              "That's not what she told you. She holds the pace all race on 80 to 90 km a week. It's the last lap where she loses it.",
             ],
           },
           {
             text: 'She starts too fast',
             good: false,
             reply: [
-              "She didn't say that. She holds the pace well. It's the kick in the last 300 to 400 m that beats her.",
+              "She didn't mention that. She paces it well. It's the kick over the last 300 to 400 m that gets her.",
             ],
           },
           {
             text: 'No weak spot yet',
             good: false,
             reply: [
-              'Everyone has one, and she named hers: when someone kicks with 300 m to go, she has nothing extra.',
+              "There's always something, and she told you hers. When someone goes with 300 m to go, she's got nothing extra.",
             ],
           },
         ],
@@ -116,35 +116,35 @@ export const MEET_RUNNING: MeetContent = {
       {
         // N4, Table 2: what mechanisms are well developed and what need improving (as a hypothesis, before testing)
         id: 'hypothesis',
-        ask: ["So what might she need? It's a working idea for now, and testing has to check it."],
+        ask: ["So what do you reckon she needs? We're only guessing at this stage, and testing will tell us if we're right."],
         options: [
           {
             text: 'Her finish, on a sound base',
             good: true,
             reply: [
-              'Good, as a working idea. Her base looks sound, and she does no sprint work at all, so her finishing speed may be the gap.',
-              'Her aerobic paces need measuring too, so every session is set at the right intensity. Testing will tell us if we are right.',
+              "I think so too, for now. Her base looks fine and she does no sprint work at all, so her finishing speed could well be what's missing.",
+              "We'll need her aerobic paces as well, so every session's pitched at the right intensity. Then testing can tell us if we're right.",
             ],
           },
           {
             text: 'Just more miles',
             good: false,
             reply: [
-              "She's already on 85 km a week. More of the same is unlikely to give her a kick, and it adds injury risk after her stress fracture.",
+              "She's already doing 85 km a week. More of the same probably won't give her a kick, and after her stress fracture it's an injury risk.",
             ],
           },
           {
             text: 'New racing shoes',
             good: false,
             reply: [
-              "She already races in carbon plates. Shoes won't explain why she has nothing extra on the last lap.",
+              "She's already racing in carbon plates. Shoes don't explain why she's got nothing left on the last lap.",
             ],
           },
           {
             text: 'Lose some weight',
             good: false,
             reply: [
-              'Nothing she told you points to that, and pushing a runner to lose weight can harm her health. Stick to what we know.',
+              "Nothing she told you suggests that, and pushing a runner to lose weight can damage her health. Let's stick to what we actually know.",
             ],
           },
         ],
@@ -152,35 +152,35 @@ export const MEET_RUNNING: MeetContent = {
       {
         // N5, Table 2: based on the needs analysis, what tests have you chosen (what must they measure)?
         id: 'measure',
-        ask: ['Last one. Before you choose a test, what must testing tell us?'],
+        ask: ['Last one. Before you pick any tests, what do we need them to tell us?'],
         options: [
           {
             text: 'Zones and finishing speed',
             good: true,
             reply: [
-              'Exactly. Her paces at her thresholds set her training zones, and how much she has above the pace she can sustain shows what she has for a kick.',
-              'Choose tests that are valid and reliable for a runner, and that answer that question.',
+              "Spot on. Her paces at her thresholds give us her training zones, and how much she's got above the pace she can sustain tells us what she has for a kick.",
+              'So pick tests that are valid and reliable for a runner and actually answer that.',
             ],
           },
           {
             text: 'Her VO2max, nothing else',
             good: false,
             reply: [
-              "VO2max shows the size of her engine, but on its own it doesn't set her training paces or show how fast she can finish.",
+              "VO2max tells you how big her engine is, but on its own it won't set her training paces or tell you how fast she can finish.",
             ],
           },
           {
             text: 'How strong her legs are',
             good: false,
             reply: [
-              'Strength can wait. Our question is about her paces and her finish, so testing must give us her training zones and her finishing speed.',
+              "Strength can wait for now. We're asking about her paces and her finish, so we need her training zones and her finishing speed.",
             ],
           },
           {
             text: 'Her body fat',
             good: false,
             reply: [
-              "That won't tell us why she loses the last lap, or how fast to train. We need her training zones and her finishing speed.",
+              "That won't tell us why she's losing on the last lap, or how fast she should train. We need her training zones and her finishing speed.",
             ],
           },
         ],
@@ -188,9 +188,9 @@ export const MEET_RUNNING: MeetContent = {
     ],
     // N6
     agreed: [
-      'So here is our working idea, {NAME}: her aerobic base is good, but her finish lets her down, and nothing in her week trains it.',
-      "It's an idea, not a result. Testing must find her training zones, and how much speed she has for the finish.",
-      'The TESTING lab is open. Choose a battery of tests that answers our question, and check she is ready on the day.',
+      "OK, {NAME}, here's where we've got to. Her aerobic base is good, her finish lets her down, and nothing in her week trains it.",
+      "That's still a hunch until we test it. We need her training zones, and we need to know how much speed she's got for the finish.",
+      "The TESTING lab's open. Pick a battery that answers that, and make sure she's actually ready on the day.",
     ],
     // N7 (the Testing Lab band: "AISHA NEEDS: ZONES AND FINISHING SPEED"; same as running.ts testing.needs)
     testingNeeds: 'ZONES AND FINISHING SPEED',
@@ -198,7 +198,7 @@ export const MEET_RUNNING: MeetContent = {
     testingBrief: 'Testing must find her training zones, and how much speed she has for the finish.',
     // N9
     reminder: [
-      'The TESTING lab is open, {NAME}. Choose tests that give us her training zones and her finishing speed.',
+      "TESTING's open whenever you're ready, {NAME}. We're after her training zones and her finishing speed.",
     ],
   },
 
@@ -209,126 +209,126 @@ export const MEET_RUNNING: MeetContent = {
     testing: {
       // K1, Table 2: rationale for the test; valid and sensitive for the athlete
       'Lactate Profile': [
-        'You ran a lactate profile, {NAME}: stages of rising pace with a blood lactate after each, then a ramp to exhaustion.',
-        'It gives her LT1 and LT2 paces, her heart rate at each, and her VO2max and vVO2max: the anchors of her training zones.',
+        'So you ran a lactate profile, {NAME}. Stages at a rising pace with a blood lactate taken after each one, then a ramp to exhaustion.',
+        'That gets us her LT1 and LT2 paces and her heart rate at each, plus her VO2max and vVO2max. Those are what we hang her training zones on.',
       ],
       // K2
       'Critical Speed Test': [
-        'You ran a critical speed test: three all-out trials on the track.',
-        'They give her critical speed, the fastest pace she can sustain, and D prime, how far she can run faster than it: her reserve for the finish.',
+        'The critical speed test was three all-out trials on the track.',
+        "From those we get her critical speed, the fastest pace she can keep going at, and her D prime, how far she can run faster than that. That's what she's got for the finish.",
       ],
       // K3
       'Wingate Test': [
-        'The Wingate test is 30 seconds all-out on a bike: peak and mean anaerobic power. Aisha runs, so it gives no running paces and no zones.',
+        "The Wingate's 30 seconds flat out on a bike, so you get peak and mean anaerobic power. But Aisha's a runner. It won't give us running paces or zones.",
       ],
       // K4
       'Beep Test': [
-        'The beep test gives a rough VO2max estimate from shuttles with turns: one number, no paces, so no zones.',
+        "The beep test only gives a rough VO2max estimate, from shuttles with turns in them. It's one number, with no paces, so no zones.",
       ],
     },
     // K16-K19: the battery as a whole
     battery: {
       // K16
       full: [
-        'Together they answer our question: her zones from her thresholds and critical speed, and her finish from D prime.',
+        'Between them, those answer the question. Her thresholds and critical speed give us her zones, and D prime tells us about her finish.',
       ],
       missing: {
         // K17
         'Critical Speed Test': [
-          "But without the critical speed trials we have no D prime, so we can't yet say how much she has for the finish. Next time, add them.",
+          "Without the critical speed trials, though, there's no D prime, so we still don't know how much she's got for the finish. Add them next time.",
         ],
         // K18
         'Lactate Profile': [
-          'But without the lactate profile we have no thresholds, so her easy and threshold zones have no anchors. Next time, add it.',
+          "Without the lactate profile, though, we've got no thresholds, so there's nothing to anchor her easy and threshold zones. Add it next time.",
         ],
       },
       // K19
       none: [
-        'So neither test gives running zones or D prime, {NAME}. Only the lactate profile or the critical speed test can.',
-        'Those files are what the DATA lab works on, so it stays shut for now.',
+        'Trouble is, neither of those gives us running zones or D prime, {NAME}. Only the lactate profile or the critical speed test can.',
+        "And the DATA lab works from those files, so it'll have to stay shut for now.",
       ],
     },
     // K5-K7: the test-day call
     testingCall: {
-      right: ['You read her readiness well on test day, so the results can be trusted and compared with her later tests.'],
+      right: ['You read her readiness well on the day, so we can trust these results and compare them with her later tests.'],
       ranAnyway: [
-        "She wasn't ready on test day, but the tests went ahead. Fatigue, caffeine or illness can shift her results, so treat these files with care.",
-        "When a readiness check fails, re-book once she's rested and well.",
+        "She wasn't ready on test day and the tests went ahead anyway. Fatigue, caffeine or being ill can all shift her results, so be careful with these files.",
+        "If she fails a readiness check, re-book for when she's rested and well.",
       ],
       needlessRebook: [
-        'She was ready on the day, so the re-booking cost two days for nothing. A normal routine is the time to test.',
+        "She was fine on the day, so re-booking cost us two days for nothing. If her routine's normal, go ahead and test.",
       ],
     },
     // K8
     testingNext: [
-      'Next, the DATA lab. Her files are in: clean out the glitches, then choose the key variables that should guide her training.',
+      'Next up is the DATA lab. Her files are in. Clean out the glitches, then pick the key variables that should drive her training.',
     ],
     // K20
     retestNext: [
-      'Go back to the TESTING lab and re-test her with a better battery. You can run it as often as you need.',
+      'Head back to the TESTING lab and re-test her with a better battery. You can run it as many times as you need.',
     ],
     // K9: after the Data Lab, by how well it went; then K21, what each file showed (real numbers)
     data: {
-      strong: ['Clean files and the right key variables, {NAME}. Those numbers now give every key session a target.'],
+      strong: ['Nice job, {NAME}. Clean files and the right key variables, so now every key session has a number to aim at.'],
       mixed: [
-        'A fair job, {NAME}, but a few glitches or key variables slipped. A glitch left in changes what the numbers say.',
+        'Not bad, {NAME}, but a few glitches or key variables got past you. Leave a glitch in and it changes what the numbers say.',
       ],
       weak: [
-        'Those files needed more care, {NAME}. Glitches left in, or real readings taken out, change what the numbers say.',
+        'Those files needed more care, {NAME}. Leave glitches in, or take real readings out, and the numbers end up saying something else.',
         'The key variables are the ones that set her training paces or explain her finish.',
       ],
     },
     // K21
     dataFiles: {
       'Lactate Profile': [
-        'The clean profile puts LT1 at 4:08/km and LT2 at 3:34/km. Her VO2max is 58 ml/kg/min, and her vVO2max pace 3:09/km.',
+        'Cleaned up, the profile puts LT1 at 4:08/km and LT2 at 3:34/km. Her VO2max is 58 ml/kg/min and her vVO2max pace is 3:09/km.',
       ],
       'Critical Speed Test': [
-        'The trials put her critical speed at 3:22/km, with a D prime of only about 140 m. That is why she has so little left for the last lap.',
+        "The trials put her critical speed at 3:22/km, and her D prime's only about 140 m. No wonder she's got so little left for the last lap.",
       ],
     },
     // K10
     dataNext: [
-      'Next, the TRAINING room. Plan her week around those paces, with the key sessions on fresh legs.',
+      "TRAINING's next. Build her week around those paces, and keep the key sessions for when she's fresh.",
     ],
     // K11: after the Training Floor
     training: {
       strong: [
-        'A well-balanced week, {NAME}. Her key sessions land on fresh legs, with easy runs for volume and enough rest to recover.',
-        'The fast reps are the sessions that build her D prime for the last lap.',
+        "That's a well-balanced week, {NAME}. Key sessions on fresh legs, easy runs for volume, and enough rest to recover.",
+        'Those fast reps are what build her D prime for the last lap.',
       ],
       mixed: [
-        "A decent week, but some key sessions land on tired legs, so they won't do their full job.",
-        'Keep about two days between hard days, and let easy runs and rest fill the gaps.',
+        "It's a decent week, but some of the key sessions fall on tired legs, so she won't get the full benefit.",
+        'Try to leave about two days between hard days, and fill the gaps with easy runs and rest.',
       ],
       weak: [
-        'That week would leave her too tired, or too short of key work, to change much.',
-        'Key sessions need fresh legs: about two days between hard days, 5 or more sessions and 1 to 3 rest days.',
+        "That week would leave her too tired, or too short of key work, for much to change.",
+        'Key sessions need fresh legs. Leave about two days between hard days, with 5 or more sessions and 1 to 3 rest days.',
       ],
     },
     // K12
     trainingNext: [
-      'Next, the ANALYSIS room. Forecast her retest after the 10-week block, then judge whether each change is real or just noise.',
+      'Last room is ANALYSIS. Predict her retest after the 10-week block, then decide whether each change is real or just noise.',
     ],
     // K13: after the Analysis Room (Table 4: were the changes practically meaningful?), with the retest numbers
     analysis: {
       strong: [
-        'Well judged, {NAME}. Her last 400 m went from 72 s to 70 s: beyond the typical error (0.6 s) and the smallest worthwhile change (0.8 s).',
-        'Her VO2max went from 58 to 60 ml/kg/min: beyond its typical error, but short of its smallest worthwhile change. Real, but too small to matter.',
+        "Good calls, {NAME}. Her last 400 m came down from 72 s to 70 s. That's more than the typical error (0.6 s) and the smallest worthwhile change (0.8 s).",
+        "Her VO2max went from 58 to 60 ml/kg/min. That's beyond its typical error but under its smallest worthwhile change, so it's real but too small to matter.",
       ],
       mixed: [
-        'Some calls were close, {NAME}. Compare each change with the typical error first, then with the smallest worthwhile change.',
-        'Her last 400 m, 72 s to 70 s, clears both: worth acting on. Her VO2max, 58 to 60 ml/kg/min, is real but too small to matter.',
+        'A few of those were close, {NAME}. Check each change against the typical error first, then against the smallest worthwhile change.',
+        "Her last 400 m, 72 s down to 70 s, clears both, so that's worth acting on. Her VO2max, 58 to 60 ml/kg/min, is real but too small to matter.",
       ],
       weak: [
-        'Those calls need another look. A change inside the typical error may be noise, and it must beat the smallest worthwhile change to matter.',
-        'Her last 400 m, 72 s to 70 s, clears both: worth acting on. Her VO2max, 58 to 60 ml/kg/min, is real but too small to matter.',
+        'Have another look at those. A change inside the typical error might just be noise, and it has to beat the smallest worthwhile change to matter.',
+        "Her last 400 m, 72 s down to 70 s, clears both, so that's worth acting on. Her VO2max, 58 to 60 ml/kg/min, is real but too small to matter.",
       ],
     },
   // K14
     analysisNext: [
-      "That's the support process done, {NAME}: overview, needs, testing, training and evaluation.",
-      'The ARENA is open. Take Aisha into the showdown.',
+      "And that's the whole support process, {NAME}. Overview, needs, testing, training and evaluation.",
+      "The ARENA's open. Go and take Aisha into the showdown.",
     ],
     // K15
     doorRefusal: 'TALK TO DR ELLIS FIRST.',

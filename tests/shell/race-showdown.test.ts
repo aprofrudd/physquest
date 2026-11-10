@@ -387,7 +387,7 @@ describe('the ending, back in the hub', () => {
     expect(aisha[0]).toContain('16:23.5'); // the rival's
     expect(w.said[0]!.speaker, 'Aisha first').toBe(athleteSpeaker(3).name);
     // the debrief: the board's strongest and weakest, whether the change was real, next steps, thanks by name
-    expect(ellis.some(t => t.includes('strongest score was TEST CHOICE at 90%') && t.includes('weakest EVALUATION at 75%'))).toBe(true);
+    expect(ellis.some(t => t.includes('best score was TEST CHOICE at 90%') && t.includes('lowest was EVALUATION at 75%'))).toBe(true);
     expect(ellis).toEqual(expect.arrayContaining([...F.win.director.real.strong, ...F.win.director.next, ...F.win.director.thanks]));
     expect(ellis.indexOf(F.win.director.thanks[0]!)).toBeGreaterThan(ellis.indexOf(F.win.director.next[0]!));
     expect(w.switched, 'no scene change: the player stays in the hub').toEqual([]);
@@ -411,7 +411,7 @@ describe('the ending, back in the hub', () => {
     r.stats = { ...STATS, power: 0.4 };
     const ellis = finaleTalk(F, r)[1]!.pages;
     expect(ellis).toContain(F.win.director.real.weak[0]!.replace('{EVAL_PCT}', '40'));
-    expect(ellis.some(p => p.includes('weakest EVALUATION at 40%'))).toBe(true);
+    expect(ellis.some(p => p.includes('lowest was EVALUATION at 40%'))).toBe(true);
   });
 
   it('after a defeat it is shorter, says why, names the board scores, and points back to the rooms', () => {
@@ -429,7 +429,7 @@ describe('the ending, back in the hub', () => {
     low.rating = 0.4;
     const t = finaleTalk(F, low);
     expect(t[0]!.pages).toEqual([...F.lose.athlete.rating]);
-    expect(t[1]!.pages[0]).toContain('TRAINING PLAN score: replay the TRAINING room');
+    expect(t[1]!.pages[0]).toContain('TRAINING PLAN score. Replay the TRAINING room');
     const idleT = finaleTalk(F, resultOf('lose', WIN_RACE, true));
     expect(idleT[0]!.pages).toEqual([...F.lose.athlete.idle]);
   });

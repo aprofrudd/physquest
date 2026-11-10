@@ -136,8 +136,8 @@ describe('the Distance Running hub', () => {
     heard.length = 0;
     w.scene.onEnter?.();
     expect(w.dialogue.isActive(), 'the welcome starts by itself').toBe(true);
-    expect(page(w.dialogue)).toContain('Welcome, Alan.');
-    expect(heard.join(' ')).toContain('Welcome, Alan.');
+    expect(page(w.dialogue)).toContain('Ah, Alan, welcome!');
+    expect(heard.join(' ')).toContain('Ah, Alan, welcome!');
     w.readAll();
     expect(GS.meetOf(w.gameState).welcomed).toBe(true);
     expect(loadSave()?.meet[3]?.welcomed, 'saved').toBe(true);
@@ -162,7 +162,7 @@ describe('the Distance Running hub', () => {
     w.gameState.playerPos = { x: 7, y: 6 };
     w.gameState.playerDir = 'up';
     w.step(tap('a'), 3);
-    expect(page(w.dialogue)).toContain('Welcome, Alan.');
+    expect(page(w.dialogue)).toContain('Ah, Alan, welcome!');
     w.readAll();
     expect(GS.meetOf(w.gameState).welcomed).toBe(true);
     w.step(tap('a'), 3);

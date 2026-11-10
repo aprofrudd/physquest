@@ -19,7 +19,10 @@ export interface DialogueSystem {
     onCancel?: () => void,
     options?: DialogueOptions,
   ): void;
-  /** B on any line ends the whole sequence: onCancel if given, otherwise onComplete. options.nextLabel names A on the last line only. */
+  /**
+   * B on any line ends the whole sequence: onCancel if given, otherwise onComplete. options.nextLabel names A on the
+   * last line only. LEFT goes back a page, across lines too.
+   */
   showSequence(texts: string[], onComplete?: () => void, onCancel?: () => void, options?: DialogueOptions): void;
   update(dt: number, input: InputState): void;
   render(ctx: CanvasRenderingContext2D): void;
@@ -52,17 +55,24 @@ export const createDialogueSystem = (onChoicesShown?: () => void, name: ButtonLa
     showSequence(texts: string[], onComplete?: () => void, onCancel?: () => void, options?: DialogueOptions) {
       let index = 0;
       const leave = () => (onCancel ?? onComplete)?.();
-      const showNext = () => {
-        if (index < texts.length) {
-          const text = texts[index]!;
-          index++;
-          const last = index === texts.length;
-          startDialogue(state, fill(text), undefined, showNext, leave, last ? options : { ...options, nextLabel: undefined });
-        } else {
-          onComplete?.();
-        }
+      // LEFT on a line's first page goes back to the line before, opened on its last page; on the first line it is
+      // the caller's options.onBack (e.g. the previous speaker's lines). options.fromEnd opens on the last line.
+      const showLine = (i: number, fromEnd: boolean) => {
+        index = i + 1;
+        const last = index === texts.length;
+        startDialogue(state, fill(texts[i]!), undefined, showNext, leave, {
+          ...options,
+          nextLabel: last ? options?.nextLabel : undefined,
+          onBack: i > 0 ? () => showLine(i - 1, true) : options?.onBack,
+          fromEnd,
+        });
       };
-      showNext();
+      const showNext = () => {
+        if (index < texts.length) showLine(index, false);
+        else onComplete?.();
+      };
+      if (options?.fromEnd && texts.length > 0) showLine(texts.length - 1, true);
+      else showNext();
     },
 
     update(dt: number, input: InputState) {

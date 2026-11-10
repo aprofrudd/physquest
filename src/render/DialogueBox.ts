@@ -111,12 +111,17 @@ export interface DialogueState {
   nextLabel: string; // what A does on the last page when there is no question ('NEXT' by default)
   inputLock: number; // seconds left in which A and B are ignored (e.g. a mash carried over from a bout)
   waitingForInput: boolean; // current page fully typed
+  onBack: (() => void) | null; // LEFT on the first page: go back to what came before (the sequence's previous line)
 }
 
 /** Per-dialogue options. */
 export interface DialogueOptions {
   /** What B does, for the box's hint: 'LEAVE' by default; '' when B shouldn't be advertised. */
   exitLabel?: string;
+  /** LEFT on the first page goes back to what came before (e.g. the previous line of a sequence). */
+  onBack?: () => void;
+  /** Open on the last page, already typed (used when going back to the previous line). */
+  fromEnd?: boolean;
   /** What A does on the last page, for the box's hint, e.g. 'READY' before a bout: 'NEXT' by default. */
   nextLabel?: string;
   /** Ignore A and B for this long after the dialogue opens. */
@@ -144,6 +149,7 @@ export const createDialogueState = (): DialogueState => ({
   nextLabel: 'NEXT',
   inputLock: 0,
   waitingForInput: false,
+  onBack: null,
 });
 
 /** Close the dialogue and drop its pending callback. */
@@ -153,6 +159,7 @@ export const clearDialogue = (state: DialogueState) => {
   state.speakerLabel = '';
   state.onComplete = null;
   state.onCancel = null;
+  state.onBack = null;
   state.inputLock = 0;
   state.choices = null;
   state.choiceLines = [];
@@ -256,12 +263,53 @@ export const startDialogue = (
   state.waitingForInput = false;
   state.speaker = options?.speaker ?? null;
   state.speakerLabel = state.speaker ? state.speaker.name.toUpperCase() : '';
+  state.onBack = options?.onBack ?? null;
+  if (options?.fromEnd) {
+    // Back from the next line: its last page, already typed, and read again on its own
+    state.page = state.pages.length - 1;
+    finishPage(state);
+    announcePage(state);
+    return;
+  }
   // Screen readers get the whole text at once, so a sentence that runs over to the next page is read in one piece
   const said = state.pages.map(lines => lines.join(' ')).join(' ');
   announce(state.speaker ? `${state.speaker.name}: ${said}` : said);
 };
 
-const finishPage = (state: DialogueState) => {
+/** The current page for a screen reader (after going back a page). */
+const announcePage = (state: DialogueState) => {
+  const said = pageLines(state).join(' ');
+  announce(state.speaker ? `${state.speaker.name}: ${said}` : said);
+};
+
+/** LEFT can go back: to an earlier page of this text, or to what came before it. */
+const canGoBack = (state: DialogueState): boolean => state.page > 0 || state.onBack !== null;
+
+/**
+ * LEFT: back a page, shown in full at once, so a page skipped by accident can be read again without starting
+ * the conversation over. On the first page it goes back to the previous line (onBack), if there is one.
+ */
+const goBack = (state: DialogueState) => {
+  if (state.page > 0) {
+    state.page--;
+    finishPage(state);
+    announcePage(state);
+    return;
+  }
+  const back = state.onBack;
+  if (!back) return;
+  // The callback starts the previous line, so nothing may touch the state after it runs
+  state.active = false;
+  state.onComplete = null;
+  state.onCancel = null;
+  state.onBack = null;
+  state.choices = null;
+  state.choiceLines = [];
+  state.waitingForInput = false;
+  back();
+};
+
+function finishPage(state: DialogueState) {
   const total = pageChars(state);
   state.charIndex = total;
   state.progress = total;
@@ -270,7 +318,7 @@ const finishPage = (state: DialogueState) => {
     state.choiceLock = CHOICE_LOCK;
     announce(`Options: ${state.choices.join('; ')}`);
   }
-};
+}
 
 // Close the dialogue, then report the result. The callback may start the next dialogue, so
 // nothing may touch the state after it runs.
@@ -316,13 +364,20 @@ export const updateDialogue = (state: DialogueState, dt: number, rawInp: InputSt
   let inp = rawInp;
   if (state.inputLock > 0) {
     state.inputLock = Math.max(0, state.inputLock - dt);
-    inp = { ...rawInp, a: false, aPressed: false, b: false, bPressed: false };
+    inp = { ...rawInp, a: false, aPressed: false, b: false, bPressed: false, leftPressed: false };
   }
 
   // B leaves the conversation at any point, even mid-sentence
   if (inp.bPressed && canCancel(state)) {
     sfx.play('back');
     cancelDialogue(state);
+    return;
+  }
+
+  // LEFT goes back a page (or to the previous line), even mid-sentence
+  if (inp.leftPressed && canGoBack(state)) {
+    sfx.play('blip');
+    goBack(state);
     return;
   }
 
@@ -507,7 +562,10 @@ export const drawSpeakerTab = (ctx: CanvasRenderingContext2D, label: string, col
 const drawHintTag = (ctx: CanvasRenderingContext2D, state: DialogueState, name: ButtonLabel) => {
   const aDoes = choicesVisible(state) ? 'CHOOSE' : onLastPage(state) ? state.nextLabel : 'NEXT';
   const showB = canCancel(state) && state.exitLabel !== '';
-  drawBoxHint(ctx, `${name('a')}: ${aDoes}${showB ? `   ${name('b')}: ${state.exitLabel}` : ''}`);
+  const hint = `${name('a')}: ${aDoes}${showB ? `   ${name('b')}: ${state.exitLabel}` : ''}`;
+  // LEFT's BACK joins the tag when there is somewhere to go back to and it fits left of the advance arrow
+  const withBack = `${hint}   ←: BACK`;
+  drawBoxHint(ctx, canGoBack(state) && measureText(withBack) + 6 <= ARROW_X - 2 - (BOX_X + 10) ? withBack : hint);
 };
 
 export const renderDialogue = (

@@ -256,7 +256,7 @@ describe('the check-ins', () => {
     w.talk();
     w.readAll();
     expect(w.pages.some(p => p.startsWith(start(C.data.mixed[0]!)))).toBe(true);
-    expect(w.pages.join(' ')).toContain('Next stop: TRAINING.');
+    expect(w.pages.join(' ')).toContain('TRAINING is next');
   });
 
   it('each later room\'s check-in is picked by the band of the stat it awards, and fills {ROOM}', () => {

@@ -16,14 +16,14 @@ export interface BoardContent {
 
 export const BOARD_RUNNING: BoardContent = {
   welcome: [
-    'See the SUPPORT BOARD on the wall, top left? Each room gives you a score: TEST CHOICE, DATA INSIGHT, TRAINING PLAN and EVALUATION.',
-    "They grade your work, not Aisha's, and make your showdown rating: TRAINING PLAN counts most. Face the board and press {A} to read it.",
+    "That's the SUPPORT BOARD up on the wall, top left. You get a score from each room: TEST CHOICE, DATA INSIGHT, TRAINING PLAN and EVALUATION.",
+    "They mark your work, not Aisha, and add up to your showdown rating. TRAINING PLAN counts most. Face the board and press {A} to read it.",
   ],
   checkIn: {
-    testSelection: 'Your TEST CHOICE score is {PCT}%. It is up on the SUPPORT BOARD.',
-    variableId: 'Your DATA INSIGHT score is {PCT}%. It is up on the SUPPORT BOARD.',
-    trainingPrescription: 'Your TRAINING PLAN score is {PCT}%. It counts most in the showdown, so check the SUPPORT BOARD.',
-    performancePrediction: 'Your EVALUATION score is {PCT}%. The SUPPORT BOARD now has your full showdown rating.',
+    testSelection: "That puts your TEST CHOICE score at {PCT}%. You'll see it on the SUPPORT BOARD.",
+    variableId: "Your DATA INSIGHT score's {PCT}%. It's on the SUPPORT BOARD now.",
+    trainingPrescription: 'Your TRAINING PLAN score is {PCT}%. That one counts most in the showdown, so keep an eye on the SUPPORT BOARD.',
+    performancePrediction: "Your EVALUATION score is {PCT}%, so the SUPPORT BOARD has your full showdown rating now.",
   },
   note: 'SCORES GRADE YOUR WORK, NOT AISHA',
   noteSpoken: 'Scores grade your work, not Aisha.',
