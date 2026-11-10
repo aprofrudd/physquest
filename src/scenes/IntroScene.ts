@@ -8,6 +8,7 @@ import { drawText, measureText } from '../render/PixelFont';
 import { drawPokemonBox, drawSprite } from '../render/SpriteSheet';
 import { GAME_W, GAME_H } from '../render/DialogueBox';
 import { PALETTES } from '../render/Palettes';
+import { CENTRE_FEET_Y, drawCentreScene } from '../render/CentreScene';
 import { playerColors, playerSprite } from '../data/playerLooks';
 import { createLookPicker } from '../systems/LookPicker';
 import { sfx } from '../audio/Sfx';
@@ -79,16 +80,13 @@ const WELCOME_LOCK = 0.3;
 const WARN_COLOR = '#a01818';
 const ACTION_PLATE = '#dfe6f3';
 
-// The welcome: the player (a sport scientist) stands on a faint floor above the dialogue box and shifts their
-// weight, so the line is more than text on an empty screen.
-const HEADER_Y = 20; // top of the 3x title (same as the title screen)
+// The welcome: the player (a sport scientist) stands on the plaza outside the Sports Performance Centre on a sunny
+// day, shifting their weight, above the dialogue box.
 const STAGE_SCALE = 2;
 const STAGE_SIZE = 16 * STAGE_SCALE; // the sprite is 16x16 cells
-const STAGE_Y = 90; // top of the sprite; its feet are at STAGE_Y + STAGE_SIZE
+const STAGE_Y = CENTRE_FEET_Y - STAGE_SIZE; // top of the sprite
 const STAGE_STEP = 0.5; // seconds per idle pose
-const FLOOR_END_Y = 160; // clear of the dialogue box (y = 164)
-const FLOOR_LINE = '#e2d8c0'; // a shade darker than the cream background
-const FLOOR_SHADOW = '#d3c8ae';
+const STAGE_SHADOW = '#cbbd9c'; // a shade darker than the plaza
 
 // The one line after name entry. {NAME} is filled with the typed name (see DialogueSystem); how to play is the
 // Performance Director's to explain, in the level's hub.
@@ -99,18 +97,15 @@ const FOOTER_CONSOLE = 'A: ADD   B: DELETE   START: DONE';
 const FOOTER_KEYBOARD = 'TYPE YOUR NAME   ENTER: DONE';
 
 const drawStage = (ctx: CanvasRenderingContext2D, t: number, look: number) => {
-  // Floor lines, as on the boss arena
-  ctx.fillStyle = FLOOR_LINE;
-  for (let y = STAGE_Y + STAGE_SIZE + 8; y < FLOOR_END_Y; y += 6) ctx.fillRect(3, y, GAME_W - 6, 1);
-
+  drawCentreScene(ctx, t);
   const pose = Math.floor(t / STAGE_STEP) % 2; // 0 = standing, 1 = weight shifted
   const x = Math.round((GAME_W - STAGE_SIZE) / 2);
   // Shadow first, so the feet stand on it
   const cx = x + STAGE_SIZE / 2;
-  ctx.fillStyle = FLOOR_SHADOW;
-  ctx.fillRect(cx - 10, STAGE_Y + STAGE_SIZE - 1, 20, 1);
-  ctx.fillRect(cx - 13, STAGE_Y + STAGE_SIZE, 26, 2);
-  ctx.fillRect(cx - 10, STAGE_Y + STAGE_SIZE + 2, 20, 1);
+  ctx.fillStyle = STAGE_SHADOW;
+  ctx.fillRect(cx - 10, CENTRE_FEET_Y - 1, 20, 1);
+  ctx.fillRect(cx - 13, CENTRE_FEET_Y, 26, 2);
+  ctx.fillRect(cx - 10, CENTRE_FEET_Y + 2, 20, 1);
   drawSprite(ctx, playerSprite(look, 'down', pose), x, STAGE_Y + pose * STAGE_SCALE, playerColors(look), STAGE_SCALE);
 };
 
@@ -330,17 +325,6 @@ export const createIntroScene = (
       ctx.fillRect(GAME_W - 3, 0, 3, GAME_H);
 
       if (phase === 'welcome') {
-        // The title screen's header, so the welcome carries on from it: the name with its navy drop
-        // shadow (gold alone is only ~2:1 on cream), the tagline, and the rule under them
-        const title = 'PHYSQUEST';
-        const titleX = (GAME_W - measureText(title, 3)) / 2;
-        drawText(ctx, title, titleX + 1, HEADER_Y + 1, pal.colors[1], 3);
-        drawText(ctx, title, titleX, HEADER_Y, pal.colors[5], 3);
-        const tagline = 'SPORTS SCIENCE ADVENTURE';
-        drawText(ctx, tagline, (GAME_W - measureText(tagline)) / 2, HEADER_Y + 26, pal.colors[1]);
-        ctx.fillStyle = pal.colors[2];
-        ctx.fillRect(30, HEADER_Y + 39, GAME_W - 60, 2);
-
         drawStage(ctx, blinkTimer, gameState.playerLook);
         dialogue.render(ctx);
         return;
