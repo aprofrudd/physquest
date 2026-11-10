@@ -77,6 +77,8 @@ export type CheckInKey = 'needs' | RoomKey;
 
 export interface GameState {
   playerName: string;
+  /** The player's look (index into PLAYER_LOOKS), picked after name entry. */
+  playerLook: number;
   currentLevel: number; // 0-3
   maxLevelUnlocked: number;
   // Active level (the one currently being played)
@@ -156,6 +158,7 @@ export const freshMeet = (): MeetProgress => ({
 
 export const createInitialState = (): GameState => ({
   playerName: '',
+  playerLook: 0,
   currentLevel: 0,
   maxLevelUnlocked: 0,
   playerStats: freshStats(),

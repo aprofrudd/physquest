@@ -8,13 +8,14 @@ import { drawText, measureText } from '../render/PixelFont';
 import { drawPokemonBox, drawSprite } from '../render/SpriteSheet';
 import { GAME_W, GAME_H } from '../render/DialogueBox';
 import { PALETTES } from '../render/Palettes';
-import { SPRITE_COLORS, getCoachSprite } from '../data/sprites';
+import { playerColors, playerSprite } from '../data/playerLooks';
+import { createLookPicker } from '../systems/LookPicker';
 import { sfx } from '../audio/Sfx';
 import { announce } from '../ui/announce';
 
-// Name entry comes first; then one line by name, and on to the level select (the Performance Director shows the
-// player round the centre in the level itself)
-type Phase = 'nameEntry' | 'welcome';
+// Name entry comes first; then the player's look (B goes back to the name); then one line by name, and on to the
+// level select (the Performance Director shows the player round the centre in the level itself)
+type Phase = 'nameEntry' | 'look' | 'welcome';
 type CellKind = 'char' | 'del' | 'done';
 
 interface Cell {
@@ -97,7 +98,7 @@ export const WELCOME_LINE = "Welcome, {NAME}. You're the new sport scientist at 
 const FOOTER_CONSOLE = 'A: ADD   B: DELETE   START: DONE';
 const FOOTER_KEYBOARD = 'TYPE YOUR NAME   ENTER: DONE';
 
-const drawStage = (ctx: CanvasRenderingContext2D, t: number) => {
+const drawStage = (ctx: CanvasRenderingContext2D, t: number, look: number) => {
   // Floor lines, as on the boss arena
   ctx.fillStyle = FLOOR_LINE;
   for (let y = STAGE_Y + STAGE_SIZE + 8; y < FLOOR_END_Y; y += 6) ctx.fillRect(3, y, GAME_W - 6, 1);
@@ -110,7 +111,7 @@ const drawStage = (ctx: CanvasRenderingContext2D, t: number) => {
   ctx.fillRect(cx - 10, STAGE_Y + STAGE_SIZE - 1, 20, 1);
   ctx.fillRect(cx - 13, STAGE_Y + STAGE_SIZE, 26, 2);
   ctx.fillRect(cx - 10, STAGE_Y + STAGE_SIZE + 2, 20, 1);
-  drawSprite(ctx, getCoachSprite('down', pose), x, STAGE_Y + pose * STAGE_SCALE, SPRITE_COLORS['default']!, STAGE_SCALE);
+  drawSprite(ctx, playerSprite(look, 'down', pose), x, STAGE_Y + pose * STAGE_SCALE, playerColors(look), STAGE_SCALE);
 };
 
 export const createIntroScene = (
@@ -129,6 +130,7 @@ export const createIntroScene = (
   let flashText = '';
   let flashTimer = 0;
   let entryLock = 0; // seconds left in which name entry ignores typing, A, B and START
+  const picker = createLookPicker('BACK');
 
   const currentCell = (): Cell => GRID[cursorRow]?.[cursorIdx] ?? { label: 'A', kind: 'char', col: 0, span: 1 };
 
@@ -205,15 +207,33 @@ export const createIntroScene = (
       return false;
     }
     gameState.playerName = name;
-    saveGame(gameState); // first save of a new game: this is where it replaces any old one
     sfx.play('select');
-    // One line by name, then the level select (A or B goes on)
+    // Then the look
+    phase = 'look';
+    input.setTextMode(false);
+    input.blockRepeats();
+    picker.open(gameState.playerLook);
+    return true;
+  };
+
+  /** The look is chosen: save, then one line by name and the level select (A or B goes on). */
+  const welcome = () => {
+    gameState.playerLook = picker.selected();
+    saveGame(gameState); // first save of a new game: this is where it replaces any old one
     phase = 'welcome';
     blinkTimer = 0;
-    input.setTextMode(false);
     const onward = () => sceneManager.switchTo('levelSelect');
     dialogue.show(WELCOME_LINE, undefined, onward, onward, { exitLabel: '', nextLabel: 'GO', lock: WELCOME_LOCK });
-    return true;
+  };
+
+  /** B on the look: back to the name, as typed. */
+  const backToName = () => {
+    phase = 'nameEntry';
+    parkOnDone();
+    entryLock = ENTRY_LOCK;
+    input.setTextMode(true);
+    input.blockRepeats();
+    announce(`Name: ${name}`);
   };
 
   /** Returns true when the scene was left. */
@@ -229,6 +249,7 @@ export const createIntroScene = (
     onEnter() {
       phase = 'nameEntry';
       name = '';
+      gameState.playerLook = 0; // a new game starts on the first look
       cursorRow = 0;
       cursorIdx = 0;
       anchorCol = 0;
@@ -259,6 +280,12 @@ export const createIntroScene = (
 
       if (phase === 'welcome') {
         dialogue.update(dt, inp);
+        return;
+      }
+      if (phase === 'look') {
+        const result = picker.update(dt, inp);
+        if (result === 'pick') welcome();
+        else if (result === 'cancel') backToName();
         return;
       }
 
@@ -314,8 +341,13 @@ export const createIntroScene = (
         ctx.fillStyle = pal.colors[2];
         ctx.fillRect(30, HEADER_Y + 39, GAME_W - 60, 2);
 
-        drawStage(ctx, blinkTimer);
+        drawStage(ctx, blinkTimer, gameState.playerLook);
         dialogue.render(ctx);
+        return;
+      }
+
+      if (phase === 'look') {
+        picker.render(ctx, input.fill);
         return;
       }
 

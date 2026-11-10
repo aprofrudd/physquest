@@ -12,6 +12,7 @@ import {
   type TestCall,
 } from '../state/GameState';
 import { allPlayableCleared } from '../data/levels';
+import { cleanLook } from '../data/playerLooks';
 
 interface SaveDataV1 {
   version: 1;
@@ -44,10 +45,12 @@ interface SaveDataV3 {
  * v4 adds the Director's needs chat and check-ins to `meet` (needs, heard, and the Testing Lab's last battery and call:
  * `tests`, a list; early v4 saves kept one `test` name, read as a list of one).
  * Older saves load with every check-in for a room already finished counted as heard, so no one is locked out.
+ * `look` (the player's look, PLAYER_LOOKS) came later in v4: a save without one loads with the first look.
  */
 export interface SaveData {
   version: 4;
   playerName: string;
+  look: number;
   bossDefeated: boolean[];
   gameComplete: boolean;
   currentLevel: number;
@@ -70,6 +73,7 @@ export const saveGame = (state: GameState): boolean => {
   const data: SaveData = {
     version: 4,
     playerName: state.playerName,
+    look: cleanLook(state.playerLook),
     bossDefeated: [...state.bossDefeated],
     gameComplete: state.gameComplete,
     currentLevel: state.currentLevel,
@@ -163,11 +167,13 @@ export const loadSave = (): SaveData | null => {
     const bossDefeated = padLevels(data.bossDefeated, false);
 
     const noMeet = (): MeetProgress[] => padLevels([], null).map(() => freshMeet());
+    const look = cleanLook((data as { look?: unknown }).look);
 
     if (data.version === 1) {
       return {
         version: 4,
         playerName: cleanName(data.playerName),
+        look,
         bossDefeated,
         gameComplete: allPlayableCleared(bossDefeated),
         currentLevel: 0,
@@ -194,6 +200,7 @@ export const loadSave = (): SaveData | null => {
     return {
       version: 4,
       playerName: cleanName(data.playerName),
+      look,
       bossDefeated,
       gameComplete: allPlayableCleared(bossDefeated),
       currentLevel: level >= 0 && level < LEVEL_COUNT ? level : 0,
@@ -224,6 +231,7 @@ export const deleteSave = (): void => {
 export const applySave = (state: GameState, save: SaveData): void => {
   resetGameState(state);
   state.playerName = save.playerName;
+  state.playerLook = cleanLook(save.look);
   state.bossDefeated = [...save.bossDefeated];
   state.gameComplete = save.gameComplete;
   state.levelProgress = save.levelProgress.map(p =>

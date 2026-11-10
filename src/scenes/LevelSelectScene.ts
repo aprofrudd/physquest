@@ -11,6 +11,8 @@ import { levelPlayable } from '../data/levels';
 import { sfx } from '../audio/Sfx';
 import { announce } from '../ui/announce';
 import { prefersReducedMotion } from '../render/motion';
+import { createLookPicker } from '../systems/LookPicker';
+import { saveGame } from '../systems/SaveSystem';
 
 // A and START are ignored for this long after entering, so a double-tap on the button that
 // brought us here can't pick a sport before the player has seen the list.
@@ -97,6 +99,9 @@ export const createLevelSelectScene = (
   const levelCount = LEVEL_DATA.length;
   let selectedIndex = 0;
   let enterTimer = 0;
+  // SELECT changes the player's look; B leaves it as it was
+  const picker = createLookPicker('CANCEL');
+  let picking = false;
 
   const roomsDone = (level: number): number | null => {
     const progress = gameState.levelProgress[level];
@@ -146,12 +151,35 @@ export const createLevelSelectScene = (
       for (let i = 0; !levelPlayable(fallback) && i < levelCount; i++) fallback = i;
       selectedIndex = inProgress ? current : first >= 0 ? first : fallback;
       enterTimer = 0;
+      picking = false;
       announce(`Select a sport. ${describe(selectedIndex)}`);
     },
 
     update(dt: number) {
       const inp = input.read();
       enterTimer += dt;
+
+      if (picking) {
+        const result = picker.update(dt, inp);
+        if (result === null) return;
+        picking = false;
+        enterTimer = 0; // the press that closed the picker can't also pick a sport
+        input.blockRepeats();
+        if (result === 'pick' && picker.selected() !== gameState.playerLook) {
+          gameState.playerLook = picker.selected();
+          saveGame(gameState);
+        }
+        announce(`Select a sport. ${describe(selectedIndex)}`);
+        return;
+      }
+
+      if (inp.selectPressed && !loading()) {
+        sfx.play('select');
+        picking = true;
+        input.blockRepeats();
+        picker.open(gameState.playerLook);
+        return;
+      }
 
       if (inp.upRepeat) moveSelection(-1);
       if (inp.downRepeat) moveSelection(1);
@@ -169,6 +197,10 @@ export const createLevelSelectScene = (
     },
 
     render(ctx: CanvasRenderingContext2D) {
+      if (picking) {
+        picker.render(ctx, input.fill);
+        return;
+      }
       const pal = PALETTES.title;
 
       // Background
@@ -250,7 +282,7 @@ export const createLevelSelectScene = (
       // Footer prompt, in the player's button names; a cleared sport is replayed rather than played
       const footer = loading()
         ? 'LOADING THE NEW ROOMS...'
-        : input.fill(gameState.bossDefeated[selectedIndex] ? '{A}: REPLAY   {B}: BACK' : '{A}: PLAY   {B}: BACK');
+        : input.fill(gameState.bossDefeated[selectedIndex] ? '{A}: REPLAY  {B}: BACK  {SELECT}: LOOK' : '{A}: PLAY  {B}: BACK  {SELECT}: LOOK');
       drawText(ctx, footer, (GAME_W - measureText(footer)) / 2, FOOTER_Y, pal.colors[2]);
     },
   };

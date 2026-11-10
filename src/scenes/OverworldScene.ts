@@ -51,7 +51,8 @@ import { mapFor } from '../data/rooms';
 import { LEVEL_DATA } from '../data/sports';
 import { ambientTime, prefersReducedMotion } from '../render/motion';
 import { DIALOGUES } from '../data/dialogue';
-import { athleteColorsFor, athleteSpriteFor, getCoachSprite, getDirectorSprite, SPRITE_COLORS } from '../data/sprites';
+import { athleteColorsFor, athleteSpriteFor, getDirectorSprite, SPRITE_COLORS } from '../data/sprites';
+import { playerColors, playerSprite } from '../data/playerLooks';
 import { DIRECTOR_KEY, MEET_RETURN } from '../data/meetDoor';
 import { BOARD_KEY } from '../data/supportBoard';
 import { boardSummary, drawBoardPanel, drawWallBoard } from '../render/SupportBoard';
@@ -712,13 +713,13 @@ export const createOverworldScene = (
 
       // Player
       const frame = movement.getAnimFrame();
-      const sprite = getCoachSprite(gameState.playerDir, gameState.playerMoving ? frame : 0);
+      const sprite = playerSprite(gameState.playerLook, gameState.playerDir, gameState.playerMoving ? frame : 0);
       drawSprite(
         ctx,
         sprite,
         Math.round(gameState.playerPos.x * TILE_SIZE),
         Math.round(gameState.playerPos.y * TILE_SIZE),
-        SPRITE_COLORS['default']!,
+        playerColors(gameState.playerLook),
       );
 
       // Markers above characters. An athlete's "!" or star gives way to the "A" prompt while it is faced.

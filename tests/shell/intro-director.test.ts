@@ -77,6 +77,21 @@ describe('the intro', () => {
     scene.update(1 / 60);
     expect(gameState.playerName).toBe('ALAN');
     expect(input.textMode(), 'letters stop typing once the name is done').toBe(false);
+    // then the look: no speech yet; RIGHT twice, and B before the lock is over does nothing
+    expect(dialogue.isActive(), 'the look comes before the welcome').toBe(false);
+    expect(heard.join(' ')).toMatch(/Choose your look/);
+    input.feed(tap('b'));
+    scene.update(1 / 60);
+    input.feed({ ...idle(), rightRepeat: true } as InputState);
+    scene.update(1 / 60);
+    input.feed({ ...idle(), rightRepeat: true } as InputState);
+    scene.update(1 / 60);
+    expect(heard.join(' ')).toMatch(/Look 3 of 6/);
+    for (let i = 0; i < 30; i++) scene.update(1 / 60); // the picker's lock
+    input.feed(tap('a'));
+    scene.update(1 / 60);
+    expect(gameState.playerLook).toBe(2);
+    expect(loadSave()?.look, 'the look is saved with the name').toBe(2);
     expect(dialogue.isActive()).toBe(true);
     expect(WELCOME_LINE).toContain('{NAME}');
     expect(WELCOME_LINE).not.toMatch(/coach/i);
@@ -87,6 +102,31 @@ describe('the intro', () => {
       scene.update(1 / 60);
     }
     expect(switches).toEqual(['levelSelect']);
+  });
+
+  it('goes back from the look to the name with B, keeping what was typed', () => {
+    const gameState = GS.createInitialState();
+    setNameSource(() => gameState.playerName);
+    const input = makeInput();
+    const dialogue = createDialogueSystem();
+    const scene = createIntroScene(input as never, { switchTo: () => {} } as never, gameState, dialogue);
+    scene.onEnter?.();
+    for (let i = 0; i < 40; i++) scene.update(1 / 60);
+    input.feed({ ...idle(), typed: ['J', 'O'] } as InputState);
+    scene.update(1 / 60);
+    input.feed(tap('start'));
+    scene.update(1 / 60);
+    for (let i = 0; i < 30; i++) scene.update(1 / 60);
+    input.feed(tap('b'));
+    scene.update(1 / 60);
+    expect(input.textMode(), 'back to typing').toBe(true);
+    for (let i = 0; i < 40; i++) scene.update(1 / 60);
+    input.feed({ ...idle(), typed: ['E'] } as InputState);
+    scene.update(1 / 60);
+    input.feed(tap('start'));
+    scene.update(1 / 60);
+    expect(gameState.playerName).toBe('JOE');
+    expect(dialogue.isActive()).toBe(false);
   });
 });
 
